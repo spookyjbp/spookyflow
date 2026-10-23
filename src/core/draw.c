@@ -437,7 +437,7 @@ void d_badge(int icon, float cx, float cy, float size, uint32_t tint)
     r_quads_end();
 }
 
-void d_image_rot(int tex, float cx, float cy, float w, float h, float angle, float u0, float u1, uint32_t tint)
+void d_image_rot(int tex, float cx, float cy, float w, float h, float angle, float u0, float u1, float v0, float v1, uint32_t tint)
 {
     static const float cxs[4] = { -1, 1, 1, -1 }, cys[4] = { -1, -1, 1, 1 };
     float c = cosf(angle), s = sinf(angle);
@@ -447,7 +447,7 @@ void d_image_rot(int tex, float cx, float cy, float w, float h, float angle, flo
     for (i = 0; i < 4; i++) {
         float dx = cxs[i] * w * 0.5f, dy = cys[i] * h * 0.5f;
         float rx = dx * c - dy * s, ry = dx * s + dy * c;
-        r_qvtx(cx + rx / g_scr.pa, cy + ry, i == 0 || i == 3 ? u0 : u1, i < 2 ? 0.0f : 1.0f, tint);
+        r_qvtx(cx + rx / g_scr.pa, cy + ry, i == 0 || i == 3 ? u0 : u1, i < 2 ? v0 : v1, tint);
     }
     r_quads_end();
 }

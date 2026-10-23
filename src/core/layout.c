@@ -85,7 +85,8 @@ void layout_cover(const Screen *s, int plat, float d, CoverPos *out)
         b = sf_maxf(0.36f, 0.80f - (a - 1.0f) * 0.14f);
     }
     out->cx = s->W * 0.5f + sign * x;
-    out->cy = LY_FLOW_CY * H;
+    /* stand on the floor in perspective: nearer (bigger) cases stand lower */
+    out->cy = (LY_HORIZON_Y + (LY_FLOOR_Y - LY_HORIZON_Y) * (h / hs)) * H - h * 0.5f;
     out->h = h;
     out->w = d_xu(h * asp);
     out->bright = b;

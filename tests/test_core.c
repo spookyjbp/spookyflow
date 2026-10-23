@@ -248,7 +248,9 @@ static void test_layout(void)
             /* evenly spaced neighbors with gap proportional to width */
             CHECK_NEAR((c2.cx - c1.cx) / c1.w, 1.0f + LY_GAP_NB, 1e-4);
             CHECK(ch.cx > c0.cx && ch.cx < c1.cx && ch.h < c0.h && ch.h > c1.h);
-            CHECK(c1.cy == c0.cy);
+            CHECK_NEAR(c1.cy + c1.h * 0.5f, (LY_HORIZON_Y + (LY_FLOOR_Y - LY_HORIZON_Y) * c1.h / c0.h) * scr[k].H, 1e-3);   /* perspective */
+            CHECK(c1.cy + c1.h * 0.5f < c0.cy + c0.h * 0.5f && c1.cy + c1.h * 0.5f > LY_HORIZON_Y * scr[k].H);
+            CHECK_NEAR(c0.cy + c0.h * 0.5f, LY_FLOOR_Y * scr[k].H, 1e-3);
         }
         {
             CoverPos far;

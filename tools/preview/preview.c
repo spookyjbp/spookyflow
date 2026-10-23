@@ -427,6 +427,20 @@ int main(int argc, char **argv)
                     snprintf(a1, sizeof(a1), "%s/stage.rgba", sdir);
                     snprintf(a2, sizeof(a2), "%s/shapes.rgba", sdir);
                     if (load_raw_alpha(a1, TEX_STAGE, TEX_STAGE_HI) == 0 && load_raw(a2, TEX_STAGE_SHAPES, NULL, NULL) == 0) {
+                        char a3[512];
+                        FILE *ff;
+                        snprintf(a3, sizeof(a3), "%s/fx.rgba", sdir);
+                        ff = fopen(a3, "rb");
+                        if (ff) {
+                            int fw = 0, fh = 0;
+                            if (fscanf(ff, "%d %d", &fw, &fh) == 2 && fgetc(ff) == '\n') {
+                                unsigned char *px = (unsigned char *)malloc((size_t)fw * fh);
+                                if (px && fread(px, 1, (size_t)fw * fh, ff) == (size_t)fw * fh &&
+                                    r_texture_upload_alpha(TEX_STAGE_FX, fw, fh, px) == 0) ui_set_stage_fx(TEX_STAGE_FX);
+                                free(px);
+                            }
+                            fclose(ff);
+                        }
                         int f;
                         char nm[64];
                         double t0 = g_app.time;

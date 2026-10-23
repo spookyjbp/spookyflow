@@ -18,7 +18,8 @@ enum {
     TEX_BG_IMAGE = 12,   /* optional background picture (the user's) */
     TEX_STAGE = 13, TEX_STAGE_SHAPES = 14,   /* built-in Stage background (brightness) + its floating shapes */
     TEX_STAGE_HI = 15,                        /* Stage's white-hot cores */
-    TEX_COUNT_FIXED = 16
+    TEX_STAGE_FX = 16,                        /* Stage's ribbons, flare and stars (brightness) */
+    TEX_COUNT_FIXED = 17
 };
 
 /* Cover art: R_COVER_SLOTS textures TEX_COVER0 + slot, one per cover cache

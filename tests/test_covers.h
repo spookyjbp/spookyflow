@@ -980,9 +980,13 @@ static void test_bg_and_reflect(void)
     settings_parse_line(&s, "background2=3");                    /* ...the new one is used */
     CHECK(s.background == BG_FIREFLIES);
     ui_set_stage(TEX_STAGE, TEX_STAGE_SHAPES);
+    ui_set_stage_fx(TEX_STAGE_FX);
+    ui_set_stage_highlight(TEX_STAGE_HI);
     g_app.settings.background = BG_STAGE;
     ui_draw(&g_app);
     ui_set_stage(-1, -1);
+    ui_set_stage_fx(-1);
+    ui_set_stage_highlight(-1);
     CHECK_STR(settings_background_name(BG_FIREFLIES), "Fireflies");
     /* every background, with and without a picture and reflections, draws */
     for (i = 0; i < BG_COUNT; i++) { g_app.settings.background = i; ui_draw(&g_app); }

@@ -293,6 +293,29 @@ static void load_stage(void)
     }
     free(rgba);
     if (rc != 0) { log_printf("stage: no texture memory"); return; }
+    /* ribbons / flare / stars atlas: a grayscale PNG -> alpha texture */
+    {
+        pngData fx;
+        int frc;
+        memset(&fx, 0, sizeof(fx));
+        ps3_decode_lock();
+        frc = pngLoadFromBuffer(g_stage_fx_png, g_stage_fx_png_size, &fx);
+        ps3_decode_unlock();
+        if (frc == 0 && fx.bmp_out) {
+            unsigned char *a8 = (unsigned char *)malloc((size_t)fx.width * fx.height);
+            if (a8) {
+                for (y = 0; y < fx.height; y++) {
+                    const unsigned char *row = (const unsigned char *)fx.bmp_out + (size_t)y * fx.pitch;
+                    for (x = 0; x < fx.width; x++) a8[(size_t)y * fx.width + x] = row[x * 4u + 1u];
+                }
+                if (r_texture_upload_alpha(TEX_STAGE_FX, (int)fx.width, (int)fx.height, a8) == 0) ui_set_stage_fx(TEX_STAGE_FX);
+                free(a8);
+            }
+            free(fx.bmp_out);
+        } else {
+            log_printf("stage: effects could not be decoded (%d)", frc);
+        }
+    }
     if (upload_png_buffer(TEX_STAGE_SHAPES, g_stage_shapes_png, g_stage_shapes_png_size, &w, &h) != 0) {
         log_printf("stage: shapes could not be decoded");
         ui_set_stage(TEX_STAGE, -1);

@@ -1,18 +1,27 @@
-/* stage.h - the built-in "Stage" background: a picture plus glassy button
- * shapes (cross, circle, triangle, square) floating over it. */
+/* stage.h - the built-in "Stage" background: a base scene, moving wave
+ * ribbons, star field and light flares (all stored as brightness and tinted
+ * with the UI color), plus glassy button shapes floating over it. */
 #ifndef SF_STAGE_H
 #define SF_STAGE_H
 
-extern const unsigned char g_stage_jpg[];
+extern const unsigned char g_stage_jpg[];          /* 1280x720 base scene, brightness */
 extern const unsigned int g_stage_jpg_size;
-extern const unsigned char g_stage_shapes_png[];
+extern const unsigned char g_stage_fx_png[];       /* brightness atlas, rects below */
+extern const unsigned int g_stage_fx_png_size;
+extern const unsigned char g_stage_shapes_png[];   /* RGBA 1024x896: columns = shape, rows = angle 1 body,
+                                                       angle 1 edges, angle 2 body, angle 2 edges */
 extern const unsigned int g_stage_shapes_png_size;
+
+enum { STAGE_FX_RIBBON_A, STAGE_FX_RIBBON_B, STAGE_FX_RIBBON_C, STAGE_FX_RIBBON_D, STAGE_FX_GLOW, STAGE_FX_LINE,
+       STAGE_FX_STAR, STAGE_FX_STARS_A, STAGE_FX_STARS_B, STAGE_FX_MIST, STAGE_FX_COUNT };
+extern const int g_stage_fx_size[2];
+extern const int g_stage_fx_rect[STAGE_FX_COUNT][4];   /* x, y, w, h in the atlas */
+
+#define STAGE_SHAPES 4    /* 0 triangle, 1 circle, 2 cross, 3 square */
+#define STAGE_ANGLES 2
 
 /* From the brightness map (one byte per pixel) make the "white-hot" layer:
  * the brightest streaks glow white whatever the UI color. */
 void stage_highlight(const unsigned char *v, int n, unsigned char *out);
-
-#define STAGE_SHAPE_CELL 128      /* atlas: 4 cells of 128x128 in a row */
-#define STAGE_SHAPES     4        /* 0 cross, 1 circle, 2 triangle, 3 square */
 
 #endif

@@ -196,14 +196,21 @@ covers, where each one came from (or the title ID it looked for).
 
 ## Stage background (default)
 
-The default background is **Stage**: a dark blue scene with light streaks and a
-reflective floor, with glassy cross / circle / triangle / square shapes slowly
-floating, tilting and glowing over it. It takes the UI color (Flow Settings →
-UI Color): the scene is stored as brightness and tinted on the GPU, with its
-brightest streaks staying white-hot. It's built in (`art/stage.jpg`,
-`art/stage_shapes.png`, embedded by `tools/gen_stage.py`; `tools/make_stage.py`
-rebuilds them from the source picture). Pick other styles in Flow Settings →
-Background.
+The default background is **Stage**: a dark scene with curved light waves and
+a reflective floor, four wave ribbons that sway and breathe over it, a slowly
+drifting star field, a light line and glows pulsing on the horizon (one star
+glides along it), mist drifting over the floor, and glassy triangle / circle /
+cross / square shapes floating in the sky beside the title. The cases stand
+on its floor in perspective: the selected case stands in front of the horizon
+(`LY_FLOOR_Y`), smaller cases farther back stand nearer it (`LY_HORIZON_Y`),
+and each casts a soft contact shadow and a reflection. Everything is stored as
+brightness and tinted with the UI color on the GPU (Flow Settings → UI Color);
+the brightest parts stay white-hot. Assets: `art/stage.jpg`, `art/stage_fx.png`
+(+ `.json`), `art/stage_shapes.png`, embedded by `tools/gen_stage.py`;
+`tools/make_stage.py <asset folder>` rebuilds them from the animation asset
+folders (Background, Ribbons, Lighting, Particles, Atmosphere, Symbols); an
+optional second argument replaces the base scene picture. Pick other styles in Flow
+Settings → Background.
 
 ## Background picture (optional)
 
@@ -324,7 +331,12 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 14 (0.2.14):** the Stage background follows the UI color.
+15. **Fix 17 (0.2.17):** new Stage scene; cases stand on the floor in
+    perspective with contact shadows.
+    **Fix 16 (0.2.16):** the cases stand on the floor (bottoms on the
+    horizon); Stage rebuilt from the full-size animation assets.
+    **Fix 15 (0.2.15):** Stage rebuilt from the layer sheet: clean scene,
+    moving ribbons, stars and flares, sharper glass buttons. **Fix 14 (0.2.14):** the Stage background follows the UI color.
     **Fix 13 (0.2.13):** the Stage background is built in and is the default,
     with its shapes floating; existing installs switch to it once.
     **Fix 12 (0.2.12):** your own background picture (Background → Image);

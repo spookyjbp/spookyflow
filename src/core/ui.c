@@ -3,6 +3,7 @@
 #include "cats.h"
 #include "icons.h"
 #include "render.h"
+#include "stage.h"
 #include "theme.h"
 #include "title.h"
 #include "util.h"
@@ -270,6 +271,34 @@ static int g_stage_tex = -1, g_stage_shapes = -1, g_stage_hi = -1;
 void ui_set_stage(int bg_tex, int shapes_tex) { g_stage_tex = bg_tex; g_stage_shapes = shapes_tex; }
 void ui_set_stage_highlight(int tex) { g_stage_hi = tex; }
 
+static int g_stage_fx = -1;
+void ui_set_stage_fx(int tex) { g_stage_fx = tex; }
+
+/* one atlas element stretched over (x, y, w, h), tinted */
+static void stage_fx(int el, float x, float y, float w, float h, uint32_t tint)
+{
+    const int *r = g_stage_fx_rect[el];
+    float aw = (float)g_stage_fx_size[0], ah = (float)g_stage_fx_size[1];
+    float u0 = ((float)r[0] + 0.5f) / aw, u1 = ((float)(r[0] + r[2]) - 0.5f) / aw;
+    float v0 = ((float)r[1] + 0.5f) / ah, v1 = ((float)(r[1] + r[3]) - 0.5f) / ah;
+    if ((tint & 255) == 0) return;
+    r_quads_begin(g_stage_fx);
+    r_qvtx(x, y, u0, v0, tint);
+    r_qvtx(x + w, y, u1, v0, tint);
+    r_qvtx(x + w, y + h, u1, v1, tint);
+    r_qvtx(x, y + h, u0, v1, tint);
+    r_quads_end();
+}
+
+typedef struct { unsigned char kind, angle; float x, y, size, alpha; } StageShape;
+/* kind: 0 triangle, 1 circle, 2 cross, 3 square; angle: one of two views;
+ * position as a fraction of the screen, size as a fraction of its height.
+ * They float in the open sky beside the title, big ones at the outside. */
+static const StageShape k_stage[] = {
+    { 0, 0, 0.080f, 0.150f, 0.180f, 1.00f }, { 1, 1, 0.195f, 0.070f, 0.100f, 0.85f }, { 2, 1, 0.205f, 0.250f, 0.070f, 0.70f },
+    { 3, 1, 0.920f, 0.150f, 0.175f, 1.00f }, { 2, 0, 0.850f, 0.060f, 0.095f, 0.85f }, { 1, 0, 0.795f, 0.250f, 0.070f, 0.70f },
+};
+
 /* the UI color at full brightness (its largest channel at 255); White -> silver */
 static uint32_t stage_tint(void)
 {
@@ -279,42 +308,75 @@ static uint32_t stage_tint(void)
     return sf_rgba(r * 255 / m, g * 255 / m, b * 255 / m, 255);
 }
 
-typedef struct { unsigned char kind; short x, y, size; unsigned char alpha; } StageShape;
-/* where the shapes sit in the 1672x941 source picture: kind (0 cross, 1
- * circle, 2 triangle, 3 square), center, size in px, strength 0..255 */
-static const StageShape k_stage[] = {
-    { 2,   75,  40, 100, 200 }, { 1,  181, 161,  66, 220 }, { 2,  333, 236,  80, 210 }, { 0,   80, 304, 140, 255 },
-    { 3,  261, 353,  90, 240 }, { 0,  381, 405,  42, 150 }, { 1,  530, 410,  62, 190 }, { 2,  566, 350,  56, 150 },
-    { 3,  668, 376,  38, 110 }, { 0,  380,  72,  50, 100 }, { 1,  141, 392,  45, 110 }, { 0, 1469,  55,  50, 170 },
-    { 1, 1543, 173, 120, 255 }, { 2, 1289, 251, 106, 230 }, { 2, 1577, 334, 128, 255 }, { 0, 1375, 386,  54, 190 },
-    { 3, 1255, 438,  64, 200 }, { 3, 1156, 486,  34, 120 }, { 2, 1120, 325,  44, 130 }, { 1, 1105, 388,  32, 110 },
-    { 0, 1017, 327,  35, 100 },
-};
-
 static void bg_stage(float t, float alpha)
 {
+    uint32_t tint = stage_tint(), lite = sf_col_mix(tint, 0xFFFFFFFFu, 0.35f);
+    float hy = H() * LY_HORIZON_Y;
     int i;
-    /* the scene is stored as brightness: tinted with the UI color, plus its
-     * white-hot cores on top, so it follows Flow Settings > UI Color */
+    /* base scene: brightness tinted with the UI color, white-hot cores on top */
     d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, alpha));
-    d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(stage_tint(), alpha));
-    if (g_stage_hi >= 0) d_image(g_stage_hi, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, 0.85f * alpha));
+    d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(tint, alpha));
+    if (g_stage_hi >= 0) d_image(g_stage_hi, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, 0.35f * alpha));
+    if (g_stage_fx >= 0) {
+        /* star field: a fine layer drifting slowly, twinkling (stars_a is kept for later) */
+        for (i = 1; i < 2; i++) {
+            int el = i ? STAGE_FX_STARS_B : STAGE_FX_STARS_A;
+            float tw = W() * (0.42f + 0.08f * (float)i), th = H() * (0.15f + 0.05f * (float)i);
+            float y = H() * (0.02f + 0.20f * (float)i), off = fmodf(t * (i ? -5.0f : 3.5f), tw), x;
+            float al = alpha * (0.22f + 0.10f * sinf(t * 0.4f + (float)i * 2.0f));
+            if (off > 0.0f) off -= tw;
+            for (x = off; x < W(); x += tw) stage_fx(el, x, y, tw, th, sf_col_alpha(lite, al));
+        }
+        /* wave ribbons: four layers swaying and breathing over the scene's own waves */
+        for (i = 0; i < 4; i++) {
+            float ph = (float)i * 1.9f;
+            float w = W() * (1.25f + 0.06f * sinf(t * 0.07f + ph)), h = H() * (0.15f + 0.03f * sinf(t * 0.11f + ph));
+            float x = W() * 0.5f - w * 0.5f + W() * 0.06f * sinf(t * 0.05f + ph * 1.3f);
+            float y = H() * (0.10f + 0.115f * (float)i) + H() * 0.025f * sinf(t * 0.09f + ph);
+            float al = alpha * (0.10f + 0.06f * sinf(t * 0.13f + ph * 1.7f));
+            stage_fx(STAGE_FX_RIBBON_A + i, x, y, w, h, sf_col_alpha(tint, al));
+        }
+        /* horizon: a bright line breathing along it, glows pulsing at the floor
+         * lights, one gliding slowly back and forth */
+        {
+            static const float lx[3] = { 0.146f, 0.495f, 0.846f };
+            float lw = W() * 1.05f, lh = H() * 0.05f;
+            stage_fx(STAGE_FX_LINE, W() * 0.5f - lw * 0.5f, hy - lh * 0.5f, lw, lh,
+                     sf_col_alpha(lite, alpha * (0.45f + 0.15f * sinf(t * 0.3f))));
+            for (i = 0; i < 3; i++) {
+                float p = 0.75f + 0.25f * sinf(t * (0.5f + 0.13f * (float)i) + (float)i * 2.4f);
+                float fw = W() * 0.22f * p, fh = H() * 0.07f * p;
+                stage_fx(STAGE_FX_GLOW, W() * lx[i] - fw * 0.5f, hy - fh * 0.5f, fw, fh, sf_col_alpha(lite, alpha * 0.75f * p));
+            }
+            {
+                float gx = W() * (0.5f + 0.42f * sinf(t * 0.045f)), fw = W() * 0.10f, fh = H() * 0.10f;
+                stage_fx(STAGE_FX_STAR, gx - fw * 0.5f, hy - fh * 0.5f, fw, fh, sf_col_alpha(0xFFFFFFFFu, alpha * 0.55f));
+            }
+        }
+        /* low mist drifting across the floor */
+        for (i = 0; i < 3; i++) {
+            float mw = W() * 0.55f, mh = H() * 0.07f;
+            float x = fmodf(t * (6.0f + 2.0f * (float)i) + (float)i * W() * 0.45f, W() + mw) - mw;
+            float y = hy + H() * (0.03f + 0.05f * (float)i);
+            stage_fx(STAGE_FX_MIST, x, y, mw, mh, sf_col_alpha(tint, alpha * 0.16f));
+        }
+    }
     if (g_stage_shapes < 0) return;
+    /* the shapes float, bob, tilt and breathe, each at its own pace */
     for (i = 0; i < (int)(sizeof(k_stage) / sizeof(k_stage[0])); i++) {
         const StageShape *s = &k_stage[i];
-        float p = (float)i * 1.7f, depth = (float)s->size / 140.0f;      /* big = near: moves more */
-        float x = (float)s->x / 1672.0f, y = (float)s->y / 941.0f;
-        float sz = (float)s->size / 941.0f * H() * (128.0f / 122.0f);
-        float k = 0.6f + 0.4f * depth;
-        float cx, cy, ang, sc, al;
-        /* slow floating: drift, bob, tilt and breathe, each at its own pace */
-        cx = W() * (x + 0.014f * k * sinf(t * 0.11f + p) + 0.006f * sinf(t * 0.29f + p * 2.1f));
-        cy = H() * (y + 0.020f * k * sinf(t * 0.15f + p * 1.3f));
-        ang = 0.16f * sinf(t * 0.09f + p) + 0.05f * sinf(t * 0.23f + p * 0.7f);
-        sc = 1.0f + 0.05f * sinf(t * 0.19f + p * 1.9f);
-        al = (float)s->alpha / 255.0f * (0.80f + 0.20f * sinf(t * 0.35f + p * 2.7f)) * alpha;
-        d_image_rot(g_stage_shapes, cx, cy, sz * sc, sz * sc, ang, (float)s->kind * 0.25f, (float)(s->kind + 1) * 0.25f,
-                    sf_col_alpha(sf_col_mix(stage_tint(), 0xFFFFFFFFu, 0.30f), al));
+        float p = (float)i * 1.7f, k = 0.5f + s->size * 2.5f;                 /* big = near: moves more */
+        float sz = s->size * H();
+        float cx = W() * (s->x + 0.012f * k * sinf(t * 0.11f + p) + 0.005f * sinf(t * 0.29f + p * 2.1f));
+        float cy = H() * (s->y + 0.018f * k * sinf(t * 0.15f + p * 1.3f));
+        float ang = 0.14f * sinf(t * 0.09f + p) + 0.04f * sinf(t * 0.23f + p * 0.7f);
+        float sc = 1.0f + 0.05f * sinf(t * 0.19f + p * 1.9f);
+        float al = s->alpha * (0.82f + 0.18f * sinf(t * 0.35f + p * 2.7f)) * alpha;
+        float u0 = (float)s->kind * 0.25f, u1 = u0 + 0.25f, v0 = (float)s->angle * 0.5f;
+        /* cells are 256x224: keep that shape */
+        float w = sz * sc * (256.0f / 224.0f), h = sz * sc;
+        d_image_rot(g_stage_shapes, cx, cy, w, h, ang, u0, u1, v0, v0 + 0.25f, sf_col_alpha(tint, al));            /* glass */
+        d_image_rot(g_stage_shapes, cx, cy, w, h, ang, u0, u1, v0 + 0.25f, v0 + 0.5f, sf_col_alpha(0xFFFFFFFFu, al * 0.9f));  /* edges */
     }
 }
 
@@ -417,6 +479,8 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
         if (art > 0.0f) reflect_tex(tex, win.x, win.y, win.w, win.h, A, depth, white, k * art);
         if (cased) reflect_tex(g_case_tex[plat], x, y, w, h, A, depth, white, k);
     }
+    /* contact shadow: grounds the case on the floor */
+    d_blob_ellipse(p->cx, y + h, w * 0.62f, h * 0.045f, sf_col_alpha(0x000000FFu, 0.70f * alpha));
     if (art < 1.0f) {
         float pa = alpha * (1.0f - art);
         d_rect(win.x, win.y, win.w, win.h, shade(0x1E1F24FFu, b, pa));     /* empty front */

@@ -60,7 +60,7 @@ void d_image(int tex, float x, float y, float w, float h, uint32_t tint);
  * top-to-bottom tint gradient. */
 /* Rotated sub-image: cell u0..u1 of the texture, centered at (cx, cy), size
  * w x h physical units (h vertical), angle in radians. */
-void d_image_rot(int tex, float cx, float cy, float w, float h, float angle, float u0, float u1, uint32_t tint);
+void d_image_rot(int tex, float cx, float cy, float w, float h, float angle, float u0, float u1, float v0, float v1, uint32_t tint);
 void d_image_v(int tex, float x, float y, float w, float h, float v0, float v1, uint32_t top, uint32_t bot);
 
 /* Fill TEX_BLOB / TEX_DISC alpha data (size x size) into buf. */
