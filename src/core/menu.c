@@ -14,7 +14,7 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
             tmp[n++] = ROW_G_EMULATOR; tmp[n++] = ROW_G_OFFLINE; tmp[n++] = ROW_G_PS2CFG;
         } else { tmp[n++] = ROW_G_OFFLINE; }
     } else if (panel == PANEL_FLOW) {
-        tmp[n++] = ROW_F_AUTOPLAY; tmp[n++] = ROW_F_OFFLINE; tmp[n++] = ROW_F_EMU_FULL; tmp[n++] = ROW_F_EMU_SMOOTH; tmp[n++] = ROW_F_SFX; tmp[n++] = ROW_F_VOLUME; tmp[n++] = ROW_F_SHUFFLE;
+        tmp[n++] = ROW_F_AUTOPLAY; tmp[n++] = ROW_F_OFFLINE; tmp[n++] = ROW_F_SFX; tmp[n++] = ROW_F_VOLUME; tmp[n++] = ROW_F_SHUFFLE;
         tmp[n++] = ROW_F_BACKGROUND; tmp[n++] = ROW_F_UI_COLOR; tmp[n++] = ROW_F_INFO; tmp[n++] = ROW_F_CASES; tmp[n++] = ROW_F_REFLECT; tmp[n++] = ROW_F_SLEEP; tmp[n++] = ROW_F_COVERS; tmp[n++] = ROW_F_IGNORE_THE;
         tmp[n++] = ROW_F_XMB_TOP; tmp[n++] = ROW_F_RESCAN; tmp[n++] = ROW_F_QUIT;
         tmp[n++] = ROW_F_POWEROFF;
@@ -42,8 +42,6 @@ const char *menu_label(RowKind k)
     case ROW_F_INFO: return "Show Game Info";
     case ROW_F_CASES: return "Custom Cases";
     case ROW_F_REFLECT: return "Reflections";
-    case ROW_F_EMU_FULL: return "PS1/PS2 Full Screen";
-    case ROW_F_EMU_SMOOTH: return "PS1/PS2 Smoothing";
     case ROW_F_SLEEP: return "Sleep Mode";
     case ROW_F_COVERS: return "Download Missing Covers";
     case ROW_F_IGNORE_THE: return "Ignore \"The\" When Sorting";
@@ -97,8 +95,6 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
     case ROW_F_INFO: sf_strlcpy(out, onoff(s->show_info), cap); break;
     case ROW_F_CASES: sf_strlcpy(out, onoff(s->cases), cap); break;
     case ROW_F_REFLECT: sf_strlcpy(out, onoff(s->reflections), cap); break;
-    case ROW_F_EMU_FULL: sf_strlcpy(out, onoff(s->emu_full), cap); break;
-    case ROW_F_EMU_SMOOTH: sf_strlcpy(out, onoff(s->emu_smooth), cap); break;
     case ROW_F_SLEEP:
         if (s->sleep_min <= 0) sf_strlcpy(out, "Off", cap);
         else snprintf(out, cap, "After %d min", s->sleep_min);
@@ -160,8 +156,6 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     case ROW_F_INFO: s->show_info = cycle(s->show_info, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_CASES: s->cases = cycle(s->cases, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_REFLECT: s->reflections = cycle(s->reflections, 2, dir); return MENU_FX_CHANGED;
-    case ROW_F_EMU_FULL: s->emu_full = cycle(s->emu_full, 2, dir); return MENU_FX_CHANGED;
-    case ROW_F_EMU_SMOOTH: s->emu_smooth = cycle(s->emu_smooth, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_SLEEP: {
         static const int steps[] = { 0, 1, 5, 10, 15, 30, 60 };
         int i, cur = 0, n = (int)(sizeof(steps) / sizeof(steps[0]));

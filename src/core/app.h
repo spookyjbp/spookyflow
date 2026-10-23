@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.3.3 (milestone 3)"
+#define APP_VERSION     "0.3.5 (milestone 3)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -61,9 +61,6 @@ typedef struct {
     int (*launch)(const char *request);
     /* optional: read webMAN's settings (wm_config.bin); leave cfg->valid 0 if unknown */
     void (*read_wm_config)(WmConfig *cfg);
-    /* optional: send a webMAN command and wait for its answer; the answer's
-     * text (tags removed, shortened) goes to resp. 0 = webMAN answered. */
-    int (*webman_get)(const char *cmd, char *resp, size_t cap);
 } AppHost;
 
 typedef struct {
@@ -130,6 +127,7 @@ typedef struct {
 
     /* overlays */
     char letter[4];
+    int letter_bucket, letter_prev_bucket;   /* the A-Z rail glides from the previous letter */
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
     char toast[160];
     int launched;           /* 1 = exiting because a game was launched */

@@ -5,21 +5,10 @@
  *
  *   /wait.ps3?xmb                      wait until the XMB is back (webMAN won't
  *                                      mount while an app is running; max 30 s)
- *   [;/xmb.ps3$xregistry(80)=2]        PS1/PS2 Full Screen  (see below)
- *   [;/xmb.ps3$xregistry(81)=1]        PS1/PS2 Smoothing On
  *   ;/mount_ps3<path>?random=0         mount the game (ISO, folder, PS1/PS2 image)
  *        [&offline=1]                  turn the network off while it runs
  *        [&emu=<emulator>.self]        PS1/PS2 emulator
  *   ;/wait.ps3?2;/play.ps3             start the disc icon (Auto-play)
- *
- * PS1/PS2 display options: /xmb.ps3$xregistry(80)=2 sets the XMB's Game
- * Settings "PS Upscaler" (/setting/game/emuUpConvert) to Full Screen and
- * /xmb.ps3$xregistry(81)=1 "PS Smoothing" (/setting/game/emuSmoothing) to On
- * (include/cmd/xmb_browser.h; not in webMAN's Lite edition; values checked on
- * a console: the XMB set to Full Screen / On reads 2 / 1). They are written
- * AFTER the XMB is back: written while spookyflow was still running, the XMB
- * put its own values back when it returned (0.3.2 test). They are system
- * settings: they stay as set after the game.
  *
  * Verified against the webMAN MOD source (include/cmd/mount_copy.h,
  * include/mount/mount.h, include/cmd/wait.h, include/www/www_client.h):
@@ -62,20 +51,7 @@ typedef struct {
     int autoplay;       /* start the game, not only mount it */
     int offline;        /* PS2/PS3: network off while it runs */
     int emulator;       /* PS1: 0 Standard (ps1_emu), 1 Netemu; PS2: 0 Default, 1 Netemu */
-    int full_screen;    /* PS1/PS2: 1 = set PS Upscaler to Full Screen, 0 = leave it */
-    int smoothing;      /* PS1/PS2: 1 = set PS Smoothing to On, 0 = leave it */
 } LaunchReq;
-
-#define LAUNCH_REG_UPSCALER   80    /* /setting/game/emuUpConvert (0x50) */
-#define LAUNCH_REG_SMOOTHING  81    /* /setting/game/emuSmoothing (0x51) */
-#define LAUNCH_UPSCALER_FULL  2     /* Off 0, Normal 1, Full Screen 2 (the XMB's order) */
-#define LAUNCH_SMOOTHING_ON   1
-#define LAUNCH_SET_MAX        48
-
-/* The registry writes for a PS1/PS2 launch (none for PS3 or when both are
- * off): out[i] = "/xmb.ps3$xregistry(<id>)=<value>", ids[i] = the id (to
- * read it back). Returns how many (0..2). */
-int launch_display_cmds(int plat, int full_screen, int smoothing, char out[2][LAUNCH_SET_MAX], int ids[2]);
 
 /* Build the request. wm may be NULL (treated as not valid). Returns 0, or -1
  * (no path, unknown console, or too long). */

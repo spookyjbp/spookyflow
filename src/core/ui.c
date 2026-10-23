@@ -1138,20 +1138,38 @@ static void draw_panel(App *a)
 /* ------------------------------------------------------------------ */
 /* Overlays                                                            */
 
+/* A-Z jump feedback (L2/R2): the alphabet as a strip above the controls bar.
+ * The letter you're on grows and glows in the UI color, the focus glides from
+ * the letter you came from, letters with no games are dimmed; it fades out
+ * after LETTER_TIME. */
 static void draw_letter(const App *a)
 {
-    float t = a->letter_t, al, sc, sz = 0.0f;
+    const GameList *gl = &a->lib->tab[a->tab];
+    float t = a->letter_t, al;
+    float span = W() * 0.62f, x0 = W() * 0.5f - span * 0.5f, step = span / (float)(LIB_BUCKETS - 1);
+    float y = H() * 0.868f, ph = H() * 0.062f, k, pos;
+    uint32_t acc;
+    int b;
     if (t >= LETTER_TIME || !a->letter[0]) return;
-    al = t < 0.35f ? 1.0f : 1.0f - (t - 0.35f) / (LETTER_TIME - 0.35f);
-    sc = 0.85f + 0.15f * ease_out_back(sf_minf(1.0f, t / 0.22f));
-    (void)sz;
-    {
-        /* just the letter, in the UI color; a soft dark shadow keeps it
-         * readable over bright covers */
-        uint32_t txt = accent_white() ? TH_TEXT : sf_col_mix(accent() | 0xFFu, 0xFFFFFFFFu, 0.30f);
-        float em = 0.20f * H() * sc, off = 0.006f * H();
-        d_text(&g_font_big, W() * 0.5f + d_xu(off), H() * layout_flow_cy() + off, em, sf_col_alpha(0x000000A0u, al), a->letter, ALIGN_CENTER);
-        d_text(&g_font_big, W() * 0.5f, H() * layout_flow_cy(), em, sf_col_alpha(txt, al), a->letter, ALIGN_CENTER);
+    al = t < 0.45f ? 1.0f : sf_maxf(0.0f, 1.0f - (t - 0.45f) / (LETTER_TIME - 0.45f));
+    al *= sf_minf(1.0f, t / 0.08f);                                     /* quick fade in */
+    k = ease_out_cubic(sf_minf(1.0f, t / 0.30f));
+    pos = sf_lerp((float)a->letter_prev_bucket, (float)a->letter_bucket, k);
+    acc = accent_white() ? TH_TEXT : sf_col_mix(accent() | 0xFFu, 0xFFFFFFFFu, 0.30f);
+    /* same fill and breathing outline as the controls bar */
+    d_rrect(x0 - step * 1.2f, y - ph * 0.5f, span + step * 2.4f, ph, ph * 0.5f, sf_col_alpha(TH_BAR, al));
+    d_rrect_stroke(x0 - step * 1.2f, y - ph * 0.5f, span + step * 2.4f, ph, ph * 0.5f, 0.0028f * H(),
+                   sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), al));
+    d_blob(x0 + pos * step, y, H() * 0.045f, sf_col_alpha(acc, 0.35f * al));
+    for (b = 0; b < LIB_BUCKETS; b++) {
+        char c[2];
+        float d = (float)b - pos, f = expf(-d * d / 1.8f), em = H() * (0.019f + 0.027f * f);
+        int has = gl->first[b] >= 0;
+        uint32_t col;
+        c[0] = title_bucket_char(b); c[1] = '\0';
+        if (sf_absf(d) < 0.5f) col = sf_col_alpha(acc, al);
+        else col = sf_col_alpha(TH_TEXT, al * (has ? 0.35f + 0.45f * f : 0.13f));
+        d_text(&g_font_main, x0 + (float)b * step, y, em, col, c, ALIGN_CENTER);
     }
 }
 

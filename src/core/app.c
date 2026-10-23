@@ -520,8 +520,6 @@ static void launch_disc(App *a, int disc)
     req.autoplay = settings_autoplay_effective(&a->settings, &c);
     req.offline = a->tab != PLAT_PS1 && settings_offline_effective(&a->settings, &c);
     req.emulator = c.emulator;
-    req.full_screen = a->settings.emu_full;
-    req.smoothing = a->settings.emu_smooth;
     memset(&wm, 0, sizeof(wm));
     if (a->host.read_wm_config) a->host.read_wm_config(&wm);
     if (launch_build(&req, &wm, cmd, sizeof(cmd)) != 0) {
@@ -533,18 +531,6 @@ static void launch_disc(App *a, int disc)
                k_plat_name[a->tab], name, req.autoplay ? "on" : "off", req.offline, req.emulator,
                wm.valid ? (wm.autoplay ? "read (its Auto-play is on)" : "read") : "not found");
     log_printf("launch: request %s", cmd);
-    /* PS1/PS2 Full Screen / Smoothing go in the request (after the XMB is
-     * back); log what the registry holds now, before the launch */
-    if (a->tab != PLAT_PS3 && (req.full_screen || req.smoothing) && a->host.webman_get) {
-        static const int ids[2] = { LAUNCH_REG_UPSCALER, LAUNCH_REG_SMOOTHING };
-        char rd[LAUNCH_SET_MAX], resp[200];
-        int i;
-        for (i = 0; i < 2; i++) {
-            snprintf(rd, sizeof(rd), "/xmb.ps3$xregistry(%d)", ids[i]);
-            resp[0] = '\0';
-            if (a->host.webman_get(rd, resp, sizeof(resp)) == 0) log_printf("launch: before: %s -> %s", rd, resp);
-        }
-    }
     if (!a->host.launch || a->host.launch(cmd) != 0) {
         app_show_toast(a, "Launching needs webMAN MOD running");
         return;
@@ -579,6 +565,9 @@ static void switch_tab(App *a, int dir)
 static void show_letter(App *a, int idx)
 {
     const Game *g = &a->lib->tab[a->tab].games[idx];
+    int still = a->letter_t < LETTER_TIME && a->letter[0];   /* jumping again while it shows: glide from there */
+    a->letter_prev_bucket = still ? a->letter_bucket : g->bucket;
+    a->letter_bucket = g->bucket;
     a->letter[0] = title_bucket_char(g->bucket);
     a->letter[1] = '\0';
     a->letter_t = 0.0f;

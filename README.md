@@ -22,7 +22,9 @@ PSL1GHT and Tiny3D. Milestone 1 was the **look and feel**; milestone 2 added
 - The game title in a rounded pill that changes width smoothly, plus info
   chips: position ("1 of 250") always, then genre, players and size when known.
 - An evenly spaced control bar along the bottom.
-- Letter jumping with L2 / R2 and a big letter that fades out.
+- Letter jumping with L2 / R2: an A–Z rail appears above the controls bar;
+  your letter grows and glows in the UI color, the focus glides from the
+  letter you came from, letters with no games are dimmed, and it fades out.
 - **Game Settings** panel (▲) and **Flow Settings** panel (START).
 - Hold ◯ for 1.5 s to exit to the XMB (a ring fills around the ◯ icon).
 - **Sound effects** play when you move, switch tabs, jump letters, open/close a
@@ -137,8 +139,7 @@ the cover flow.
 They are applied when the game is launched (see *Launching*). The RSX clock
 row was removed in milestone 3; overclocking may come back later.
 
-**Flow Settings (START)** — Auto-play (global, default Off), Offline mode,
-PS1/PS2 Full Screen (Off / On), PS1/PS2 Smoothing (Off / On), Music volume,
+**Flow Settings (START)** — Auto-play (global, default Off), Music volume,
 Shuffle music, Background (Animated / Image), Download missing covers (stub),
 Ignore “The” when sorting, Rescan library, Quit to XMB.
 
@@ -291,19 +292,6 @@ spookyflow sends one request to webMAN (`http://127.0.0.1/`, built in
   the file can't be read).
 - **Auto-play** on: `/play.ps3` starts the disc icon. Off: the game is only
   mounted and waits on the XMB's disc icon.
-- **PS1/PS2 Full Screen** and **PS1/PS2 Smoothing** (Flow Settings, Off /
-  On): On sets the XMB's Game Settings "Upscaler" to Full Screen
-  (`/xmb.ps3$xregistry(80)=2`) or "Smoothing" to On
-  (`/xmb.ps3$xregistry(81)=1`) through webMAN just before a PS1/PS2 game is
-  launched; Off leaves your console's settings alone. They are written once
-  the XMB is back, just before the mount (written while spookyflow was still
-  open, the XMB put its own values back when it returned). The values were
-  checked on a console (XMB set to Full Screen / On reads 2 / 1); the log
-  shows what the registry held before each launch (`launch: before: ...`). They are system settings (they stay as set after
-  the game) and need webMAN's full edition (not Lite).
-
-If webMAN's **Admin mode** is turned on (it is off by default), webMAN
-refuses some of these commands from apps; leave it off for spookyflow.
 
 Notes (from webMAN MOD's source): `offline=` must come before `emu=`, and
 `emu=` also changes webMAN's default emulator until the next boot, which is
@@ -373,7 +361,7 @@ contents (or attach it) in our chat.
 5. **Smoothness:** tap ← →; each press moves one game smoothly (holding moves only one)
    Is it 60 fps or does it stutter?
 6. **Tabs:** L1/R1 slide rows in and out and the white pill glides.
-7. **Letter jump:** L2/R2 with the big letter; check the two-press L2 behaviour.
+7. **Letter jump:** L2/R2 with the A–Z rail; check the two-press L2 behaviour.
 8. **Panels:** ▲ and START open, rows highlight smoothly, ◯ closes; values
    change with ← → and ✖; Flow Settings scrolls with a thin scrollbar.
 9. **Ignore “The”** reorders the list but keeps your current game selected.
@@ -388,12 +376,10 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.3.3:** PS1/PS2 Full Screen / Smoothing are written after the XMB is
-    back (before, the XMB overwrote them); better log for wm_config.bin.
-    **0.3.2:** PS1/PS2 Full Screen and Smoothing are Off / On; each registry
-    write is sent on its own and read back into the log.
-    **0.3.1:** Flow Settings → PS1/PS2 Screen and PS1/PS2 Smoothing, applied
-    when a PS1/PS2 game is launched.
+15. **0.3.5:** the A–Z rail uses the controls bar's fill and outline.
+    **0.3.4:** the PS1/PS2 Full Screen / Smoothing options (0.3.1-0.3.3) are
+    removed: the emulator uses the XMB's own Game Settings (set them once there).
+    The A–Z jump shows an alphabet rail instead of the big letter.
     **Milestone 3 (0.3.0):** games launch through webMAN MOD (mount at the
     XMB, then play), with per-game Auto-play, emulator and offline mode; the
     RSX clock row is removed.

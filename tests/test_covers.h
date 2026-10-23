@@ -796,15 +796,6 @@ static int fake_launch(const char *request)
     return g_launch_fail ? -1 : 0;
 }
 static WmConfig g_fake_wm;
-static char g_get_log[8][LAUNCH_SET_MAX];
-static int g_get_calls;
-static int fake_webman_get(const char *cmd, char *resp, size_t cap)
-{
-    if (g_get_calls < 8) sf_strlcpy(g_get_log[g_get_calls], cmd, sizeof(g_get_log[0]));
-    g_get_calls++;
-    sf_strlcpy(resp, "=> 2 (0x0002)", cap);
-    return 0;
-}
 static void fake_wm_config(WmConfig *cfg) { *cfg = g_fake_wm; }
 /* a test that launched carries on: undo the exit */
 static void relaunch_reset(void)
@@ -948,30 +939,6 @@ static void test_launch(void)
     r.plat = PLAT_PS3; r.path = "/dev_hdd0/GAMES/BLES00932-[Demon]"; r.autoplay = 1;
     CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
     CHECK(strstr(out, ";/mount_ps3/dev_hdd0/GAMES/BLES00932-%5BDemon%5D?random=0;") != NULL);
-    /* PS1/PS2 Full Screen + Smoothing: separate registry writes (Upscaler 80, Smoothing 81) */
-    {
-        char set[2][LAUNCH_SET_MAX];
-        int ids[2];
-        CHECK(launch_display_cmds(PLAT_PS2, 1, 1, set, ids) == 2);
-        CHECK_STR(set[0], "/xmb.ps3$xregistry(80)=2");
-        CHECK_STR(set[1], "/xmb.ps3$xregistry(81)=1");
-        CHECK(ids[0] == 80 && ids[1] == 81);
-        CHECK(launch_display_cmds(PLAT_PS1, 0, 1, set, ids) == 1 && ids[0] == 81);
-        CHECK_STR(set[0], "/xmb.ps3$xregistry(81)=1");
-        CHECK(launch_display_cmds(PLAT_PS1, 1, 0, set, ids) == 1 && ids[0] == 80);
-        CHECK(launch_display_cmds(PLAT_PS2, 0, 0, set, ids) == 0);            /* Off: the console's settings stay */
-        CHECK(launch_display_cmds(PLAT_PS3, 1, 1, set, ids) == 0);            /* PS3 games: not used */
-        memset(&r, 0, sizeof(r));
-        r.plat = PLAT_PS2; r.path = "/dev_hdd0/PS2ISO/Okami.iso"; r.full_screen = 1; r.smoothing = 1; r.autoplay = 1;
-        CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
-        CHECK_STR(out, "/wait.ps3?xmb;/xmb.ps3$xregistry(80)=2;/xmb.ps3$xregistry(81)=1;/mount_ps3/dev_hdd0/PS2ISO/Okami.iso?random=0;/wait.ps3?2;/play.ps3");
-        r.plat = PLAT_PS1; r.path = "/dev_hdd0/PSXISO/Crash.bin"; r.full_screen = 0; r.autoplay = 0;
-        CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
-        CHECK_STR(out, "/wait.ps3?xmb;/xmb.ps3$xregistry(81)=1;/mount_ps3/dev_hdd0/PSXISO/Crash.bin?random=0&emu=ps1_emu.self");
-        r.plat = PLAT_PS3; r.path = "/dev_hdd0/PS3ISO/X.iso"; r.full_screen = 1;
-        CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0 && strstr(out, "xregistry") == NULL);
-    }
-    memset(&r, 0, sizeof(r)); r.autoplay = 1;
     /* bad input */
     r.path = ""; CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1 && out[0] == '\0');
     r.path = "relative.iso"; CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1);
@@ -997,7 +964,6 @@ static void test_launch_app(void)
     host.fs_list = fake_discs;
     host.launch = fake_launch;
     host.read_wm_config = fake_wm_config;
-    host.webman_get = fake_webman_get;
     memset(&g_fake_wm, 0, sizeof(g_fake_wm));
     g_fake_wm.valid = 1; g_fake_wm.ps2_netemu = 1;
     g_launch_calls = 0; g_launch_fail = 0;
@@ -1014,29 +980,14 @@ static void test_launch_app(void)
     CHECK(g_launch_calls == 1);
     CHECK(strstr(g_launch_req, "&emu=ps1_netemu.self;/wait.ps3?2;/play.ps3") != NULL);
     CHECK(g_app.exiting && g_app.launched);
-    CHECK(strstr(g_launch_req, "xregistry") == NULL && g_get_calls == 0);   /* Full Screen / Smoothing Off */
     run_frames(0, EXIT_FADE_TIME + 0.3f);
     CHECK(g_app.quit);                                         /* back to the XMB, where webMAN takes over */
     relaunch_reset();
-    /* Flow Settings: PS1/PS2 Full Screen + Smoothing On: set (and read back) before the launch */
-    g_app.settings.emu_full = 1; g_app.settings.emu_smooth = 1;
-    g_get_calls = 0;
-    run_frames(0, 0.2f);
-    tap(SFB_CROSS);
-    /* written in the request once the XMB is back (written earlier, the XMB put its own back) */
-    CHECK(g_launch_calls == 2 &&
-          strncmp(g_launch_req, "/wait.ps3?xmb;/xmb.ps3$xregistry(80)=2;/xmb.ps3$xregistry(81)=1;/mount_ps3/",
-                  strlen("/wait.ps3?xmb;/xmb.ps3$xregistry(80)=2;/xmb.ps3$xregistry(81)=1;/mount_ps3/")) == 0);
-    CHECK(g_get_calls == 2);                                         /* only read (for the log), before */
-    CHECK_STR(g_get_log[0], "/xmb.ps3$xregistry(80)");
-    CHECK_STR(g_get_log[1], "/xmb.ps3$xregistry(81)");
-    relaunch_reset();
-    g_app.settings.emu_full = 0; g_app.settings.emu_smooth = 0;
     /* webMAN not running: a message, and spookyflow stays */
     g_launch_fail = 1;
     run_frames(0, 0.2f);
     tap(SFB_CROSS);
-    CHECK(g_launch_calls == 3 && !g_app.exiting && g_app.toast_t < 0.1f);
+    CHECK(g_launch_calls == 2 && !g_app.exiting && g_app.toast_t < 0.1f);
     g_launch_fail = 0;
     run_frames(0, TOAST_TIME + 0.1f);
 }

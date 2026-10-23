@@ -32,8 +32,6 @@ typedef struct {
     int background;          /* BG_*, default animated */
     int ui_color;            /* UI_COLOR_*, default blue */
     int cases;               /* draw covers inside case images (ManaGunZ's / your own), default 1 */
-    int emu_full;            /* 1 = launch PS1/PS2 games with Full Screen (XMB Upscaler), 0 = leave it, default 0 */
-    int emu_smooth;          /* 1 = launch PS1/PS2 games with Smoothing on, 0 = leave it, default 0 */
     int sleep_min;           /* minutes without input before the screen dims, 0 = never, default 5 */
     int reflections;         /* mirror image of the cases on the floor, default 1 */
     int show_info;           /* genre / players / size chips under the case, default 1 */

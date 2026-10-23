@@ -228,6 +228,22 @@ int main(int argc, char **argv)
     press(SFB_R2); step(0, 0.12f);
     render("08_letter_jump", 1280, 720);
     step(0, 1.2f);
+    {   /* A-Z rail: frames after two quick R2 presses (it glides) */
+        int f;
+        char nm[64];
+        app_select(&g_app, PLAT_PS1, find_title(PLAT_PS1, "Crash Bandicoot"), 0);
+        step(0, 1.3f);
+        press(SFB_R2); step(0, 0.2f);
+        press(SFB_R2);
+        for (f = 0; f < 4; f++) {
+            step(0, f == 0 ? 0.06f : 0.12f);
+            snprintf(nm, sizeof(nm), "36_letter_rail_%d", f);
+            render(nm, 1280, 720);
+        }
+        step(0, 1.2f);
+        app_select(&g_app, PLAT_PS1, find_title(PLAT_PS1, "Crash Bandicoot"), 0);
+        step(0, 0.5f);
+    }
 
     press(SFB_R1); step(0, 0.5f);   /* PS2 */
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Gran Turismo 4"), 0);
@@ -472,6 +488,10 @@ int main(int argc, char **argv)
                         g_app.settings.background = BG_STAGE;
                         render("34_stage_ps2", 1280, 720);
                         render("34_stage_ps2_1080p", 1920, 1080);
+                        press(SFB_R2); step(0, 0.25f);
+                        render("37_letter_rail_stage", 1280, 720);
+                        step(0, 1.2f);
+                        g_app.time = t0;
                         {
                             int uc;
                             for (uc = 0; uc < UI_COLOR_COUNT; uc++) {

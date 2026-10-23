@@ -102,11 +102,6 @@ static int launch_via_webman(const char *request)
     return ps3_webman_send(request);
 }
 
-static int webman_get(const char *cmd, char *resp, size_t cap)
-{
-    return ps3_webman_query(cmd, resp, cap);
-}
-
 static void read_wm_config(WmConfig *cfg)
 {
     unsigned char buf[1024];
@@ -226,7 +221,6 @@ int main(int argc, const char *argv[])
     host.power_off = power_off_via_webman;
     host.launch = launch_via_webman;
     host.read_wm_config = read_wm_config;
-    host.webman_get = webman_get;
     host.covers = ps3_covers_start();
     app_init(&g_app, &g_lib, &host);
 

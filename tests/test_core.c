@@ -481,32 +481,9 @@ static void test_menu(void)
     CHECK(r[1] == ROW_G_EMULATOR && r[2] == ROW_G_OFFLINE && r[3] == ROW_G_PS2CFG);
     CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 2);
     CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_OFFLINE);
-    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 19);
-    {   /* PS1/PS2 Full Screen and Smoothing rows: Off / On */
-        Settings t;
-        GameCfg gg;
-        char vt[32];
-        settings_defaults(&t);
-        memset(&gg, 0, sizeof(gg));
-        CHECK(t.emu_full == 0 && t.emu_smooth == 0);
-        CHECK_STR(menu_label(ROW_F_EMU_FULL), "PS1/PS2 Full Screen");
-        CHECK_STR(menu_label(ROW_F_EMU_SMOOTH), "PS1/PS2 Smoothing");
-        menu_value_text(ROW_F_EMU_FULL, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "Off");
-        CHECK(menu_change(ROW_F_EMU_FULL, 0, 1, &t, &gg) == MENU_FX_CHANGED && t.emu_full == 1);
-        menu_value_text(ROW_F_EMU_FULL, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "On");
-        menu_change(ROW_F_EMU_FULL, 0, 1, &t, &gg);
-        CHECK(t.emu_full == 0);                                          /* only two values */
-        menu_change(ROW_F_EMU_SMOOTH, 0, -1, &t, &gg);
-        menu_value_text(ROW_F_EMU_SMOOTH, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "On");
-        settings_parse_line(&t, "ps_full_screen=1");
-        settings_parse_line(&t, "ps_smoothing_on=0");
-        CHECK(t.emu_full == 1 && t.emu_smooth == 0);
-        settings_parse_line(&t, "ps_screen=3");                          /* the 0.3.1 keys are ignored */
-        CHECK(t.emu_full == 1);
-    }
-    CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_EMU_FULL && r[3] == ROW_F_EMU_SMOOTH && r[4] == ROW_F_SFX && r[8] == ROW_F_UI_COLOR &&
-          r[9] == ROW_F_INFO && r[10] == ROW_F_CASES && r[11] == ROW_F_REFLECT && r[12] == ROW_F_SLEEP &&
-          r[15] == ROW_F_XMB_TOP && r[17] == ROW_F_QUIT && r[18] == ROW_F_POWEROFF);
+    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 17);
+    CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_SFX && r[6] == ROW_F_UI_COLOR && r[7] == ROW_F_INFO && r[8] == ROW_F_CASES && r[9] == ROW_F_REFLECT && r[10] == ROW_F_SLEEP &&
+          r[13] == ROW_F_XMB_TOP && r[15] == ROW_F_QUIT && r[16] == ROW_F_POWEROFF);
     settings_defaults(&s);
     memset(&g, 0, sizeof(g));
     menu_value_text(ROW_G_EMULATOR, PLAT_PS1, &s, &g, v, sizeof(v)); CHECK_STR(v, "Standard");
@@ -934,7 +911,7 @@ static void test_sfo(void)
         g_app.settings.xmb_top = 0;
         run_frames(0, LOAD_MIN_TIME + 1.5f);
         tap(SFB_START);
-        for (i = 0; i < 15; i++) tap(SFB_DOWN);
+        for (i = 0; i < 13; i++) tap(SFB_DOWN);
         CHECK(g_app.rows[g_app.row] == ROW_F_XMB_TOP);
         tap(SFB_CROSS);
         CHECK(g_app.settings.xmb_top == 1);
@@ -1092,6 +1069,12 @@ static void test_app(void)
     /* letter jump shows overlay */
     tap(SFB_R2);
     CHECK(g_app.letter_t < 0.1f && g_app.letter[0] != '\0');
+    CHECK(g_app.letter_prev_bucket == g_app.letter_bucket);          /* first jump: the rail starts on its letter */
+    {   /* a second jump while the rail shows: it glides from the letter it was on */
+        int was = g_app.letter_bucket;
+        tap(SFB_R2);
+        if (g_app.letter_bucket != was) CHECK(g_app.letter_prev_bucket == was);
+    }
     run_frames(0, 1.2f);
     CHECK(g_app.letter_t >= LETTER_TIME);
 
@@ -1122,17 +1105,17 @@ static void test_app(void)
         char key[SET_KEY_MAX];
         sf_strlcpy(key, lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), sizeof(key));
         tap(SFB_START);
-        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 19);
-        for (i = 0; i < 14; i++) tap(SFB_DOWN);
+        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 17);
+        for (i = 0; i < 12; i++) tap(SFB_DOWN);
         CHECK(g_app.rows[g_app.row] == ROW_F_IGNORE_THE);
         tap(SFB_CROSS);
         CHECK(g_app.settings.ignore_the == 1);
         CHECK_STR(lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), key);
         run_frames(0, 0.5f);
-        CHECK(fabsf(g_app.list_scroll.x - 9.0f) < 0.01f);   /* row 15 of 19: scrolled by nine */
+        CHECK(fabsf(g_app.list_scroll.x - 7.0f) < 0.01f);   /* row 13 of 17: scrolled by seven */
         tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN); run_frames(0, 0.5f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
-        CHECK(fabsf(g_app.list_scroll.x - 12.0f) < 0.01f);  /* scrolled to keep row 18 visible */
+        CHECK(fabsf(g_app.list_scroll.x - 10.0f) < 0.01f);  /* scrolled to keep row 16 visible */
         /* the menus ignore the stick, and holding the D-pad moves only one row */
         run_frames(SFB_STICK_UP, 1.0f); run_frames(0, 0.1f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
@@ -1176,7 +1159,7 @@ static void test_app(void)
     app_init(&g_app, &g_lib, &host);
     run_frames(0, LOAD_MIN_TIME + 1.5f);   /* loading screen + intro */
     tap(SFB_START);
-    for (i = 0; i < 19; i++) tap(SFB_DOWN);
+    for (i = 0; i < 17; i++) tap(SFB_DOWN);
     tap(SFB_UP);                                           /* last row is Power off */
     CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
     tap(SFB_CROSS);
@@ -1188,7 +1171,7 @@ static void test_app(void)
     app_init(&g_app, &g_lib, &host);
     run_frames(0, LOAD_MIN_TIME + 1.5f);   /* loading screen + intro */
     tap(SFB_START);
-    for (i = 0; i < 16; i++) tap(SFB_DOWN);
+    for (i = 0; i < 14; i++) tap(SFB_DOWN);
     CHECK(g_app.rows[g_app.row] == ROW_F_RESCAN);
     tap(SFB_CROSS);
     CHECK(g_app.mode == MODE_LOADING && g_app.panel == PANEL_NONE);

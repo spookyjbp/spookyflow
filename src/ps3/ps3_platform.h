@@ -38,8 +38,6 @@ void ps3_load_tab_images(void);
 int ps3_webman_get(const char *command);
 /* send without waiting for the answer (launch requests); 0 = sent */
 int ps3_webman_send(const char *command);
-/* send and keep the text of the answer (for the log); 0 = answered */
-int ps3_webman_query(const char *command, char *out, size_t cap);
 
 /* ps3_audio.c: UI sounds */
 void ps3_load_sounds(void);    /* optional user WAVs; call before ps3_audio_start */
