@@ -946,7 +946,7 @@ static void test_app(void)
     CHECK(g_app.mode == MODE_FLOW);
     CHECK(t >= LOAD_MIN_TIME);                             /* loading never flashes */
     CHECK(!g_lib.tab[PLAT_PS2].demo && g_lib.tab[PLAT_PS2].count == 2);   /* real games shown */
-    run_frames(0, 1.0f);
+    run_frames(0, INTRO_TIME + 0.2f);
     CHECK(g_app.intro == 1.0f);
     sync_n1 = g_lib.tab[PLAT_PS1].count; sync_n3 = g_lib.tab[PLAT_PS3].count;
 
@@ -1116,21 +1116,16 @@ static void test_app(void)
         run_frames(SFB_UP, 1.5f); run_frames(0, 0.1f);
         CHECK(g_app.rows[g_app.row] == ROW_F_RESCAN);
         tap(SFB_DOWN);
-        /* power off needs a second press within the window; moving away cancels */
+        /* power off: one press, no confirmation */
         tap(SFB_DOWN);
         CHECK(g_app.rows[g_app.row] == ROW_F_POWEROFF);
-        tap(SFB_CROSS);
-        CHECK(!g_app.poweroff && !g_app.exiting && g_app.poweroff_arm > 0.0f);
-        run_frames(0, POWEROFF_CONFIRM_TIME + 0.2f);
-        CHECK(g_app.poweroff_arm == 0.0f);
-        tap(SFB_CROSS); tap(SFB_UP); tap(SFB_DOWN);
-        CHECK(g_app.poweroff_arm == 0.0f);
         /* without a power-off provider (no webMAN): nothing happens but a message */
         g_app.host.power_off = NULL;
-        tap(SFB_CROSS); tap(SFB_CROSS);
+        tap(SFB_CROSS);
         CHECK(!g_app.poweroff && !g_app.exiting && g_app.toast_t < 0.1f);
         g_app.host.power_off = power_off_ok;
-        tap(SFB_CROSS); tap(SFB_CROSS);
+        run_frames(0, 0.2f);
+        tap(SFB_CROSS);
         CHECK(g_app.poweroff && g_app.exiting && g_power_off_calls == 1);
         run_frames(0, EXIT_FADE_TIME + 0.2f);
         CHECK(g_app.quit);

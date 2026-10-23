@@ -36,8 +36,8 @@ only logs the launch (real launching through webMAN is milestone 3).
 - Flow Settings → **Offline mode** sets offline mode for every PS2/PS3 game; a game's own
   Offline mode setting can still override it (Default / On / Off).
 - Flow Settings → **Power Off PS3** turns the console off cleanly through webMAN MOD
-  (its `/shutdown.ps3` command, same as the XMB's Turn Off System). Press ✖ twice;
-  moving away cancels. If webMAN MOD isn't running, nothing happens and a message says so.
+  (its `/shutdown.ps3` command, same as the XMB's Turn Off System). One press of ✖.
+  If webMAN MOD isn't running, nothing happens and a message says so.
 - Flow Settings → **UI Color**: Blue, Red, Green, Purple, Pink, Orange or White.
 - Flow Settings → **Sound Effects** is a volume slider (0% = off).
 - In both Settings menus only the D-pad is used, one step per press.
@@ -340,7 +340,10 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 25 (0.2.25):** the big bokeh orbs are removed from Stage.
+15. **Fix 26 (0.2.26):** Power Off PS3 works on one press; the loading screen
+    cross-fades smoothly into the cover flow (keeping its own background while
+    it fades); the Stage ribbons never dip below the horizon.
+    **Fix 25 (0.2.25):** the big bokeh orbs are removed from Stage.
     **Fix 24 (0.2.24):** the star gliding along the Stage horizon is removed.
     **Fix 23 (0.2.23):** comets removed from Stage.
     **Fix 22 (0.2.22):** Stage particles move one by one (sparks, glow dots,

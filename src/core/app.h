@@ -12,13 +12,12 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.2.25 (milestone 2, fix 25)"
+#define APP_VERSION     "0.2.26 (milestone 2, fix 26)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
-#define POWEROFF_CONFIRM_TIME 3.0f   /* seconds to press ✖ a second time */
 #define RESCAN_MIN_TIME 1.2f    /* "Rescan library" has no video mode switch */
-#define INTRO_TIME      0.40f   /* loading -> flow cross-fade */
+#define INTRO_TIME      1.10f   /* loading -> flow cross-fade */
 #define TAB_ANIM_TIME   0.30f
 #define PANEL_ANIM_TIME 0.20f
 #define XFADE_TIME      0.18f
@@ -131,7 +130,6 @@ typedef struct {
     int exiting;
     int quit;               /* host should leave the main loop */
     int poweroff;           /* ...and then power the console off */
-    float poweroff_arm;     /* >0: "press ✖ again" window (seconds left) */
 
     /* sleep: after SLEEP_TIME without input the screen fades to black; any
      * button wakes it, and that press does nothing else */

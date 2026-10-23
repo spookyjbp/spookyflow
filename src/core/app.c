@@ -425,20 +425,14 @@ static void apply_fx(App *a, RowKind k, int fx)
     case MENU_FX_QUIT:
         app_request_exit(a, "Quit to XMB row");
         break;
-    case MENU_FX_POWEROFF:
-        if (a->poweroff_arm > 0.0f) {
-            a->poweroff_arm = 0.0f;
-            app_save(a);
-            if (a->host.power_off && a->host.power_off() == 0) {
-                a->poweroff = 1;
-                app_request_exit(a, "Power off PS3 row");
-            } else {
-                log_printf("power off: not available");
-                app_show_toast(a, "Power off needs webMAN MOD running");
-            }
+    case MENU_FX_POWEROFF:      /* one press: no confirmation */
+        app_save(a);
+        if (a->host.power_off && a->host.power_off() == 0) {
+            a->poweroff = 1;
+            app_request_exit(a, "Power off PS3 row");
         } else {
-            a->poweroff_arm = POWEROFF_CONFIRM_TIME;
-            app_show_toast(a, "Press again to power off");
+            log_printf("power off: not available");
+            app_show_toast(a, "Power off needs webMAN MOD running");
         }
         break;
     case MENU_FX_COVERS_STUB:
@@ -476,7 +470,6 @@ static void panel_input(App *a)
         if (in->pressed & SFB_DOWN) a->row = sf_clampi(a->row + 1, 0, a->nrows - 1);
         if (a->row != before) sound_play(SND_MOVE);
     }
-    if (in->pressed & (SFB_UP | SFB_DOWN)) a->poweroff_arm = 0.0f;
     k = a->rows[a->row];
     if (a->panel == PANEL_DISC) {
         if (in->pressed & SFB_CROSS) { launch_disc(a, a->row); app_close_panel(a); }
@@ -663,10 +656,6 @@ void app_update(App *a, uint32_t held, float dt)
     sound_set_enabled(a->settings.sfx_volume > 0);
     sound_set_volume((float)a->settings.sfx_volume / 100.0f);
     if (a->mode == MODE_LOADING) { loading_update(a, dt); return; }
-    if (a->poweroff_arm > 0.0f) {
-        a->poweroff_arm -= dt;
-        if (a->poweroff_arm < 0.0f || a->panel == PANEL_NONE) a->poweroff_arm = 0.0f;
-    }
 
     /* evaluated BEFORE handling this frame's input, so a ◯ press that closes a
      * panel cannot arm the exit hold */

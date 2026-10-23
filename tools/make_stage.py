@@ -70,7 +70,7 @@ if rib_src:
     hot = 255.0 * np.clip((_a.min(axis=2) - _rgb.min(axis=2) - 70.0) / 130.0, 0, 1) ** 1.2
     H0, W0 = body.shape
     sky = int(round(H0 * 0.627))                        # LY_HORIZON_Y
-    fade = np.clip((sky - np.arange(H0)) / (H0 * 0.03), 0, 1)[:, None]
+    fade = np.clip((sky - np.arange(H0)) / (H0 * 0.08), 0, 1)[:, None] ** 1.5   # tips fade out well above the horizon
     body, hot = (body * fade)[:sky], (hot * fade)[:sky]
     xs = np.arange(W0) / W0
     wl = np.clip((0.6 - xs) / 0.2, 0, 1)[None, :]

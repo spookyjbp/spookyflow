@@ -400,7 +400,8 @@ static void bg_stage(float t, float alpha)
             float w = W() * (1.0f - STAGE_RIB_SPLIT) * sx, h = hy * sy;
             float cx = W() * (0.5f + sgn * (0.5f - (1.0f - STAGE_RIB_SPLIT) * 0.5f)) + sgn * W() * 0.01f
                        + W() * 0.012f * sinf(t * 0.05f + ph);
-            float cy = hy - h * 0.5f + H() * 0.015f * sinf(t * 0.09f + ph * 1.4f);
+            /* bob only upward, and kept clear of the horizon even when tilted */
+            float cy = hy - h * 0.5f - H() * (0.022f + 0.012f * (1.0f + sinf(t * 0.09f + ph * 1.4f)));
             float ang = sgn * 0.015f * sinf(t * 0.07f + ph);
             float al = alpha * (0.80f + 0.20f * sinf(t * 0.21f + ph));
             float u0 = (float)i * 0.5f;
@@ -464,10 +465,15 @@ static void bg_stage(float t, float alpha)
     }
 }
 
+static void draw_background_as(const App *a, float alpha, int animated, int bg);
 static void draw_background(const App *a, float alpha, int animated)
 {
+    draw_background_as(a, alpha, animated, a->mode == MODE_LOADING ? BG_ANIMATED : a->settings.background);
+}
+
+static void draw_background_as(const App *a, float alpha, int animated, int bg)
+{
     float t = animated ? (float)a->time : 0.0f;
-    int bg = a->mode == MODE_LOADING ? BG_ANIMATED : a->settings.background;
     d_rect_grad(0, 0, W(), H(), sf_col_alpha(TH_BG_TOP, alpha), sf_col_alpha(TH_BG_BOTTOM, alpha));
     if (bg == BG_IMAGE) {
         if (g_bg_tex >= 0) {
@@ -1222,7 +1228,7 @@ void ui_draw(App *a)
         draw_loading(a, 1.0f);
     } else {
         intro = ease_out_cubic(a->intro);
-        ia = sf_clampf(a->intro * 1.6f - 0.2f, 0.0f, 1.0f);
+        ia = ease_in_out(sf_clampf(a->intro * 1.4f - 0.25f, 0.0f, 1.0f));   /* UI fades in as the loading screen fades out */
         /* tabs */
         draw_tabs(a, ia, -(1.0f - intro) * 0.05f * H());
         /* cover rows (tab switch: old slides out, new slides in) */
@@ -1243,10 +1249,12 @@ void ui_draw(App *a)
         draw_letter(a);
         draw_toast(a);
         if (a->intro < 1.0f) {
-            /* loading screen cross-fades out on top */
-            float la = 1.0f - intro;
-            draw_background(a, la, 1);
-            draw_loading(a, la);
+            /* the loading screen (with its own background) cross-fades out on top */
+            float la = 1.0f - ease_in_out(sf_clampf(a->intro * 1.25f, 0.0f, 1.0f));
+            if (la > 0.0f) {
+                draw_background_as(a, la, 1, BG_ANIMATED);
+                draw_loading(a, la);
+            }
         }
     }
     if (a->exit_fade > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(TH_FADE, ease_in_out(a->exit_fade)));
