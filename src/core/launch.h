@@ -10,6 +10,13 @@
  *        [&emu=<emulator>.self]        PS1/PS2 emulator
  *   ;/wait.ps3?2;/play.ps3             start the disc icon (Auto-play)
  *
+ * PS1/PS2 display options go first, set in the system registry through
+ * webMAN (include/cmd/xmb_browser.h): /xmb.ps3$xregistry(80)=<n> is the XMB's
+ * Game Settings "Upscaler" (/setting/game/emuUpConvert: 0 Off, 1 Normal,
+ * 2 Full Screen) and /xmb.ps3$xregistry(81)=<n> its "Smoothing"
+ * (/setting/game/emuSmoothing: 0 Off, 1 On). They are system settings: they
+ * stay as set after the game. (Not in webMAN's Lite edition.)
+ *
  * Verified against the webMAN MOD source (include/cmd/mount_copy.h,
  * include/mount/mount.h, include/cmd/wait.h, include/www/www_client.h):
  * - the query must start with "?random=" (webMAN strips it); "offline=" has
@@ -51,6 +58,8 @@ typedef struct {
     int autoplay;       /* start the game, not only mount it */
     int offline;        /* PS2/PS3: network off while it runs */
     int emulator;       /* PS1: 0 Standard (ps1_emu), 1 Netemu; PS2: 0 Default, 1 Netemu */
+    int emu_screen;     /* PS1/PS2: EMU_SCREEN_* (settings.h), 0 = leave the system setting */
+    int emu_smooth;     /* PS1/PS2: EMU_SMOOTH_*, 0 = leave the system setting */
 } LaunchReq;
 
 /* Build the request. wm may be NULL (treated as not valid). Returns 0, or -1

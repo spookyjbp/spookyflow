@@ -939,6 +939,24 @@ static void test_launch(void)
     r.plat = PLAT_PS3; r.path = "/dev_hdd0/GAMES/BLES00932-[Demon]"; r.autoplay = 1;
     CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
     CHECK(strstr(out, ";/mount_ps3/dev_hdd0/GAMES/BLES00932-%5BDemon%5D?random=0;") != NULL);
+    /* PS1/PS2 Screen + Smoothing: set in the registry first (Upscaler id 80, Smoothing id 81) */
+    memset(&r, 0, sizeof(r));
+    r.plat = PLAT_PS2; r.path = "/dev_hdd0/PS2ISO/Okami.iso"; r.emu_screen = EMU_SCREEN_FULL; r.emu_smooth = EMU_SMOOTH_ON;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK(strncmp(out, "/xmb.ps3$xregistry(80)=2;/xmb.ps3$xregistry(81)=1;/wait.ps3?xmb;/mount_ps3/dev_hdd0/PS2ISO/Okami.iso", strlen("/xmb.ps3$xregistry(80)=2;/xmb.ps3$xregistry(81)=1;/wait.ps3?xmb;/mount_ps3/dev_hdd0/PS2ISO/Okami.iso")) == 0);
+    r.emu_screen = EMU_SCREEN_OFF; r.emu_smooth = EMU_SMOOTH_OFF;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK(strncmp(out, "/xmb.ps3$xregistry(80)=0;/xmb.ps3$xregistry(81)=0;/wait.ps3?xmb;", strlen("/xmb.ps3$xregistry(80)=0;/xmb.ps3$xregistry(81)=0;/wait.ps3?xmb;")) == 0);
+    r.plat = PLAT_PS1; r.path = "/dev_hdd0/PSXISO/Crash.bin"; r.emu_screen = EMU_SCREEN_NORMAL; r.emu_smooth = EMU_SMOOTH_DEFAULT;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK(strncmp(out, "/xmb.ps3$xregistry(80)=1;/wait.ps3?xmb;", strlen("/xmb.ps3$xregistry(80)=1;/wait.ps3?xmb;")) == 0 && strstr(out, "(81)") == NULL);
+    r.emu_screen = EMU_SCREEN_DEFAULT;                               /* Default: the system setting is left alone */
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0 && strstr(out, "xregistry") == NULL);
+    r.plat = PLAT_PS3; r.path = "/dev_hdd0/PS3ISO/X.iso"; r.emu_screen = EMU_SCREEN_FULL; r.emu_smooth = EMU_SMOOTH_ON;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0 && strstr(out, "xregistry") == NULL);   /* PS3 games: not used */
+    r.emu_screen = 9; r.emu_smooth = -3; r.plat = PLAT_PS2;          /* out of range: ignored */
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0 && strstr(out, "xregistry") == NULL);
+    memset(&r, 0, sizeof(r)); r.autoplay = 1;
     /* bad input */
     r.path = ""; CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1 && out[0] == '\0');
     r.path = "relative.iso"; CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1);
@@ -980,14 +998,22 @@ static void test_launch_app(void)
     CHECK(g_launch_calls == 1);
     CHECK(strstr(g_launch_req, "&emu=ps1_netemu.self;/wait.ps3?2;/play.ps3") != NULL);
     CHECK(g_app.exiting && g_app.launched);
+    CHECK(strstr(g_launch_req, "xregistry") == NULL);               /* Screen / Smoothing are Default */
     run_frames(0, EXIT_FADE_TIME + 0.3f);
     CHECK(g_app.quit);                                         /* back to the XMB, where webMAN takes over */
     relaunch_reset();
+    /* Flow Settings: PS1/PS2 Screen = Full Screen, Smoothing = On go with the launch */
+    g_app.settings.emu_screen = EMU_SCREEN_FULL; g_app.settings.emu_smooth = EMU_SMOOTH_ON;
+    run_frames(0, 0.2f);
+    tap(SFB_CROSS);
+    CHECK(g_launch_calls == 2 && strncmp(g_launch_req, "/xmb.ps3$xregistry(80)=2;/xmb.ps3$xregistry(81)=1;/wait.ps3?xmb;", strlen("/xmb.ps3$xregistry(80)=2;/xmb.ps3$xregistry(81)=1;/wait.ps3?xmb;")) == 0);
+    relaunch_reset();
+    g_app.settings.emu_screen = EMU_SCREEN_DEFAULT; g_app.settings.emu_smooth = EMU_SMOOTH_DEFAULT;
     /* webMAN not running: a message, and spookyflow stays */
     g_launch_fail = 1;
     run_frames(0, 0.2f);
     tap(SFB_CROSS);
-    CHECK(g_launch_calls == 2 && !g_app.exiting && g_app.toast_t < 0.1f);
+    CHECK(g_launch_calls == 3 && !g_app.exiting && g_app.toast_t < 0.1f);
     g_launch_fail = 0;
     run_frames(0, TOAST_TIME + 0.1f);
 }

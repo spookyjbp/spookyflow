@@ -100,6 +100,8 @@ void settings_parse_line(Settings *s, const char *line_in)
     else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_BLUE);
     else if (strcmp(key, "reflections") == 0) s->reflections = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "custom_cases") == 0) s->cases = parse_int(val, 0, 1, 1);
+    else if (strcmp(key, "ps_screen") == 0) s->emu_screen = parse_int(val, 0, EMU_SCREEN_COUNT - 1, 0);
+    else if (strcmp(key, "ps_smoothing") == 0) s->emu_smooth = parse_int(val, 0, EMU_SMOOTH_COUNT - 1, 0);
     else if (strcmp(key, "sleep_minutes") == 0) s->sleep_min = parse_int(val, 0, 60, 5);
     else if (strcmp(key, "show_game_info") == 0) s->show_info = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "ignore_the") == 0) s->ignore_the = parse_int(val, 0, 1, 0);
@@ -144,6 +146,8 @@ int settings_save(const Settings *s, const char *path)
     fprintf(f, "ui_color=%d\n", s->ui_color);
     fprintf(f, "custom_cases=%d\n", s->cases);
     fprintf(f, "reflections=%d\n", s->reflections);
+    fprintf(f, "ps_screen=%d\n", s->emu_screen);
+    fprintf(f, "ps_smoothing=%d\n", s->emu_smooth);
     fprintf(f, "sleep_minutes=%d\n", s->sleep_min);
     fprintf(f, "show_game_info=%d\n", s->show_info);
     fprintf(f, "ignore_the=%d\n", s->ignore_the);

@@ -520,6 +520,8 @@ static void launch_disc(App *a, int disc)
     req.autoplay = settings_autoplay_effective(&a->settings, &c);
     req.offline = a->tab != PLAT_PS1 && settings_offline_effective(&a->settings, &c);
     req.emulator = c.emulator;
+    req.emu_screen = a->settings.emu_screen;
+    req.emu_smooth = a->settings.emu_smooth;
     memset(&wm, 0, sizeof(wm));
     if (a->host.read_wm_config) a->host.read_wm_config(&wm);
     if (launch_build(&req, &wm, cmd, sizeof(cmd)) != 0) {

@@ -137,7 +137,9 @@ the cover flow.
 They are applied when the game is launched (see *Launching*). The RSX clock
 row was removed in milestone 3; overclocking may come back later.
 
-**Flow Settings (START)** — Auto-play (global, default Off), Music volume,
+**Flow Settings (START)** — Auto-play (global, default Off), Offline mode,
+PS1/PS2 Screen (Default / Off / Normal / Full Screen), PS1/PS2 Smoothing
+(Default / On / Off), Music volume,
 Shuffle music, Background (Animated / Image), Download missing covers (stub),
 Ignore “The” when sorting, Rescan library, Quit to XMB.
 
@@ -290,6 +292,17 @@ spookyflow sends one request to webMAN (`http://127.0.0.1/`, built in
   the file can't be read).
 - **Auto-play** on: `/play.ps3` starts the disc icon. Off: the game is only
   mounted and waits on the XMB's disc icon.
+- **PS1/PS2 Screen** and **PS1/PS2 Smoothing** (Flow Settings): for PS1 and
+  PS2 games, spookyflow first sets the XMB's Game Settings "Upscaler"
+  (`/xmb.ps3$xregistry(80)=` 0 Off / 1 Normal / 2 Full Screen) and
+  "Smoothing" (`/xmb.ps3$xregistry(81)=` 0 Off / 1 On) through webMAN.
+  **Default** leaves the system setting as it is. These are system settings,
+  so they stay as set after the game (the same as changing them in the XMB).
+  The Upscaler numbers follow the XMB's order and are worth a check on a
+  console; they need webMAN's full edition (not Lite).
+
+If webMAN's **Admin mode** is turned on (it is off by default), webMAN
+refuses some of these commands from apps; leave it off for spookyflow.
 
 Notes (from webMAN MOD's source): `offline=` must come before `emu=`, and
 `emu=` also changes webMAN's default emulator until the next boot, which is
@@ -374,7 +387,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Milestone 3 (0.3.0):** games launch through webMAN MOD (mount at the
+15. **0.3.1:** Flow Settings → PS1/PS2 Screen and PS1/PS2 Smoothing, applied
+    when a PS1/PS2 game is launched.
+    **Milestone 3 (0.3.0):** games launch through webMAN MOD (mount at the
     XMB, then play), with per-game Auto-play, emulator and offline mode; the
     RSX clock row is removed.
     **Fix 30 (0.2.30):** the release-year sources (GameDB table, disc dates) are
