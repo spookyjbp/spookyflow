@@ -185,11 +185,7 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
     }
     if (art > 0.0f) d_image(tex, win.x, win.y, win.w, win.h, shade(0xFFFFFFFFu, b, alpha * art));
     if (cased) d_image(g_case_tex[plat], x, y, w, h, shade(0xFFFFFFFFu, b, alpha));   /* plastic + gloss over the art */
-    /* the selected game gets an outline in the UI color (it follows the
-     * selection while scrolling: outline = 1 at the center, 0 a step away) */
-    if (outline > 0.0f)
-        d_rrect_stroke(x, y, w, h, h * (cased ? 0.020f : 0.008f), H() * 0.0045f,
-                       sf_col_alpha(glow(accent_or(0xFFFFFFE0u, 1.0f)), alpha * outline));
+    (void)outline;
 }
 
 /* Draw one tab's cover row. xoff = horizontal slide (logical), alpha = fade. */
@@ -202,6 +198,26 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     if (gl->count <= 0) {
         d_text(&g_font_main, W() * 0.5f + xoff, H() * LY_FLOW_CY, H() * 0.03f, sf_col_alpha(TH_TEXT_DIM, alpha), "No games", ALIGN_CENTER);
         return;
+    }
+    /* a soft line in the UI color under the selected case: brightest in the
+     * middle and fading out at both ends, glowing with the outlines */
+    {
+        CoverPos c0;
+        float frac = sf_absf(scroll - (float)center);
+        float la = alpha * (1.0f - sf_minf(1.0f, frac * 2.0f) * 0.6f);
+        layout_cover(s, tab, 0.0f, &c0);
+        if (la > 0.0f) {
+            uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
+            float lw = c0.w * 1.15f, cx = c0.cx + xoff, ly = c0.cy + c0.h * 0.5f + H() * 0.022f;
+            float th = H() * 0.0040f, gh = H() * 0.016f;
+            uint32_t core = sf_col_alpha(glow(col), la), haze = sf_col_alpha(glow(col), la * 0.22f);
+            /* haze */
+            d_rect_hgrad(cx - lw * 0.5f, ly - gh * 0.5f, lw * 0.5f, gh, clear, haze);
+            d_rect_hgrad(cx, ly - gh * 0.5f, lw * 0.5f, gh, haze, clear);
+            /* core line */
+            d_rect_hgrad(cx - lw * 0.5f, ly - th * 0.5f, lw * 0.5f, th, clear, core);
+            d_rect_hgrad(cx, ly - th * 0.5f, lw * 0.5f, th, core, clear);
+        }
     }
     for (k = LY_MAX_DRAW; k >= 0; k--) {
         int side;

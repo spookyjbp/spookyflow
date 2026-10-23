@@ -215,7 +215,7 @@ int main(int argc, char **argv)
     press(SFB_CIRCLE); step(0, 0.4f);
 
     press(SFB_CROSS); step(0, 0.4f);
-    render("12_launch_toast", 1280, 720);
+    render("12_after_launch", 1280, 720);
     step(0, 2.5f);
 
     /* hold circle ~half way */

@@ -506,8 +506,8 @@ static void launch_disc(App *a, int disc)
                k_plat_name[a->tab], name, path, id[0] ? id : "-",
                settings_autoplay_effective(&a->settings, &c) ? "on" : "off", c.emulator, settings_offline_effective(&a->settings, &c), c.rsx);
     sound_play(SND_CONFIRM);
-    snprintf(msg, sizeof(msg), "Launch: %s", name);
-    app_show_toast(a, msg);
+    (void)msg;
+    sf_strlcpy(a->last_launch, name, sizeof(a->last_launch));   /* no pop-up on launch */
 }
 
 static void launch(App *a)

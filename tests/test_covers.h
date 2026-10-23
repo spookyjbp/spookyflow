@@ -835,7 +835,7 @@ static void test_multi_disc(void)
     g_app.tab = PLAT_PS1;
     app_select(&g_app, PLAT_PS1, idx_of(PLAT_PS1, "Crash Bandicoot"), 0);
     tap(SFB_CROSS);
-    CHECK(g_app.panel == PANEL_NONE && strstr(g_app.toast, "Crash Bandicoot") != NULL);   /* single disc: launches */
+    CHECK(g_app.panel == PANEL_NONE && strstr(g_app.last_launch, "Crash Bandicoot") != NULL);   /* single disc: launches */
     run_frames(0, 0.3f);
     app_select(&g_app, PLAT_PS1, idx_of(PLAT_PS1, "Final Fantasy VII"), 0);
     tap(SFB_CROSS);
@@ -843,7 +843,7 @@ static void test_multi_disc(void)
     ui_draw(&g_app);
     tap(SFB_DOWN);
     tap(SFB_CROSS);
-    CHECK(strstr(g_app.toast, "Final Fantasy VII (Disc 2)") != NULL);
+    CHECK(strstr(g_app.last_launch, "Final Fantasy VII (Disc 2)") != NULL);
     run_frames(0, 0.5f);
     CHECK(g_app.panel == PANEL_NONE);
     tap(SFB_CROSS); tap(SFB_CIRCLE); run_frames(0, 0.5f);   /* ◯ backs out without launching */

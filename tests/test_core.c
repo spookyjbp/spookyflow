@@ -1029,9 +1029,11 @@ static void test_app(void)
     run_frames(0, 1.2f);
     CHECK(g_app.letter_t >= LETTER_TIME);
 
-    /* launch toast */
+    /* launch: no pop-up, but the launch is recorded */
+    g_app.toast_t = TOAST_TIME;
+    g_app.last_launch[0] = '\0';
     tap(SFB_CROSS);
-    CHECK(strncmp(g_app.toast, "Launch: ", 8) == 0);
+    CHECK(g_app.last_launch[0] != '\0' && g_app.toast_t >= TOAST_TIME);
 
     /* game settings panel; ◯ closes it and must NOT arm the exit hold */
     tap(SFB_TRIANGLE);

@@ -12,7 +12,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.2.8 (milestone 2, fix 8)"
+#define APP_VERSION     "0.2.9 (milestone 2, fix 9)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -114,6 +114,7 @@ typedef struct {
     char letter[4];
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
     char toast[160];
+    char last_launch[160];  /* name of the last game/disc launched (no pop-up is shown) */
     float toast_t;          /* seconds since shown */
 
     /* exit */
