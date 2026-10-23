@@ -82,6 +82,21 @@ static int g_accent = UI_COLOR_BLUE;
 void ui_set_color(int idx) { g_accent = (idx >= 0 && idx < UI_COLOR_COUNT) ? idx : UI_COLOR_WHITE; }
 static int accent_white(void) { return g_accent == UI_COLOR_WHITE; }
 static uint32_t accent(void) { return k_accent[g_accent]; }
+
+/* All outlines breathe together: a slow, gentle glow (brighter and more
+ * opaque at the peak), one cycle every OUTLINE_PULSE_PERIOD seconds. */
+#define OUTLINE_PULSE_PERIOD 4.0f
+static float g_glow = 1.0f;
+static void set_glow(double time)
+{
+    float ph = (float)fmod(time, (double)OUTLINE_PULSE_PERIOD) / OUTLINE_PULSE_PERIOD;
+    g_glow = 0.5f - 0.5f * cosf(ph * 2.0f * PI_F);       /* 0..1, smooth */
+}
+static uint32_t glow(uint32_t c)
+{
+    uint32_t lit = sf_col_mix(c, (c & 0xFFFFFF00u) == 0 ? c : (0xFFFFFF00u | (c & 255u)), 0.22f * g_glow);
+    return sf_col_alpha(lit, 0.50f + 0.50f * g_glow);
+}
 /* accent at a given strength, or the original white at the original strength */
 static uint32_t accent_or(uint32_t white_col, float color_alpha)
 {
@@ -174,7 +189,7 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
      * selection while scrolling: outline = 1 at the center, 0 a step away) */
     if (outline > 0.0f)
         d_rrect_stroke(x, y, w, h, h * (cased ? 0.020f : 0.008f), H() * 0.0045f,
-                       sf_col_alpha(accent_or(0xFFFFFFE0u, 1.0f), alpha * outline));
+                       sf_col_alpha(glow(accent_or(0xFFFFFFE0u, 1.0f)), alpha * outline));
 }
 
 /* Draw one tab's cover row. xoff = horizontal slide (logical), alpha = fade. */
@@ -253,7 +268,7 @@ static void draw_tabs(const App *a, float alpha, float yoff)
     }
     /* active tab: an outline in the UI color (the pill itself stays dark) */
     d_rrect_stroke(hx - hw * 0.5f, y - m.tab_h * 0.5f, hw, m.tab_h, m.tab_h * 0.5f, 0.0040f * H(),
-                   sf_col_alpha(accent_or(TH_TAB_ACTIVE, 1.0f), alpha));
+                   sf_col_alpha(glow(accent_or(TH_TAB_ACTIVE, 1.0f)), alpha));
     for (i = 0; i < PLAT_COUNT; i++) {
         float k = 1.0f - sf_minf(1.0f, sf_absf(hl - (float)i));
         uint32_t tc = sf_col_mix(TH_TEXT_DIM, TH_TEXT, k);
@@ -328,7 +343,7 @@ static void draw_chips(const App *a, int tab, int idx, float alpha, const UiMetr
     for (i = 0; i < n; i++) {
         d_rrect(x, m->chips_y - m->chip_h * 0.5f, w[i], m->chip_h, m->chip_h * 0.5f, sf_col_alpha(TH_CHIP, alpha));
         d_rrect_stroke(x, m->chips_y - m->chip_h * 0.5f, w[i], m->chip_h, m->chip_h * 0.5f, 0.0028f * H(),
-                       sf_col_alpha(accent_or(0xFFFFFF59u, 0.85f), alpha));
+                       sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), alpha));
         d_text(&g_font_main, x + w[i] * 0.5f, m->chips_y, m->chip_em, sf_col_alpha(TH_TEXT_DIM, alpha), txt[i], ALIGN_CENTER);
         x += w[i] + d_xu(m->chip_gap);
     }
@@ -395,7 +410,7 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
     if (cur[0]) {
         d_rrect(W() * 0.5f - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f, sf_col_alpha(TH_CHIP, alpha));
         d_rrect_stroke(W() * 0.5f - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f,
-                       0.0028f * H(), sf_col_alpha(accent_or(0xFFFFFF59u, 0.85f), alpha));
+                       0.0028f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), alpha));
     }
     /* clip text to the (animating) pill so a wide old title never spills out */
     maxw = sf_minf(maxw, pw - 2.0f * pad * 0.6f);
@@ -497,7 +512,7 @@ static void draw_bar(const App *a, float alpha)
     ui_bar_layout(a->panel == PANEL_DISC ? 2 : 1, &panel_l);
     d_rrect(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, sf_col_alpha(TH_BAR, alpha));
     d_rrect_stroke(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, 0.0028f * H(),
-                   sf_col_alpha(accent_or(0xFFFFFF59u, 0.85f), alpha));
+                   sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), alpha));
     if (pe < 1.0f) draw_bar_groups(a, &main_l, alpha * (1.0f - pe), 1);
     if (pe > 0.0f) draw_bar_groups(a, &panel_l, alpha * pe, 0);
 }
@@ -541,7 +556,7 @@ static void draw_panel(App *a)
     g = per_game ? &a->lib->tab[a->panel_plat].games[a->panel_game] : NULL;
 
     d_rrect(px, py, pw, ph, 0.05f * H(), sf_col_alpha(TH_PANEL, e));
-    d_rrect_stroke(px, py, pw, ph, 0.05f * H(), 0.0035f * H(), sf_col_alpha(accent_or(0xFFFFFF80u, 0.95f), e));
+    d_rrect_stroke(px, py, pw, ph, 0.05f * H(), 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), e));
     d_text(&g_font_main, ix + d_xu(rh * 0.3f), py + pad + th * 0.45f, 0.034f * H() * sc, sf_col_alpha(TH_TEXT, e),
            ptitle, ALIGN_LEFT);
     if (g) {
@@ -619,20 +634,18 @@ static void draw_panel(App *a)
 
 static void draw_letter(const App *a)
 {
-    float t = a->letter_t, al, sc, sz;
+    float t = a->letter_t, al, sc, sz = 0.0f;
     if (t >= LETTER_TIME || !a->letter[0]) return;
     al = t < 0.35f ? 1.0f : 1.0f - (t - 0.35f) / (LETTER_TIME - 0.35f);
     sc = 0.85f + 0.15f * ease_out_back(sf_minf(1.0f, t / 0.22f));
-    sz = 0.24f * H() * sc;
+    (void)sz;
     {
-        /* matches the UI color: tinted box, colored outline and letter */
-        uint32_t box = accent_white() ? TH_LETTER_BOX : sf_col_mix(TH_LETTER_BOX, accent() | 0xFFu, 0.22f);
+        /* just the letter, in the UI color; a soft dark shadow keeps it
+         * readable over bright covers */
         uint32_t txt = accent_white() ? TH_TEXT : sf_col_mix(accent() | 0xFFu, 0xFFFFFFFFu, 0.30f);
-        d_rrect(W() * 0.5f - d_xu(sz) * 0.5f, H() * LY_FLOW_CY - sz * 0.5f, d_xu(sz), sz, 0.05f * H() * sc,
-                sf_col_alpha(box | 0xFFu, al * (float)(TH_LETTER_BOX & 255u) / 255.0f));
-        d_rrect_stroke(W() * 0.5f - d_xu(sz) * 0.5f, H() * LY_FLOW_CY - sz * 0.5f, d_xu(sz), sz, 0.05f * H() * sc, 0.0035f * H(),
-                       sf_col_alpha(accent_or(TH_PANEL_OUTLINE, 0.95f), al));
-        d_text(&g_font_big, W() * 0.5f, H() * LY_FLOW_CY, 0.16f * H() * sc, sf_col_alpha(txt, al), a->letter, ALIGN_CENTER);
+        float em = 0.20f * H() * sc, off = 0.006f * H();
+        d_text(&g_font_big, W() * 0.5f + d_xu(off), H() * LY_FLOW_CY + off, em, sf_col_alpha(0x000000A0u, al), a->letter, ALIGN_CENTER);
+        d_text(&g_font_big, W() * 0.5f, H() * LY_FLOW_CY, em, sf_col_alpha(txt, al), a->letter, ALIGN_CENTER);
     }
 }
 
@@ -645,7 +658,7 @@ static void draw_toast(const App *a)
     w = sf_minf(d_text_width(&g_font_main, em, a->toast) + d_xu(h * 1.2f), W() * 0.7f);
     y = H() * 0.868f - (1.0f - ease_out_cubic(sf_minf(1.0f, t / 0.2f))) * 0.01f * H();
     d_rrect(W() * 0.5f - w * 0.5f, y - h * 0.5f, w, h, h * 0.5f, sf_col_alpha(TH_TOAST, al));
-    d_rrect_stroke(W() * 0.5f - w * 0.5f, y - h * 0.5f, w, h, h * 0.5f, 0.0018f * H(), sf_col_alpha(TH_PANEL_OUTLINE, al));
+    d_rrect_stroke(W() * 0.5f - w * 0.5f, y - h * 0.5f, w, h, h * 0.5f, 0.0025f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), al));
     d_text_fit(&g_font_main, W() * 0.5f, y, em, sf_col_alpha(TH_TEXT, al), a->toast, ALIGN_CENTER, w - d_xu(h));
 }
 
@@ -699,6 +712,7 @@ void ui_draw(App *a)
     float intro, ia;
     int animated = a->settings.background == BG_ANIMATED || a->mode == MODE_LOADING;
     ui_set_color(a->settings.ui_color);
+    set_glow(a->time);
     layout_use_case_images(a->settings.cases);
     layout_ui(d_screen(), &m);
     draw_background(a, 1.0f, animated);

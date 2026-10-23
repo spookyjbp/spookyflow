@@ -285,7 +285,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 7 (0.2.7):** more multi-disc names grouped (see Multi-disc games);
+15. **Fix 8 (0.2.8):** the A–Z letter is just the letter (no box); all UI
+    outlines glow slowly together (a 4-second breathing cycle).
+    **Fix 7 (0.2.7):** more multi-disc names grouped (see Multi-disc games);
     only the selected case has the UI-color outline; Game Settings, Flow
     Settings and Choose Disc have it too. **Fix 6 (0.2.6):** ManaGunZ's covers folder is no longer searched.
     **Fix 5 (0.2.5):** multi-disc games show once and ✖ asks which disc;
