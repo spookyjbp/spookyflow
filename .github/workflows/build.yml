@@ -1,0 +1,98 @@
+# Build spookyflow for PS3 on every push (and on demand from the Actions tab).
+#
+# 1. host-tests: compiles the portable core with gcc and runs the unit tests,
+#    then renders the preview PNGs (uploaded as an artifact).
+# 2. ps3-pkg: PRIMARY route. Downloads the prebuilt PS3 toolchain tarball that
+#    bucanero/apollo-ps3's own CI uses (PSL1GHT + portlibs incl. Tiny3D,
+#    since Apollo links -ltiny3d without building it), then `make pkg`.
+# 3. ps3-pkg-docker: FALLBACK route, allowed to fail. Same build inside the
+#    flipacholas/ps3devextra image (PSL1GHT + Tiny3D, Alpine, ~2018).
+#
+# Honest notes (nothing here could be run before publishing):
+#  - The toolchain URL is copied from apollo-ps3's workflow; if that release
+#    disappears the primary job fails and the fallback artifact is the one to use.
+#  - Whether the tarball's libtiny3d.a matches wargio/tiny3D master is unverified;
+#    ci/build_ps3.sh builds Tiny3D from source if it is missing.
+#  - Package tools (sfo.py / pkg.py) need Python 2; we install it like Apollo does.
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests (portable core, ASan + UBSan)
+        run: make -f Makefile.host test
+      - name: Render preview PNGs
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq python3-pil
+          make -f Makefile.host preview
+      - uses: actions/upload-artifact@v4
+        with:
+          name: previews
+          path: preview/*.png
+
+  ps3-pkg:
+    needs: host-tests
+    runs-on: ubuntu-22.04
+    env:
+      TOOLCHAIN_URL: https://github.com/bucanero/ps3toolchain/releases/download/ubuntu-latest-fad3b5fb/ps3dev-ubuntu-latest-2020-08-31.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up environment
+        run: |
+          echo "PS3DEV=${GITHUB_WORKSPACE}/ps3dev" >> "$GITHUB_ENV"
+          echo "PSL1GHT=${GITHUB_WORKSPACE}/ps3dev" >> "$GITHUB_ENV"
+          echo "sha_name=$(echo ${GITHUB_SHA} | cut -c1-8)" >> "$GITHUB_ENV"
+
+      - name: Install Python 2 (needed by the PSL1GHT packaging scripts)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq python2.7 || true
+          sudo apt-get install -y -qq python2 || true
+
+      - name: Cache PS3 toolchain
+        id: cache-ps3dev
+        uses: actions/cache@v4
+        with:
+          path: ps3dev
+          key: ps3dev-${{ env.TOOLCHAIN_URL }}-v1
+
+      - name: Download PS3 toolchain
+        if: steps.cache-ps3dev.outputs.cache-hit != 'true'
+        run: |
+          curl -sL "$TOOLCHAIN_URL" | tar xz -C ./
+          # same refresh Apollo's CI does: newer sysutil.h from PSL1GHT master
+          curl -sL https://github.com/ps3dev/PSL1GHT/raw/master/ppu/include/sysutil/sysutil.h -o ps3dev/ppu/include/sysutil/sysutil.h
+
+      - name: Build PKG
+        run: bash ci/build_ps3.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spookyflow-pkg-${{ env.sha_name }}
+          path: |
+            spookyflow.pkg
+            spookyflow.gnpdrm.pkg
+          if-no-files-found: error
+
+  ps3-pkg-docker:
+    needs: host-tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build PKG in flipacholas/ps3devextra
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src flipacholas/ps3devextra:latest \
+            sh -c 'command -v bash >/dev/null || apk add --no-cache bash git; bash ci/build_ps3.sh'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spookyflow-pkg-docker-fallback
+          path: "*.pkg"
+          if-no-files-found: warn
