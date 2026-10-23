@@ -335,7 +335,7 @@ static int chip_texts(const App *a, int tab, int idx, char out[4][32])
     if (idx < 0 || idx >= gl->count) return 0;
     g = &gl->games[idx];
     snprintf(out[n++], 32, "%d of %d", idx + 1, gl->count);      /* position in this tab */
-    if (g->genre && g->genre[0]) sf_strlcpy(out[n++], g->genre, 32);
+    if (g->year > 0) snprintf(out[n++], 32, "%d", g->year);          /* release year (was genre) */
     if (g->pmax > 0) {
         if (g->pmin == g->pmax || g->pmin == 0) snprintf(out[n++], 32, "%d player%s", g->pmax, g->pmax == 1 ? "" : "s");
         else snprintf(out[n++], 32, "%d-%d players", g->pmin, g->pmax);
@@ -399,6 +399,91 @@ void ui_update_targets(App *a)
     else spring_set(&a->title_w, target);
 }
 
+/* ---- title / info styles (preview of options) ---- */
+static int g_info_style = 2;   /* 0 pills, 1 minimal, 2 minimal + accent line (the design), 3 card */
+void ui_set_info_style(int s) { g_info_style = s; }
+
+#define MIDDOT "  \xC2\xB7  "
+
+/* "Racing · 1-2 players · 7.6 GB · 25 of 73" pieces (count last) */
+static int info_pieces(const App *a, int tab, int idx, char out[4][32])
+{
+    char t[4][32];
+    int n = chip_texts(a, tab, idx, t), i;
+    if (n <= 0) return 0;
+    for (i = 1; i < n; i++) sf_strlcpy(out[i - 1], t[i], 32);
+    sf_strlcpy(out[n - 1], t[0], 32);
+    return n;
+}
+
+/* one centered line; separators (and the count) in the UI color when accent_seps */
+static float info_line(const App *a, int tab, int idx, float y, float em, float alpha, int accent_seps, int dry)
+{
+    char p[4][32];
+    int n = info_pieces(a, tab, idx, p), i;
+    float sw = d_text_width(&g_font_main, em, MIDDOT), w = 0.0f, x;
+    uint32_t sep = accent_seps ? glow(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu) : TH_TEXT_FAINT;
+    if (n == 0) return 0.0f;
+    for (i = 0; i < n; i++) w += d_text_width(&g_font_main, em, p[i]) + (i ? sw : 0.0f);
+    if (dry || alpha <= 0.0f) return w;
+    x = W() * 0.5f - w * 0.5f;
+    for (i = 0; i < n; i++) {
+        uint32_t c = (i == n - 1) ? TH_TEXT_FAINT : TH_TEXT_DIM;
+        if (i) { d_text(&g_font_main, x, y, em, sf_col_alpha(sep, alpha), MIDDOT, ALIGN_LEFT); x += sw; }
+        d_text(&g_font_main, x, y, em, sf_col_alpha(c, alpha), p[i], ALIGN_LEFT);
+        x += d_text_width(&g_font_main, em, p[i]);
+    }
+    return w;
+}
+
+static void shadow_text(const Font *f, float x, float y, float em, uint32_t col, const char *t, float maxw, float alpha)
+{
+    float o = em * 0.06f;
+    d_text_fit(f, x + d_xu(o), y + o, em, sf_col_alpha(0x00000090u, alpha), t, ALIGN_CENTER, maxw);
+    d_text_fit(f, x, y, em, sf_col_alpha(col, alpha), t, ALIGN_CENTER, maxw);
+}
+
+static void draw_info_styled(App *a, float alpha, const UiMetrics *m, float ty, float cy)
+{
+    float t = ease_in_out(a->info_t), maxw = W() * 0.80f;
+    int k;
+    for (k = 0; k < 2; k++) {
+        int tab = k ? a->info_tab : a->prev_tab, idx = k ? a->info_idx : a->prev_idx;
+        float al = alpha * (k ? t : 1.0f - t);
+        const char *title = info_title(a, tab, idx);
+        if (al <= 0.003f || !title[0]) continue;
+        if (g_info_style == 1 || g_info_style == 2) {
+            float em = m->title_em * 1.25f;
+            shadow_text(&g_font_main, W() * 0.5f, ty, em, TH_TEXT, title, maxw, al);
+            if (g_info_style == 2) {   /* tapered accent line under the title */
+                float tw = sf_minf(d_text_width(&g_font_main, em, title), maxw) + d_xu(H() * 0.06f);
+                float ly = ty + em * 0.75f, th = H() * 0.0030f;
+                uint32_t col = glow(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu), clear = col & 0xFFFFFF00u;
+                d_rect_hgrad(W() * 0.5f - tw * 0.5f, ly, tw * 0.5f, th, clear, sf_col_alpha(col, al));
+                d_rect_hgrad(W() * 0.5f, ly, tw * 0.5f, th, sf_col_alpha(col, al), clear);
+            }
+            if (a->settings.show_info) info_line(a, tab, idx, cy, m->chip_em * 1.10f, al, g_info_style == 2, 0);
+        } else if (g_info_style == 3) {
+            /* one frosted card under the case: title + info line */
+            float tem = m->title_em * 1.05f, iem = m->chip_em * 1.05f;
+            float iw = a->settings.show_info ? info_line(a, tab, idx, 0, iem, 0, 1, 1) : 0.0f;
+            float tw = sf_minf(d_text_width(&g_font_main, tem, title), maxw);
+            float cw = sf_maxf(tw, iw) + d_xu(H() * 0.09f), ch = a->settings.show_info ? H() * 0.105f : H() * 0.068f;
+            float cx = W() * 0.5f - cw * 0.5f, ctop = cy - ch * 0.5f;
+            if (k == 1 || t < 1.0f) {
+                d_rrect(cx, ctop, cw, ch, H() * 0.022f, sf_col_alpha(TH_CHIP, al * 0.92f));
+                d_rrect_stroke(cx, ctop, cw, ch, H() * 0.022f, 0.0028f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), al));
+            }
+            if (a->settings.show_info) {
+                d_text_fit(&g_font_main, W() * 0.5f, ctop + ch * 0.36f, tem, sf_col_alpha(TH_TEXT, al), title, ALIGN_CENTER, maxw);
+                info_line(a, tab, idx, ctop + ch * 0.72f, iem, al, 1, 0);
+            } else {
+                d_text_fit(&g_font_main, W() * 0.5f, cy, tem, sf_col_alpha(TH_TEXT, al), title, ALIGN_CENTER, maxw);
+            }
+        }
+    }
+}
+
 static void draw_info(App *a, float alpha, const UiMetrics *m0)
 {
     UiMetrics mm = *m0;
@@ -417,6 +502,8 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
         mm.title_y = ty;
         mm.chips_y = cy;
     }
+    if (g_info_style != 0) { ui_update_targets(a); draw_info_styled(a, alpha, m, mm.title_y, mm.chips_y); return; }
+    {
     const char *cur = info_title(a, a->info_tab, a->info_idx);
     float pad = d_xu(m->title_pad);
     float maxw = W() * m->title_max_w - 2.0f * pad;
@@ -436,6 +523,7 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
     }
     draw_title_text(cur, alpha * t, m, maxw);
     if (a->settings.show_info) draw_chips(a, a->info_tab, a->info_idx, alpha * t, m);
+    }
 }
 
 /* ------------------------------------------------------------------ */

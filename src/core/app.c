@@ -30,6 +30,14 @@ static int load_cover(void *user, int tab, int index, int slot_id, CcSlot *slot)
 
 CcLoadFn app_cover_loader(void) { return load_cover; }
 
+/* the cover worker found a game's release year (from its title ID) */
+static void cover_result(void *user, int tab, int index, int year)
+{
+    App *a = (App *)user;
+    if (year <= 0 || tab < 0 || tab >= PLAT_COUNT || index < 0 || index >= a->lib->tab[tab].count) return;
+    a->lib->tab[tab].games[index].year = (uint16_t)year;
+}
+
 static void drop_covers(App *a)
 {
     cc_invalidate(&a->covers);
@@ -48,6 +56,7 @@ void app_init(App *a, Library *lib, const AppHost *host)
     settings_defaults(&a->settings);
     lib_clear(lib);
     cc_init(&a->covers, CC_DEFAULT_BUDGET, a->host.covers ? load_cover : NULL, a);
+    if (a->host.covers) { a->host.covers->on_result = cover_result; a->host.covers->on_result_user = a; }
     input_reset(&a->input);
     hold_exit_reset(&a->hold);
     for (t = 0; t < PLAT_COUNT; t++) spring_init(&a->view[t].scroll, 0.0f, SPRING_OMEGA_300MS);

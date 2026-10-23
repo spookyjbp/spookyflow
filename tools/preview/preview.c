@@ -106,6 +106,8 @@ static void pv_covers_on(int on)
     int t, i;
     for (t = 0; t < PLAT_COUNT; t++)
         for (i = 0; i < g_lib.tab[t].count; i++) {
+            /* sample years for the preview (demo games have no title IDs) */
+            g_lib.tab[t].games[i].year = on ? (uint16_t)(1996 + t * 4 + (int)(sf_hash(lib_title(&g_lib, &g_lib.tab[t].games[i])) % 7u)) : 0;
             if (on) g_lib.tab[t].games[i].flags &= (uint8_t)~GAME_DEMO;
             else g_lib.tab[t].games[i].flags |= GAME_DEMO;
         }
@@ -325,6 +327,17 @@ int main(int argc, char **argv)
             render("26_case_images_ps2", 1280, 720);
             press(SFB_L1); step_covers(1.0f);
             render("27_case_images_ps1", 1280, 720);
+            press(SFB_R1); step_covers(0.6f);    /* PS2 */
+            {
+                int st;
+                char nm[64];
+                for (st = 0; st < 4; st++) {
+                    ui_set_info_style(st);
+                    snprintf(nm, sizeof(nm), "30_info_style_%d", st);
+                    render(nm, 1280, 720);
+                }
+                ui_set_info_style(2);
+            }
             g_app.sleep_t = 1.0f;
             render("28_sleep_dimmed", 1280, 720);
             g_app.sleep_t = 0.0f;

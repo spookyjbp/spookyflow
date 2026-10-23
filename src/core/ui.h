@@ -20,6 +20,8 @@ void ui_clear_tab_images(void);
  * geometry). It is drawn over the cover, as ManaGunZ does. */
 void ui_set_case_image(int plat, int tex);
 void ui_clear_case_images(void);
+/* Title/info look: 0 pills, 1 minimal, 2 accent, 3 card. */
+void ui_set_info_style(int s);
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */
 void ui_set_color(int idx);

@@ -1,5 +1,6 @@
 /* coverart.c - find, decode, fit, cache and stream cover art (coverart.h). */
 #include "coverart.h"
+#include "gamedb.h"
 #include "layout.h"
 #include "log.h"
 #include "render.h"
@@ -34,7 +35,7 @@ static const char *const k_exts[] = { ".JPG", ".PNG", ".jpg", ".png" };
 static const char *const k_plat_dir[PLAT_COUNT] = { "ps1", "ps2", "ps3" };
 
 #define CVR_HEADER 16
-#define CVR_VERSION 3     /* 3: whole cover, stretched to the case window (fix 2) */
+#define CVR_VERSION 4     /* 4: release year in the header (fix 10) */
 
 int cover_folder_count(void) { return F_COUNT; }
 const char *cover_folder(int i) { return (i >= 0 && i < F_COUNT) ? k_folders[i] : ""; }
@@ -325,6 +326,7 @@ void cover_poll(CoverLoader *L, CoverCache *cc)
     for (i = 0; i < cc->budget && i < CC_MAX_SLOTS; i++) {
         CoverJob *j = &L->job[i];
         if (cc->slot[i].state != CC_LOADING || j->done_gen != j->req_gen) continue;
+        if (L->on_result) L->on_result(L->on_result_user, j->tab, j->index, j->done_year);
         if (j->done_ok) {
             r_cover_define(i, j->w, j->h);
             cc_mark(cc, i, TEX_COVER0 + i);
@@ -394,7 +396,7 @@ static void wipe(CoverLoader *L)
     log_printf("covers: cache cleared (%d files)", removed);
 }
 
-static int read_cache(CoverLoader *L, const char *cvr, int tw, int th)
+static int read_cache(CoverLoader *L, const char *cvr, int tw, int th, int *year)
 {
     unsigned char h[CVR_HEADER];
     uint16_t bom;
@@ -403,10 +405,11 @@ static int read_cache(CoverLoader *L, const char *cvr, int tw, int th)
     memcpy(&bom, h + 10, 2);
     if (memcmp(h, "SFCV", 4) != 0 || h[4] != CVR_VERSION || bom != 0xFEFF) return 0;
     if (((h[6] << 8) | h[7]) != tw || ((h[8] << 8) | h[9]) != th) return 0;
+    *year = (h[12] << 8) | h[13];
     return L->io.read_at(L->io.ctx, cvr, CVR_HEADER, L->scratch, n) == (int)n;
 }
 
-static void write_cache(CoverLoader *L, const char *cvr, int plat, int tw, int th)
+static void write_cache(CoverLoader *L, const char *cvr, int plat, int tw, int th, int year)
 {
     unsigned char h[CVR_HEADER];
     uint16_t bom = 0xFEFF;
@@ -417,6 +420,7 @@ static void write_cache(CoverLoader *L, const char *cvr, int plat, int tw, int t
     h[6] = (unsigned char)(tw >> 8); h[7] = (unsigned char)tw;
     h[8] = (unsigned char)(th >> 8); h[9] = (unsigned char)th;
     memcpy(h + 10, &bom, 2);
+    h[12] = (unsigned char)(year >> 8); h[13] = (unsigned char)year;
     if (L->io.write_file(L->io.ctx, cvr, h, CVR_HEADER, L->scratch, (uint32_t)tw * (uint32_t)th * 2u) != 0)
         log_printf("covers: could not write %s", cvr);
 }
@@ -449,7 +453,7 @@ static int png_size_ok(CoverLoader *L, const char *path)
 }
 
 /* Returns 1 with pixels in L->scratch. *src describes where they came from. */
-static int load_job(CoverLoader *L, const CoverJob *j, int tw, int th, char *src, size_t src_cap)
+static int load_job(CoverLoader *L, const CoverJob *j, int tw, int th, char *src, size_t src_cap, int *year)
 {
     char stem[COVER_PATH_MAX], f[COVER_PATH_MAX + 16], id[16];
     CoverCand *cand;
@@ -459,14 +463,20 @@ static int load_job(CoverLoader *L, const CoverJob *j, int tw, int th, char *src
     if (cache) {
         cover_cache_stem(L->io.cache_dir, j->plat, j->path, j->size, stem, sizeof(stem));
         snprintf(f, sizeof(f), "%s.cvr", stem);
-        if (read_cache(L, f, tw, th)) { sf_strlcpy(src, "cache", src_cap); L->n_cache++; return 1; }
+        if (read_cache(L, f, tw, th, year)) { sf_strlcpy(src, "cache", src_cap); L->n_cache++; return 1; }
         snprintf(f, sizeof(f), "%s.none", stem);
-        if (L->io.is_file && L->io.is_file(L->io.ctx, f)) { sf_strlcpy(src, "none (cached)", src_cap); return 0; }
+        if (L->io.is_file && L->io.is_file(L->io.ctx, f)) {
+            unsigned char y[2];
+            if (L->io.read_at && L->io.read_at(L->io.ctx, f, 0, y, 2) == 2) *year = (y[0] << 8) | y[1];
+            sf_strlcpy(src, "none (cached)", src_cap);
+            return 0;
+        }
     }
     if (!L->probed) probe(L);
 
     sf_strlcpy(id, j->id, sizeof(id));
     if (!id[0]) discid_read(j->plat, j->path, j->is_dir, L->io.read_at, L->io.ctx, id, sizeof(id));
+    *year = gamedb_year(id);
 
     cand = (CoverCand *)malloc(sizeof(CoverCand) * COVER_MAX_CANDS);
     if (!cand) return 0;
@@ -500,10 +510,12 @@ static int load_job(CoverLoader *L, const CoverJob *j, int tw, int th, char *src
         ensure_cache_dirs(L, j->plat);
         if (ok) {
             snprintf(f, sizeof(f), "%s.cvr", stem);
-            write_cache(L, f, j->plat, tw, th);
+            write_cache(L, f, j->plat, tw, th, *year);
         } else {
+            unsigned char y[2];
+            y[0] = (unsigned char)(*year >> 8); y[1] = (unsigned char)*year;
             snprintf(f, sizeof(f), "%s.none", stem);
-            L->io.write_file(L->io.ctx, f, "", 0, "", 0);
+            L->io.write_file(L->io.ctx, f, y, 2, "", 0);   /* the marker keeps the year */
         }
     }
     return ok;
@@ -512,7 +524,7 @@ static int load_job(CoverLoader *L, const CoverJob *j, int tw, int th, char *src
 int cover_worker_step(CoverLoader *L)
 {
     CoverJob j;
-    int i, best = -1, gen, ok = 0, tw, th;
+    int i, best = -1, gen, ok = 0, tw, th, year;
     long best_score = 0;
     char src[COVER_PATH_MAX + 32];
     uint16_t *dst;
@@ -542,7 +554,8 @@ int cover_worker_step(CoverLoader *L)
 
     cover_tex_size(j.plat, &tw, &th);
     src[0] = '\0';
-    ok = load_job(L, &j, tw, th, src, sizeof(src));
+    year = 0;
+    ok = load_job(L, &j, tw, th, src, sizeof(src), &year);
     dst = L->io.pixels ? L->io.pixels(best) : NULL;
     if (ok && !dst) ok = 0;
     if (ok) memcpy(dst, L->scratch, (size_t)tw * (size_t)th * 2u);
@@ -558,6 +571,7 @@ int cover_worker_step(CoverLoader *L)
         L->job[best].w = tw;
         L->job[best].h = th;
         L->job[best].done_ok = ok;
+        L->job[best].done_year = year;
         L->job[best].done_gen = gen;
     }
     unlock(L);

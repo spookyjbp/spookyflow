@@ -55,6 +55,7 @@ typedef struct {
     volatile int req_gen;   /* bumped by the main thread for every request */
     volatile int done_gen;  /* set by the worker when that request finished */
     volatile int done_ok;
+    int done_year;          /* release year found for the game (0 = unknown) */
     int plat, tab, index, is_dir, w, h;
     uint64_t size;
     char path[COVER_PATH_MAX];
@@ -70,6 +71,9 @@ typedef struct {
     int probed;             /* which cover folders exist (worker only) */
     unsigned char dir_ok[16];
     uint8_t *scratch;       /* worker: processed pixels before the copy into the slot */
+    /* main thread: called by cover_poll for each finished slot (year may be 0) */
+    void (*on_result)(void *user, int tab, int index, int year);
+    void *on_result_user;
     /* worker statistics (logged) */
     int n_cache, n_art, n_none, n_logged;
 } CoverLoader;

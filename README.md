@@ -213,6 +213,19 @@ proportions works: the cover sits at 30,5 240×240 in a 275×250 PS1 image,
 image, and the image is drawn over the cover. Without an image the cover is
 shown on its own. The log says which case images were used.
 
+## Game info line
+
+Under the title: **release year · players · size · position** (e.g.
+`2004 · 7.6 GB · 25 of 73`). Players are only known for demo games so far.
+
+Release years come from **GameDB** by Niema Moshiri
+(<https://github.com/niemasd/GameDB-PSX>, `-PS2`, `-PS3`, GPL-3.0; built
+from Redump, GameFAQs, PlayStation Datacenter and others). Only the title ID
+and year are kept, in `src/core/gamedb_data.c` (`tools/gen_gamedb.py`
+rebuilds it). The year is found by the game's title ID, which comes from its
+file name or from inside the disc, the first time its cover is loaded, and
+is remembered in the cover cache. Games GameDB doesn't know show no year.
+
 ## Multi-disc games
 
 Games named like `Final Fantasy VII (Disc 1)`, `(Disc 2)`… (also `(Disk 1 of 2)`,
@@ -285,7 +298,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 9 (0.2.9):** the selected case has a soft glowing line under it
+15. **Fix 10 (0.2.10):** the title floats without a pill with a thin glowing
+    line under it; the info is one line (year · players · size · position);
+    release years from GameDB replace the genre. **Fix 9 (0.2.9):** the selected case has a soft glowing line under it
     instead of an outline; launching shows no pop-up (the log still records it).
     **Fix 8 (0.2.8):** the A–Z letter is just the letter (no box); all UI
     outlines glow slowly together (a 4-second breathing cycle).

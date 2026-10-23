@@ -24,6 +24,7 @@ typedef struct {
     uint8_t bucket;
     uint8_t flags;
     uint8_t ndisc;      /* >1: a multi-disc game, its discs are lib->disc[disc0 ..] */
+    uint16_t year;      /* release year (GameDB by title ID), 0 = unknown */
     uint16_t disc0;
 } Game;
 

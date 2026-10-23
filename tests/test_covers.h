@@ -2,6 +2,7 @@
  * cache, worker). Included by test_core.c (shares CHECK and g_app). */
 #include "coverart.h"
 #include "discid.h"
+#include "gamedb.h"
 #include "render.h"
 
 extern int g_null_cover_defined[R_COVER_SLOTS];
@@ -471,7 +472,7 @@ static void test_cover_loader(void)
     g_reads = 0;
     cover_worker_step(&L);
     cover_poll(&L, &cc);
-    CHECK(cc.slot[2].state == CC_FAILED && g_reads <= 1 && g_decodes == decodes);
+    CHECK(cc.slot[2].state == CC_FAILED && g_reads <= 2 && g_decodes == decodes);   /* cache header + marker */
 
     /* second run: straight from the cache, no decoding, even if the art is gone */
     mem_remove(NULL, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SLUS_209.14_COV.JPG");
@@ -895,4 +896,61 @@ static void test_multi_disc_names(void)
         CHECK_STR(n0, "Disc 1");
         CHECK_STR(lib_path(&g_lib, g), "/p/Grandia CD1.iso");
     }
+}
+
+/* fix 10: release years (GameDB) instead of genre */
+static void test_release_year(void)
+{
+    static CoverLoader L;
+    CoverIO io;
+    CoverCache cc;
+    uint32_t len;
+    unsigned char *img;
+    int year_seen = 0;
+    printf("release years\n");
+    CHECK(gamedb_year("SLUS20914") == 2004);
+    CHECK(gamedb_year("SLUS-20914") == 2004);
+    CHECK(gamedb_year("scus_949.00") == 1996);
+    CHECK(gamedb_year("ZZZZ99999") == 0);
+    CHECK(gamedb_year("") == 0 && gamedb_year(NULL) == 0 && gamedb_year("junk") == 0);
+    lib_clear(&g_lib);
+    lib_add(&g_lib, PLAT_PS2, "/p/x.iso", "Game [SLUS-20914].iso", 1, NULL, 0, 0, 0);   /* ID in the name */
+    CHECK(g_lib.tab[PLAT_PS2].games[0].year == 2004);
+    lib_add(&g_lib, PLAT_PS2, "/p/y.iso", "Other.iso", 1, NULL, 0, 0, 0);
+    CHECK(g_lib.tab[PLAT_PS2].games[1].year == 0);
+    /* the worker reads the ID from the disc, finds the year and keeps it in its cache */
+    memfs_reset();
+    img = make_disc("BOOT2 = cdrom0:\\SLUS_209.14;1\r\n", NULL, 0, &len);
+    memfs_put("/dev_hdd0/PS2ISO/Game.iso", img, len); free(img);
+    mem_io(&io, "/cache");
+    cover_loader_init(&L, &io);
+    L.on_result = NULL;
+    cc_init(&cc, 8, NULL, NULL);
+    cc.slot[0].state = CC_LOADING;
+    cover_request(&L, 0, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
+    cover_worker_step(&L);
+    CHECK(L.job[0].done_year == 2004);                         /* no cover, but the year is known */
+    cover_loader_stop(&L);
+    cover_loader_init(&L, &io);                                /* next start: from the .none marker */
+    cc_init(&cc, 8, NULL, NULL);
+    cc.slot[1].state = CC_LOADING;
+    cover_request(&L, 1, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
+    cover_worker_step(&L);
+    year_seen = L.job[1].done_year;
+    CHECK(year_seen == 2004);
+    /* ...and from a cached cover */
+    memfs_put("/dev_hdd0/PS2ISO/Game.png", "IMG 70 100 0 0 255 255", 22);
+    cover_wipe_cache(&L);
+    cover_worker_step(&L);
+    cc.slot[2].state = CC_LOADING;
+    cover_request(&L, 2, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
+    cover_worker_step(&L);
+    cover_loader_stop(&L);
+    cover_loader_init(&L, &io);
+    cc.slot[3].state = CC_LOADING;
+    cover_request(&L, 3, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
+    cover_worker_step(&L);
+    CHECK(L.n_cache == 1 && L.job[3].done_year == 2004);
+    cover_loader_stop(&L);
+    memfs_reset();
 }

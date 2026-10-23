@@ -1206,6 +1206,7 @@ int main(void)
     test_case_images();
     test_multi_disc();
     test_multi_disc_names();
+    test_release_year();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
