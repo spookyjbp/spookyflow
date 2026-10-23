@@ -482,34 +482,29 @@ static void test_menu(void)
     CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 2);
     CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_OFFLINE);
     CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 19);
-    {   /* PS1/PS2 Screen and Smoothing rows */
+    {   /* PS1/PS2 Full Screen and Smoothing rows: Off / On */
         Settings t;
         GameCfg gg;
         char vt[32];
         settings_defaults(&t);
         memset(&gg, 0, sizeof(gg));
-        CHECK(t.emu_screen == EMU_SCREEN_DEFAULT && t.emu_smooth == EMU_SMOOTH_DEFAULT);
-        CHECK_STR(menu_label(ROW_F_EMU_SCREEN), "PS1/PS2 Screen");
+        CHECK(t.emu_full == 0 && t.emu_smooth == 0);
+        CHECK_STR(menu_label(ROW_F_EMU_FULL), "PS1/PS2 Full Screen");
         CHECK_STR(menu_label(ROW_F_EMU_SMOOTH), "PS1/PS2 Smoothing");
-        menu_value_text(ROW_F_EMU_SCREEN, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "Default");
-        menu_value_text(ROW_F_EMU_SMOOTH, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "Default");
-        CHECK(menu_change(ROW_F_EMU_SCREEN, 0, 1, &t, &gg) == MENU_FX_CHANGED);
-        menu_value_text(ROW_F_EMU_SCREEN, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "Off");
-        menu_change(ROW_F_EMU_SCREEN, 0, 1, &t, &gg); menu_change(ROW_F_EMU_SCREEN, 0, 1, &t, &gg);
-        menu_value_text(ROW_F_EMU_SCREEN, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "Full Screen");
-        menu_change(ROW_F_EMU_SCREEN, 0, 1, &t, &gg);
-        CHECK(t.emu_screen == EMU_SCREEN_DEFAULT);                     /* wraps */
-        menu_change(ROW_F_EMU_SMOOTH, 0, 1, &t, &gg);
+        menu_value_text(ROW_F_EMU_FULL, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "Off");
+        CHECK(menu_change(ROW_F_EMU_FULL, 0, 1, &t, &gg) == MENU_FX_CHANGED && t.emu_full == 1);
+        menu_value_text(ROW_F_EMU_FULL, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "On");
+        menu_change(ROW_F_EMU_FULL, 0, 1, &t, &gg);
+        CHECK(t.emu_full == 0);                                          /* only two values */
+        menu_change(ROW_F_EMU_SMOOTH, 0, -1, &t, &gg);
         menu_value_text(ROW_F_EMU_SMOOTH, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "On");
-        menu_change(ROW_F_EMU_SMOOTH, 0, 1, &t, &gg);
-        menu_value_text(ROW_F_EMU_SMOOTH, 0, &t, &gg, vt, sizeof(vt)); CHECK_STR(vt, "Off");
-        settings_parse_line(&t, "ps_screen=3");
-        settings_parse_line(&t, "ps_smoothing=1");
-        CHECK(t.emu_screen == EMU_SCREEN_FULL && t.emu_smooth == EMU_SMOOTH_ON);
-        settings_parse_line(&t, "ps_screen=9");
-        CHECK(t.emu_screen == EMU_SCREEN_FULL);                        /* out of range: clamped */
+        settings_parse_line(&t, "ps_full_screen=1");
+        settings_parse_line(&t, "ps_smoothing_on=0");
+        CHECK(t.emu_full == 1 && t.emu_smooth == 0);
+        settings_parse_line(&t, "ps_screen=3");                          /* the 0.3.1 keys are ignored */
+        CHECK(t.emu_full == 1);
     }
-    CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_EMU_SCREEN && r[3] == ROW_F_EMU_SMOOTH && r[4] == ROW_F_SFX && r[8] == ROW_F_UI_COLOR &&
+    CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_EMU_FULL && r[3] == ROW_F_EMU_SMOOTH && r[4] == ROW_F_SFX && r[8] == ROW_F_UI_COLOR &&
           r[9] == ROW_F_INFO && r[10] == ROW_F_CASES && r[11] == ROW_F_REFLECT && r[12] == ROW_F_SLEEP &&
           r[15] == ROW_F_XMB_TOP && r[17] == ROW_F_QUIT && r[18] == ROW_F_POWEROFF);
     settings_defaults(&s);

@@ -13,10 +13,6 @@ enum { AP_DEFAULT = 0, AP_ON = 1, AP_OFF = 2 };
 enum { BG_ANIMATED = 0 /* "Drift" */, BG_IMAGE = 1, BG_AURORA = 2, BG_FIREFLIES = 3,
        BG_RIBBONS = 4, BG_HALO = 5, BG_TWILIGHT = 6, BG_STAGE = 7, BG_COUNT = 8 };
 const char *settings_background_name(int bg);
-/* PS1/PS2 display options applied at launch (the XMB's Game Settings
- * "Upscaler" and "Smoothing"); Default leaves the system setting as it is */
-enum { EMU_SCREEN_DEFAULT = 0, EMU_SCREEN_OFF, EMU_SCREEN_NORMAL, EMU_SCREEN_FULL, EMU_SCREEN_COUNT };
-enum { EMU_SMOOTH_DEFAULT = 0, EMU_SMOOTH_ON, EMU_SMOOTH_OFF, EMU_SMOOTH_COUNT };
 enum { UI_COLOR_BLUE = 0, UI_COLOR_RED, UI_COLOR_GREEN, UI_COLOR_PURPLE, UI_COLOR_PINK,
        UI_COLOR_ORANGE, UI_COLOR_WHITE, UI_COLOR_COUNT };
 
@@ -36,8 +32,8 @@ typedef struct {
     int background;          /* BG_*, default animated */
     int ui_color;            /* UI_COLOR_*, default blue */
     int cases;               /* draw covers inside case images (ManaGunZ's / your own), default 1 */
-    int emu_screen;          /* PS1/PS2 Screen (XMB Upscaler) at launch: EMU_SCREEN_*, default Default */
-    int emu_smooth;          /* PS1/PS2 Smoothing at launch: EMU_SMOOTH_*, default Default */
+    int emu_full;            /* 1 = launch PS1/PS2 games with Full Screen (XMB Upscaler), 0 = leave it, default 0 */
+    int emu_smooth;          /* 1 = launch PS1/PS2 games with Smoothing on, 0 = leave it, default 0 */
     int sleep_min;           /* minutes without input before the screen dims, 0 = never, default 5 */
     int reflections;         /* mirror image of the cases on the floor, default 1 */
     int show_info;           /* genre / players / size chips under the case, default 1 */

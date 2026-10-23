@@ -84,3 +84,49 @@ int ps3_webman_get(const char *command)
     netDeinitialize();
     return rc;
 }
+
+/* Send a command and keep the text of webMAN's answer (HTML tags removed,
+ * whitespace squeezed; the part from " => " on when there is one, which is
+ * where /xmb.ps3$xregistry(...) puts the value). 0 = webMAN answered. */
+int ps3_webman_query(const char *command, char *out, size_t cap)
+{
+    char req[512], buf[4096];
+    s32 s;
+    int n, got = 0;
+    if (cap) out[0] = '\0';
+    n = snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n", command);
+    if (n <= 0 || n >= (int)sizeof(req)) return -1;
+    s = webman_connect();
+    if (s < 0) return -1;
+    if (netSend(s, req, (size_t)n, 0) == n) {
+        while (got < (int)sizeof(buf) - 1) {
+            int r = (int)netRecv(s, buf + got, sizeof(buf) - 1 - (size_t)got, 0);
+            if (r <= 0) break;
+            got += r;
+        }
+    }
+    netClose(s);
+    netDeinitialize();
+    if (got <= 0) return -1;
+    buf[got] = '\0';
+    {
+        const char *body = strstr(buf, "\r\n\r\n"), *p, *arrow;
+        size_t o = 0;
+        int intag = 0, sp = 0;
+        char text[4096];
+        body = body ? body + 4 : buf;
+        for (p = body; *p && o + 1 < sizeof(text); p++) {
+            if (*p == '<') { intag = 1; continue; }
+            if (*p == '>') { intag = 0; sp = 1; continue; }
+            if (intag) continue;
+            if (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n') { sp = 1; continue; }
+            if (sp && o) text[o++] = ' ';
+            sp = 0;
+            text[o++] = *p;
+        }
+        text[o] = '\0';
+        arrow = strstr(text, "=>");
+        snprintf(out, cap, "%s", arrow ? arrow : text);
+    }
+    return 0;
+}

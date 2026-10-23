@@ -520,8 +520,6 @@ static void launch_disc(App *a, int disc)
     req.autoplay = settings_autoplay_effective(&a->settings, &c);
     req.offline = a->tab != PLAT_PS1 && settings_offline_effective(&a->settings, &c);
     req.emulator = c.emulator;
-    req.emu_screen = a->settings.emu_screen;
-    req.emu_smooth = a->settings.emu_smooth;
     memset(&wm, 0, sizeof(wm));
     if (a->host.read_wm_config) a->host.read_wm_config(&wm);
     if (launch_build(&req, &wm, cmd, sizeof(cmd)) != 0) {
@@ -533,6 +531,20 @@ static void launch_disc(App *a, int disc)
                k_plat_name[a->tab], name, req.autoplay ? "on" : "off", req.offline, req.emulator,
                wm.valid ? (wm.autoplay ? "read (its Auto-play is on)" : "read") : "not found");
     log_printf("launch: request %s", cmd);
+    /* PS1/PS2 Full Screen / Smoothing: set first, each read back for the log */
+    {
+        char set[2][LAUNCH_SET_MAX], rd[LAUNCH_SET_MAX], resp[200];
+        int ids[2], i, nset = launch_display_cmds(a->tab, a->settings.emu_full, a->settings.emu_smooth, set, ids);
+        for (i = 0; i < nset; i++) {
+            if (!a->host.webman_get) { log_printf("launch: %s skipped (no webMAN access)", set[i]); continue; }
+            resp[0] = '\0';
+            if (a->host.webman_get(set[i], resp, sizeof(resp)) != 0) { log_printf("launch: %s -> no answer", set[i]); continue; }
+            log_printf("launch: %s -> %s", set[i], resp);
+            snprintf(rd, sizeof(rd), "/xmb.ps3$xregistry(%d)", ids[i]);
+            resp[0] = '\0';
+            if (a->host.webman_get(rd, resp, sizeof(resp)) == 0) log_printf("launch: read back %s -> %s", rd, resp);
+        }
+    }
     if (!a->host.launch || a->host.launch(cmd) != 0) {
         app_show_toast(a, "Launching needs webMAN MOD running");
         return;
