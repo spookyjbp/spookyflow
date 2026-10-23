@@ -64,6 +64,10 @@ static int strip_one_ext(char *s)
     static const char *const exts[] = { ".iso", ".bin", ".cue", ".img", ".mdf", ".enc", ".dec", ".chd", ".pbp" };
     size_t n = strlen(s), k = n;
     int i;
+    {   /* webMAN's NTFS pointer files: "Name.ntfs[PS3ISO]" (cover: Name.PNG next to it) */
+        char *t = strstr(s, ".ntfs[");
+        if (t && n > 0 && s[n - 1] == ']' && t > s) { *t = '\0'; return 1; }
+    }
     while (k > 0 && sf_isdigit(s[k - 1])) k--;
     if (k < n && k > 0 && s[k - 1] == '.') {          /* ".iso.0" split part */
         char *dot = s + k - 1;
@@ -105,13 +109,26 @@ int cover_candidates(int plat, const char *game_path, int is_dir, const char *id
     if (slash) folder[slash - game_path] = '\0'; else folder[0] = '\0';
     while (strip_one_ext(name)) { }
 
+    /* an NTFS game (webMAN's pointer file in wmtmp): the "<name>.PNG" beside it
+     * is mostly the game's ICON0 (a small wide XMB icon), so real covers by
+     * title ID come first */
+    if (strstr(game_path, ".ntfs[") && id && id[0]) {
+        for (i = F_COV_STD; i <= F_WMTMP_COV; i++)
+            if (OK(i)) n = add(out, n, max, k_folders[i], "/", id);
+        if (plat == PLAT_PS1) {
+            char rid[24];
+            snprintf(rid, sizeof(rid), "%.4s_%.3s.%.2s_COV", id, id + 4, id + 7);
+            for (i = F_RETRO_STD; i <= F_RETRO_SSTL; i++)
+                if (OK(i)) n = add(out, n, max, k_folders[i], "/", rid);
+        }
+    }
     if (!is_dir) {
         sf_strlcpy(stem, game_path, sizeof(stem));
         while (strip_one_ext(stem)) { }
         n = add(out, n, max, stem, NULL, NULL);                       /* 1. next to the game */
     }
     if (OK(F_WMTMP)) n = add(out, n, max, WMTMP "/", name, NULL);     /* 2. webMAN temp */
-    if (id && id[0]) {
+    if (id && id[0] && !strstr(game_path, ".ntfs[")) {
         if (plat == PLAT_PS1 || plat == PLAT_PS2) {                   /* 3. retro packs */
             char rid[24];
             snprintf(rid, sizeof(rid), "%.4s_%.3s.%.2s_COV", id, id + 4, id + 7);

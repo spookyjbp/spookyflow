@@ -3,6 +3,7 @@
 #include "title.h"
 #include "log.h"
 #include "util.h"
+#include "sfo.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -13,6 +14,7 @@ static const ScanRoot k_roots[] = {
     { PLAT_PS3, "/dev_hdd0/PS3ISO",   SRC_HDD_ISO_DIR },
     { PLAT_PS3, "/dev_hdd0/GAMES",    SRC_HDD_GAME_FOLDERS },
     { PLAT_PS3, "/dev_hdd0/GAMEZ",    SRC_HDD_GAME_FOLDERS },
+    { PLAT_PS3, NTFS_INDEX_DIR,        SRC_NTFS_INDEX },       /* NTFS drives (PS3 + PS1), via webMAN */
 };
 
 /* Scratch buffers (single scanner instance; keeps the stack small). */
@@ -32,6 +34,89 @@ void scanner_begin(Scanner *s, const ScanRoot *roots, int nroots)
     memset(s, 0, sizeof(*s));
     s->roots = roots;
     s->nroots = nroots;
+}
+
+void scanner_set_reader(Scanner *s, ReadAtFn rd, void *ctx)
+{
+    s->rd = rd;
+    s->rd_ctx = ctx;
+}
+
+int scanner_ntfs_kind(const char *name, char *stem, size_t cap)
+{
+    static const struct { const char *tag; int plat; } k[] = {
+        { ".ntfs[PS3ISO]", PLAT_PS3 }, { ".ntfs[PSXISO]", PLAT_PS1 },
+    };
+    size_t n = name ? strlen(name) : 0;
+    int i;
+    if (cap) stem[0] = '\0';
+    for (i = 0; i < SF_ARRAY_LEN(k); i++) {
+        size_t lt = strlen(k[i].tag);
+        if (n > lt && sf_ends_with_i(name, k[i].tag)) {
+            size_t sl = n - lt;
+            if (sl + 1 > cap) return -1;
+            memcpy(stem, name, sl);
+            stem[sl] = '\0';
+            return k[i].plat;
+        }
+    }
+    return -1;
+}
+
+static uint32_t be32(const unsigned char *p)
+{
+    return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+uint64_t scanner_ntfs_size(const unsigned char *buf, size_t len)
+{
+    uint32_t ns, i;
+    uint64_t sectors = 0;
+    if (!buf || len < 20) return 0;
+    ns = be32(buf + 12);
+    if (ns == 0 || ns > 16384 || 20u + 8u * (size_t)ns > len) return 0;
+    for (i = 0; i < ns; i++) sectors += be32(buf + 20 + 4 * (size_t)ns + 4 * (size_t)i);
+    return sectors * NTFS_SECTOR;
+}
+
+static int join(char *out, size_t cap, const char *dir, const char *name);
+
+/* webMAN's NTFS index: one pointer file per game (see scanner.h) */
+static unsigned char s_ntfs_buf[64 * 1024];
+static void scan_ntfs_index(Scanner *s, Library *lib, const char *dir, int n)
+{
+    int i;
+    char path[SCAN_PATH_MAX], stem[FS_NAME_MAX], raw[FS_NAME_MAX + 24];
+    for (i = 0; i < n; i++) {
+        const FsEntry *e = &s_ent[i];
+        uint64_t size = 0;
+        char id[64] = "";
+        int plat, got;
+        if (e->is_dir || e->name[0] == '.') continue;
+        plat = scanner_ntfs_kind(e->name, stem, sizeof(stem));
+        if (plat < 0 || !join(path, sizeof(path), dir, e->name)) continue;
+        if (s->rd) {
+            got = s->rd(s->rd_ctx, path, 0, s_ntfs_buf, sizeof(s_ntfs_buf));
+            if (got > 0) size = scanner_ntfs_size(s_ntfs_buf, (size_t)got);
+            if (plat == PLAT_PS3) {                    /* title ID from the PARAM.SFO webMAN extracted */
+                char sfo[SCAN_PATH_MAX];
+                if (snprintf(sfo, sizeof(sfo), "%s/%s.SFO", dir, stem) < (int)sizeof(sfo)) {
+                    got = s->rd(s->rd_ctx, sfo, 0, s_ntfs_buf, sizeof(s_ntfs_buf));
+                    if (got > 0 && sfo_get_str(s_ntfs_buf, (size_t)got, "TITLE_ID", id, sizeof(id)) != 0) id[0] = '\0';
+                }
+            }
+        }
+        /* the display name: the stem as an .iso (webMAN may keep the ".iso"),
+         * with the title ID as a tag so the library picks it up */
+        {
+            size_t sl = strlen(stem);
+            if (sl > 4 && sf_ends_with_i(stem, ".iso")) stem[sl - 4] = '\0';
+            else if (sl > 4 && (sf_ends_with_i(stem, ".bin") || sf_ends_with_i(stem, ".img"))) stem[sl - 4] = '\0';
+        }
+        if (id[0]) snprintf(raw, sizeof(raw), "%s [%s].iso", stem, id);
+        else snprintf(raw, sizeof(raw), "%s.iso", stem);
+        if (lib_add(lib, plat, path, raw, size, NULL, 0, 0, 0) >= 0) { s->found[plat]++; s->found_ntfs++; }
+    }
 }
 
 static int join(char *out, size_t cap, const char *dir, const char *name)
@@ -156,6 +241,7 @@ static void process(Scanner *s, Library *lib, const ScanRoot *r, const char *dir
     log_printf("scan: %s (%d entries)", dir, n);
     switch (r->kind) {
     case SRC_HDD_GAME_FOLDERS: if (depth == 0) scan_folders(s, lib, r->plat, dir, n); break;
+    case SRC_NTFS_INDEX: if (depth == 0) scan_ntfs_index(s, lib, dir, n); break;
     case SRC_HDD_ISO_DIR:
     default: scan_iso_dir(s, lib, r->plat, dir, n, depth); break;
     }

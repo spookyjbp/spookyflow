@@ -197,6 +197,7 @@ int discid_read(int plat, const char *path, int is_dir, ReadAtFn rd, void *ctx, 
     int ok = 0;
     if (cap) out[0] = '\0';
     if (!rd || !path || !path[0] || cap == 0) return 0;
+    if (strstr(path, ".ntfs[")) return 0;      /* webMAN NTFS pointer file: its ID comes from the scan */
     if (plat == PLAT_PS3) {
         ok = is_dir ? ps3_folder_id(rd, ctx, path, out, cap) : ps3_iso_id(rd, ctx, path, out, cap);
         if (!ok) out[0] = '\0';

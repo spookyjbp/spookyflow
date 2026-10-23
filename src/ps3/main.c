@@ -102,6 +102,24 @@ static int launch_via_webman(const char *request)
     return ps3_webman_send(request);
 }
 
+/* webMAN re-indexes every NTFS drive it has mounted; its answer reads
+ * "NTFS VOLUMES: <n> ... <games> ..." (include/cmd/refresh.h) */
+static int ntfs_refresh(void)
+{
+    char resp[600];
+    const char *p;
+    int games = -1;
+    if (ps3_webman_get_wait("/refresh.ps3?prepntfs", 180, resp, sizeof(resp)) != 0) return -1;
+    p = strstr(resp, "NTFS VOLUMES:");
+    log_printf("ntfs: webMAN: %.120s", p ? p : resp);
+    if (p) {
+        const char *q = strstr(p, "\">");                    /* " - <a href=...>N</a> games" */
+        if (q) games = atoi(q + 2);
+        else games = 0;
+    }
+    return games < 0 ? 0 : games;
+}
+
 static void read_wm_config(WmConfig *cfg)
 {
     unsigned char buf[1024];
@@ -221,6 +239,9 @@ int main(int argc, const char *argv[])
     host.power_off = power_off_via_webman;
     host.launch = launch_via_webman;
     host.read_wm_config = read_wm_config;
+    host.read_at = ps3_read_at;
+    host.ntfs_refresh = ntfs_refresh;
+    host.music_dir = SF_MUSIC_DIR;
     host.covers = ps3_covers_start();
     app_init(&g_app, &g_lib, &host);
 

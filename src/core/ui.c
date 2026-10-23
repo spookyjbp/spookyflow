@@ -1173,6 +1173,57 @@ static void draw_letter(const App *a)
     }
 }
 
+/* Background music: a "now playing" card in the top-left corner when a song
+ * starts (or SELECT skips): the kittens, a little equalizer, the song name.
+ * Same fill and glowing outline as the controls bar; slides in from the
+ * left, stays MUSIC_CARD_TIME, slides back out. */
+static void draw_music_card(const App *a, float ia)
+{
+    float t = a->music_card_t, in, out, al, slide;
+    float h = 0.112f * H(), r = h * 0.5f, x, y = 0.028f * H(), w;
+    float kh, kw, kx, ky, tx, em_l = 0.017f * H(), em_n = 0.027f * H(), maxw, namew;
+    float now = (float)a->time;
+    int i;
+    if (t >= MUSIC_CARD_TIME || !a->music_name[0] || a->asleep) return;
+    in = ease_out_cubic(sf_minf(1.0f, t / 0.45f));
+    out = t > MUSIC_CARD_TIME - 0.5f ? ease_in_out((t - (MUSIC_CARD_TIME - 0.5f)) / 0.5f) : 0.0f;
+    al = sf_clampf(in * (1.0f - out), 0.0f, 1.0f) * ia;
+    if (al <= 0.0f) return;
+    /* kittens on the left, inside the rounded end */
+    kh = h * 0.86f;
+    kw = d_xu(kh * (float)g_cats_w / (float)g_cats_h);
+    maxw = W() * (0.283f - 0.022f) - (d_xu(h * 0.30f) + kw + d_xu(h * 0.22f) + d_xu(h * 0.38f));   /* clear of the L1 badge */
+    {   /* long names: a smaller size first, then "..." */
+        float tw = d_text_width(&g_font_main, em_n, a->music_name);
+        if (tw > maxw) em_n = sf_maxf(0.019f * H(), em_n * maxw / tw);
+    }
+    namew = sf_minf(d_text_width(&g_font_main, em_n, a->music_name), maxw);
+    namew = sf_maxf(namew, d_text_width(&g_font_main, em_l, "NOW PLAYING") + d_xu(0.05f * H()));
+    w = d_xu(h * 0.30f) + kw + d_xu(h * 0.22f) + namew + d_xu(h * 0.38f);
+    slide = (1.0f - in) + out;
+    x = 0.022f * W() - slide * (w + 0.03f * W());
+    d_rrect(x, y, w, h, r, sf_col_alpha(TH_BAR, al));
+    d_rrect_stroke(x, y, w, h, r, 0.0028f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), al));
+    /* the kittens bob a little to the beat */
+    kx = x + d_xu(h * 0.30f);
+    ky = y + h * 0.5f - kh * 0.5f - fabsf(sinf(now * 3.4f)) * 0.006f * H();
+    d_blob(kx + kw * 0.5f, y + h * 0.5f, h * 0.55f, sf_col_alpha(TH_WORDMARK_GLOW, 0.10f * al));
+    d_image(TEX_CATS, kx, ky, kw, kh, sf_col_alpha(0xFFFFFFFFu, al));
+    /* label + equalizer, then the song name */
+    tx = kx + kw + d_xu(h * 0.22f);
+    d_text(&g_font_main, tx, y + h * 0.32f, em_l, sf_col_alpha(accent_or(TH_TEXT_DIM, 1.0f), al), "NOW PLAYING", ALIGN_LEFT);
+    {
+        float bx = tx + d_text_width(&g_font_main, em_l, "NOW PLAYING") + d_xu(0.010f * H());
+        float bw = d_xu(0.0045f * H()), gap = d_xu(0.0035f * H()), base = y + h * 0.32f + em_l * 0.36f;
+        for (i = 0; i < 4; i++) {
+            float lv = 0.35f + 0.65f * fabsf(sinf(now * (4.1f + 1.3f * (float)i) + (float)i * 1.7f));
+            float bh = em_l * 0.95f * lv;
+            d_rect(bx + (float)i * (bw + gap), base - bh, bw, bh, sf_col_alpha(accent_or(TH_TEXT_DIM, 1.0f), al));
+        }
+    }
+    d_text_fit(&g_font_main, tx, y + h * 0.68f, em_n, sf_col_alpha(TH_TEXT, al), a->music_name, ALIGN_LEFT, maxw);
+}
+
 static void draw_toast(const App *a)
 {
     float t = a->toast_t, al, em = 0.024f * H(), w, h = 0.05f * H(), y;
@@ -1265,6 +1316,7 @@ void ui_draw(App *a)
         }
         draw_bar(a, ia);
         draw_letter(a);
+        draw_music_card(a, ia);
         draw_toast(a);
         if (a->intro < 1.0f) {
             /* the loading screen (with its own background) cross-fades out on top */

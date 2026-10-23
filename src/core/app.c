@@ -2,6 +2,7 @@
 #include "app.h"
 #include "sfo.h"
 #include "sound.h"
+#include "music.h"
 #include "log.h"
 #include "title.h"
 #include "util.h"
@@ -71,6 +72,7 @@ void app_init(App *a, Library *lib, const AppHost *host)
     a->info_t = 1.0f;
     a->letter_t = LETTER_TIME;
     a->toast_t = TOAST_TIME;
+    a->music_card_t = MUSIC_CARD_TIME;
     sf_strlcpy(a->load_status, "Starting\xE2\x80\xA6", sizeof(a->load_status));
 }
 
@@ -223,9 +225,68 @@ static void finish_library(App *a)
 /* Worker-thread scan: the whole library scan runs here so the loading screen
  * keeps animating at full frame rate no matter how slow the disk is. While
  * scan_busy is set, the main thread only reads scanner progress counters. */
+/* "Rescan Library": webMAN re-indexes the NTFS drives first (it clears the old
+ * index and walks every NTFS drive it has mounted), so games added to or
+ * removed from a drive show up. Slow drives can take a while: it runs on the
+ * scan thread when there is one. */
+static void refresh_ntfs(App *a)
+{
+    int n;
+    if (!a->rescan || !a->host.ntfs_refresh) return;
+    a->ntfs_busy = 1;
+    __sync_synchronize();
+    n = a->host.ntfs_refresh();
+    if (n >= 0) log_printf("ntfs: webMAN re-indexed the NTFS drives: %d games", n);
+    else log_printf("ntfs: webMAN didn't answer the NTFS refresh; using the index as it is");
+    a->ntfs_busy = 0;
+    __sync_synchronize();
+}
+
+/* read the music folder (start-up and Rescan Library) */
+static void scan_music(App *a)
+{
+    if (!a->host.music_dir || !a->host.fs_list || !a->host.read_at) return;
+    music_init(a->host.read_at, a->host.fs_ctx);
+    music_set_seed((uint32_t)(a->time * 1000.0) ^ 0x5F0F1234u);
+    music_scan(a->host.fs_list, a->host.fs_ctx, a->host.music_dir);
+    a->music_scanned = 1;
+}
+
+/* settings -> music, every frame: plays in the cover flow, fades out on exit
+ * and launch, quieter while the screen sleeps */
+static void music_tick(App *a)
+{
+    char name[128];
+    int gen;
+    if (!a->settings_ready) return;
+    music_set_volume((float)a->settings.music_volume / 100.0f);
+    music_set_shuffle(a->settings.shuffle);
+    music_set_duck(1.0f - MUSIC_SLEEP_DUCK * a->sleep_t);
+    music_set_playing(a->mode == MODE_FLOW && !a->exiting && a->music_scanned);
+    gen = music_current(name, sizeof(name));
+    if (gen != a->music_gen) {
+        a->music_gen = gen;
+        if (gen && a->mode == MODE_FLOW && !a->exiting && !a->asleep && name[0]) {
+            /* a card that's still showing just swaps the name (no second slide-in) */
+            if (a->music_card_t >= MUSIC_CARD_TIME - 0.5f) a->music_card_t = 0.0f;
+            else if (a->music_card_t > 0.6f) a->music_card_t = 0.6f;
+            sf_strlcpy(a->music_name, name, sizeof(a->music_name));
+        }
+    }
+}
+
+static void music_skip(App *a)
+{
+    if (music_track_count() > 0 && a->settings.music_volume > 0) { music_next(); return; }
+    if (!a->host.music_dir) return;
+    if (a->settings.music_volume == 0) app_show_toast(a, "Music is off (Music Volume in Flow Settings)");
+    else app_show_toast(a, "No music: put .mp3 files in /dev_hdd0/tmp/spookyflow/music");
+}
+
 static void scan_worker(void *arg)
 {
     App *a = (App *)arg;
+    refresh_ntfs(a);
     while (!scanner_step(&a->scanner, a->lib, a->host.fs_list, a->host.fs_ctx)) { }
     __sync_synchronize();
     a->scan_busy = 0;
@@ -265,6 +326,7 @@ static void loading_update(App *a, float dt)
         if (a->host.prepare) a->host.prepare();
         lib_clear(a->lib);
         scanner_begin(&a->scanner, a->host.roots, a->host.nroots);
+        scanner_set_reader(&a->scanner, a->host.read_at, a->host.fs_ctx);
         a->scan_async = 0;
         a->scan_busy = 0;
         if (a->host.fs_list && a->host.run_async) {
@@ -278,14 +340,16 @@ static void loading_update(App *a, float dt)
                 log_printf("scan: background thread failed, scanning on the main thread");
             }
         }
+        if (!a->scan_async) refresh_ntfs(a);              /* no scan thread: do it here */
         a->load_target = 0.15f;
         a->load_step = LOAD_SCAN;
         break;
     case LOAD_SCAN:
         if (a->scan_async) {
             if (a->scan_busy) {
-                snprintf(a->load_status, sizeof(a->load_status), "Scanning %s games\xE2\x80\xA6",
-                         k_plat_name[scanner_platform(&a->scanner)]);
+                if (a->ntfs_busy) sf_strlcpy(a->load_status, "Updating NTFS drives\xE2\x80\xA6", sizeof(a->load_status));
+                else snprintf(a->load_status, sizeof(a->load_status), "Scanning %s games\xE2\x80\xA6",
+                              k_plat_name[scanner_platform(&a->scanner)]);
                 a->load_target = 0.15f + 0.70f * scanner_progress(&a->scanner);
                 break;
             }
@@ -301,8 +365,9 @@ static void loading_update(App *a, float dt)
                  k_plat_name[scanner_platform(&a->scanner)]);
         a->load_target = 0.15f + 0.70f * scanner_progress(&a->scanner);
         if (a->scanner.done || !a->host.fs_list) {
-            log_printf("scan: done, %d dirs, found PS1=%d PS2=%d PS3=%d",
-                       a->scanner.dirs_listed, a->scanner.found[0], a->scanner.found[1], a->scanner.found[2]);
+            log_printf("scan: done, %d dirs, found PS1=%d PS2=%d PS3=%d (%d of them on NTFS drives)",
+                       a->scanner.dirs_listed, a->scanner.found[0], a->scanner.found[1], a->scanner.found[2],
+                       a->scanner.found_ntfs);
             sf_strlcpy(a->load_status, "Sorting\xE2\x80\xA6", sizeof(a->load_status));
             a->load_target = 0.90f;
             a->load_step = LOAD_SORT;
@@ -310,6 +375,7 @@ static void loading_update(App *a, float dt)
         break;
     case LOAD_SORT:
         finish_library(a);
+        scan_music(a);
         sf_strlcpy(a->load_status, "Doing the Heavy Lifting", sizeof(a->load_status));
         a->load_target = 1.0f;
         a->load_step = LOAD_READY;
@@ -602,6 +668,7 @@ static void flow_input(App *a)
         if (in->pressed & SFB_TRIANGLE) app_open_panel(a, PANEL_GAME);
     }
     if (in->pressed & SFB_START) app_open_panel(a, PANEL_FLOW);
+    if (in->pressed & SFB_SELECT) music_skip(a);
 }
 
 static void animate(App *a, float dt)
@@ -624,6 +691,7 @@ static void animate(App *a, float dt)
     if (!a->panel_open && a->panel_anim <= 0.0f) a->panel = PANEL_NONE;
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;
     if (a->toast_t < TOAST_TIME) a->toast_t += dt;
+    if (a->music_card_t < MUSIC_CARD_TIME) a->music_card_t += dt;
     /* title/chips cross-fade on selection change */
     {
         int cur = a->view[a->tab].sel;
@@ -671,6 +739,7 @@ void app_update(App *a, uint32_t held, float dt)
     anim_approach(&a->sleep_t, a->asleep ? 1.0f : 0.0f, 1.0f / (a->asleep ? SLEEP_FADE_TIME : WAKE_FADE_TIME), dt);
 
     input_update(&a->input, held, dt);
+    music_tick(a);
 
     if (a->exiting) {
         anim_approach(&a->exit_fade, 1.0f, 1.0f / EXIT_FADE_TIME, dt);

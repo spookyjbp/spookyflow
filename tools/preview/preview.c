@@ -211,6 +211,25 @@ int main(int argc, char **argv)
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
     step(0, 0.5f);
     render("03_flow_ps2", 1280, 720);
+    /* background music: the "now playing" toast when a song starts (or SELECT) */
+    sf_strlcpy(g_app.music_name, "Dreams of the Midnight Arcade", sizeof(g_app.music_name));
+    g_app.music_card_t = 0.0f;
+    step(0, 0.2f);
+    render("03a_music_card_sliding_in", 1280, 720);
+    step(0, 0.6f);
+    render("03b_music_now_playing", 1280, 720);
+    sf_strlcpy(g_app.music_name, "A Very Long Song Title From Some Album (Extended Remix Version)", sizeof(g_app.music_name));
+    render("03e_music_long_name", 1280, 720);
+    g_app.music_card_t = MUSIC_CARD_TIME;
+    g_app.settings.music_volume = 0;
+    app_show_toast(&g_app, "Music is off (Music Volume in Flow Settings)");
+    step(0, 0.5f);
+    render("03c_music_off_select", 1280, 720);
+    app_show_toast(&g_app, "No music: put .mp3 files in /dev_hdd0/tmp/spookyflow/music");
+    step(0, 0.5f);
+    render("03d_music_none_select", 1280, 720);
+    g_app.settings.music_volume = 50;
+    step(0, TOAST_TIME + 0.2f);
     render("04_flow_ps2_1080p", 1920, 1080);
 
     press(SFB_R1); step(0, TAB_ANIM_TIME * 0.35f);

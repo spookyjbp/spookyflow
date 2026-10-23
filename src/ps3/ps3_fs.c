@@ -29,6 +29,7 @@ void ps3_fs_mkdirs(void)
     sysFsMkdir(SF_DATA_DIR, 0777);
     sysFsMkdir(SF_TABS_DIR, 0777);
     sysFsMkdir(SF_SOUNDS_DIR, 0777);
+    sysFsMkdir(SF_MUSIC_DIR, 0777);
     sysFsMkdir(SF_CASES_DIR, 0777);
     sysFsMkdir(SF_COVERS_DIR, 0777);
     sysFsMkdir(SF_COVERS_DIR "/ps1", 0777);

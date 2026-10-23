@@ -876,6 +876,142 @@ static void test_multi_disc(void)
     CHECK(g_app.panel == PANEL_NONE && !g_app.exiting);
 }
 
+/* milestone 4: NTFS drives through webMAN's index (/dev_hdd0/tmp/wmtmp) */
+static uint32_t make_ntfs_ptr(unsigned char *b, const uint32_t *start, const uint32_t *count, int n)
+{
+    int i;
+    uint32_t o = 20;
+    memset(b, 0, 20);
+    b[7] = 0x02;                                           /* device (low byte) */
+    b[11] = 0x01;                                          /* emu mode */
+    b[15] = (unsigned char)n;                              /* sections */
+    b[19] = 0x01;                                          /* tracks */
+    for (i = 0; i < n; i++, o += 4) { b[o] = (unsigned char)(start[i] >> 24); b[o + 1] = (unsigned char)(start[i] >> 16); b[o + 2] = (unsigned char)(start[i] >> 8); b[o + 3] = (unsigned char)start[i]; }
+    for (i = 0; i < n; i++, o += 4) { b[o] = (unsigned char)(count[i] >> 24); b[o + 1] = (unsigned char)(count[i] >> 16); b[o + 2] = (unsigned char)(count[i] >> 8); b[o + 3] = (unsigned char)count[i]; }
+    return o + 8;                                          /* + a track descriptor */
+}
+
+static int g_ntfs_refreshes;
+static int fake_ntfs_refresh(void) { g_ntfs_refreshes++; return 4; }
+
+static void test_ntfs(void)
+{
+    static Scanner sc;
+    static const ScanRoot roots[] = { { PLAT_PS3, NTFS_INDEX_DIR, SRC_NTFS_INDEX } };
+    static const uint32_t st1[2] = { 100, 900000 }, ct1[2] = { 2048000, 1000 };
+    static const uint32_t st2[1] = { 77 }, ct2[1] = { 1300000 };
+    unsigned char ptr[128], sfo[256];
+    char stem[FS_NAME_MAX];
+    uint32_t len;
+    int i, ps3 = 0, ps1 = 0;
+    printf("NTFS drives (webMAN index)\n");
+    /* names and kinds */
+    CHECK(scanner_ntfs_kind("Demon's Souls (USA).ntfs[PS3ISO]", stem, sizeof(stem)) == PLAT_PS3);
+    CHECK_STR(stem, "Demon's Souls (USA)");
+    CHECK(scanner_ntfs_kind("Crash.ntfs[PSXISO]", stem, sizeof(stem)) == PLAT_PS1 && strcmp(stem, "Crash") == 0);
+    CHECK(scanner_ntfs_kind("Movie.ntfs[BDISO]", stem, sizeof(stem)) == -1);      /* video discs: not games */
+    CHECK(scanner_ntfs_kind("Movie.ntfs[DVDISO]", stem, sizeof(stem)) == -1);
+    CHECK(scanner_ntfs_kind("Demon's Souls (USA).PNG", stem, sizeof(stem)) == -1);
+    CHECK(scanner_ntfs_kind(".ntfs[PS3ISO]", stem, sizeof(stem)) == -1);
+    CHECK(scanner_ntfs_kind("XY.ntfs[PS3ISO]", stem, 2) == -1);                   /* too small for the stem */
+    /* size from the pointer file: sections x 512 bytes */
+    len = make_ntfs_ptr(ptr, st1, ct1, 2);
+    CHECK(scanner_ntfs_size(ptr, len) == (uint64_t)(2048000 + 1000) * 512u);
+    CHECK(scanner_ntfs_size(ptr, 27) == 0);                                       /* cut short */
+    CHECK(scanner_ntfs_size(NULL, 0) == 0);
+    ptr[15] = 0; CHECK(scanner_ntfs_size(ptr, len) == 0);                         /* no sections */
+    /* two drives' games side by side in webMAN's index */
+    memfs_reset();
+    len = make_ntfs_ptr(ptr, st1, ct1, 2);
+    memfs_put(NTFS_INDEX_DIR "/Demon's Souls (USA).ntfs[PS3ISO]", ptr, len);
+    len = (uint32_t)make_sfo_str(sfo, "TITLE_ID", "BLUS30443");
+    memfs_put(NTFS_INDEX_DIR "/Demon's Souls (USA).SFO", sfo, len);
+    memfs_put(NTFS_INDEX_DIR "/Demon's Souls (USA).PNG", "IMG 70 100 0 0 255 255", 22);
+    len = make_ntfs_ptr(ptr, st2, ct2, 1);
+    memfs_put(NTFS_INDEX_DIR "/Gran Turismo 5.iso.ntfs[PS3ISO]", ptr, len);      /* webMAN kept ".iso"; no .SFO */
+    memfs_put(NTFS_INDEX_DIR "/[RPG] Final Fantasy VII (Disc 1).ntfs[PSXISO]", ptr, len);   /* subfolder tag */
+    memfs_put(NTFS_INDEX_DIR "/[RPG] Final Fantasy VII (Disc 2).ntfs[PSXISO]", ptr, len);
+    memfs_put(NTFS_INDEX_DIR "/Some Movie.ntfs[BDISO]", ptr, len);
+    memfs_put(NTFS_INDEX_DIR "/Okami (USA).PNG", "IMG 70 100 0 0 255 255", 22);   /* webMAN's cover cache */
+    lib_clear(&g_lib);
+    scanner_begin(&sc, roots, 1);
+    scanner_set_reader(&sc, mem_read_at, NULL);
+    while (!scanner_step(&sc, &g_lib, mem_list, NULL)) { }
+    CHECK(sc.found[PLAT_PS3] == 2 && sc.found[PLAT_PS1] == 2 && sc.found[PLAT_PS2] == 0 && sc.found_ntfs == 4);
+    for (i = 0; i < g_lib.tab[PLAT_PS3].count; i++) {
+        const Game *g = &g_lib.tab[PLAT_PS3].games[i];
+        if (strcmp(lib_title(&g_lib, g), "Demon's Souls") == 0) {
+            ps3 |= 1;
+            CHECK_STR(lib_id(&g_lib, g), "BLUS30443");                           /* from webMAN's .SFO */
+            CHECK(g->size == (uint64_t)(2048000 + 1000) * 512u);
+            CHECK_STR(lib_path(&g_lib, g), NTFS_INDEX_DIR "/Demon's Souls (USA).ntfs[PS3ISO]");
+        }
+        if (strcmp(lib_title(&g_lib, g), "Gran Turismo 5") == 0) {
+            ps3 |= 2;
+            CHECK(lib_id(&g_lib, g)[0] == '\0' && g->size == 1300000ull * 512u);
+        }
+    }
+    CHECK(ps3 == 3);
+    for (i = 0; i < g_lib.tab[PLAT_PS1].count; i++)
+        if (strncmp(lib_title(&g_lib, &g_lib.tab[PLAT_PS1].games[i]), "Final Fantasy VII (Disc ", 24) == 0) ps1++;
+    CHECK(ps1 == 2);                                                               /* "[RPG]" tag dropped */
+    CHECK(lib_group_discs(&g_lib, PLAT_PS1) == 1 && g_lib.tab[PLAT_PS1].count == 1);   /* discs from 2 drives group too */
+    /* without file access: still listed, no size or ID */
+    lib_clear(&g_lib);
+    scanner_begin(&sc, roots, 1);
+    while (!scanner_step(&sc, &g_lib, mem_list, NULL)) { }
+    CHECK(sc.found_ntfs == 4 && g_lib.tab[PLAT_PS3].games[0].size == 0);
+    /* covers: webMAN's "<name>.PNG" next to the pointer file; IDs never read from the pointer file */
+    {
+        CoverCand cand[COVER_MAX_CANDS];
+        char id[16];
+        int nc = cover_candidates(PLAT_PS3, NTFS_INDEX_DIR "/Demon's Souls (USA).ntfs[PS3ISO]", 0, "BLUS30443", NULL, cand, COVER_MAX_CANDS);
+        CHECK(nc > 1);
+        CHECK(strstr(cand[0].base, "/BLUS30443") != NULL);                        /* real covers by ID first */
+        for (i = 0; i < nc && strcmp(cand[i].base, NTFS_INDEX_DIR "/Demon's Souls (USA)") != 0; i++) { }
+        CHECK(i < nc);                                                             /* then webMAN's icon */
+        nc = cover_candidates(PLAT_PS3, NTFS_INDEX_DIR "/Gran Turismo 5.iso.ntfs[PS3ISO]", 0, "", NULL, cand, COVER_MAX_CANDS);
+        CHECK(nc >= 1 && strcmp(cand[0].base, NTFS_INDEX_DIR "/Gran Turismo 5") == 0);   /* no ID: the icon */
+        CHECK(!discid_read(PLAT_PS3, NTFS_INDEX_DIR "/Demon's Souls (USA).ntfs[PS3ISO]", 0, mem_read_at, NULL, id, sizeof(id)));
+        CHECK(!discid_read(PLAT_PS1, NTFS_INDEX_DIR "/Crash.ntfs[PSXISO]", 0, mem_read_at, NULL, id, sizeof(id)));
+    }
+    /* launching mounts the pointer file through webMAN */
+    {
+        LaunchReq r;
+        char out[LAUNCH_CMD_MAX];
+        memset(&r, 0, sizeof(r));
+        r.plat = PLAT_PS3; r.path = NTFS_INDEX_DIR "/Demon's Souls (USA).ntfs[PS3ISO]"; r.autoplay = 1;
+        CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+        CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_hdd0/tmp/wmtmp/Demon's%20Souls%20(USA).ntfs%5BPS3ISO%5D?random=0;/wait.ps3?2;/play.ps3");
+    }
+    memfs_reset();
+    lib_clear(&g_lib);
+}
+
+/* milestone 4: "Rescan Library" asks webMAN to re-index the NTFS drives first */
+static void test_ntfs_rescan(void)
+{
+    AppHost host;
+    int i;
+    printf("NTFS: rescan\n");
+    memfs_reset();
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = mem_list;
+    host.read_at = mem_read_at;
+    host.ntfs_refresh = fake_ntfs_refresh;
+    g_ntfs_refreshes = 0;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    CHECK(g_app.mode == MODE_FLOW && g_ntfs_refreshes == 0);                      /* a normal start reads the index as it is */
+    tap(SFB_START);
+    for (i = 0; i < 20 && g_app.rows[g_app.row] != ROW_F_RESCAN; i++) tap(SFB_DOWN);
+    CHECK(g_app.rows[g_app.row] == ROW_F_RESCAN);
+    tap(SFB_CROSS);
+    run_frames(0, RESCAN_MIN_TIME + 1.5f);
+    CHECK(g_ntfs_refreshes == 1 && g_app.mode == MODE_FLOW);
+}
+
 /* milestone 3: the webMAN launch request */
 static void test_launch(void)
 {

@@ -16,7 +16,7 @@
 #include "ps3_platform.h"
 
 /* connect to webMAN; returns the socket or -1 (network initialized on success) */
-static s32 webman_connect(void)
+static s32 webman_connect_t(int timeout_s)
 {
     struct sockaddr_in addr;
     struct timeval tv;
@@ -24,8 +24,9 @@ static s32 webman_connect(void)
     if (netInitialize() < 0) { log_printf("webman: network init failed"); return -1; }
     s = netSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s < 0) { log_printf("webman: socket failed (%d)", (int)s); netDeinitialize(); return -1; }
-    tv.tv_sec = 2; tv.tv_usec = 0;
+    tv.tv_sec = timeout_s; tv.tv_usec = 0;
     netSetSockOpt(s, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    tv.tv_sec = 2;
     netSetSockOpt(s, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = AF_INET;
@@ -39,6 +40,8 @@ static s32 webman_connect(void)
     }
     return s;
 }
+
+static s32 webman_connect(void) { return webman_connect_t(2); }
 
 /* Send a request that webMAN answers only later (a launch: it first waits for
  * the XMB). 0 = connected and sent. */
@@ -83,4 +86,33 @@ int ps3_webman_get(const char *command)
     netClose(s);
     netDeinitialize();
     return rc;
+}
+
+int ps3_webman_get_wait(const char *command, int timeout_s, char *out, size_t cap)
+{
+    char req[512];
+    s32 s;
+    int n, got = 0;
+    if (out && cap) out[0] = '\0';
+    n = snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n", command);
+    if (n <= 0 || n >= (int)sizeof(req)) return -1;
+    s = webman_connect_t(timeout_s);
+    if (s < 0) return -1;
+    if (netSend(s, req, (size_t)n, 0) == n) {
+        char buf[2048];
+        while (got < (int)sizeof(buf) - 1) {
+            int r = (int)netRecv(s, buf + got, sizeof(buf) - 1 - (size_t)got, 0);
+            if (r <= 0) break;
+            got += r;
+        }
+        buf[got] = '\0';
+        if (out && cap) {
+            const char *body = strstr(buf, "\r\n\r\n");
+            snprintf(out, cap, "%s", body ? body + 4 : buf);
+        }
+    }
+    netClose(s);
+    netDeinitialize();
+    if (got <= 0) { log_printf("webman: %s: no answer", command); return -1; }
+    return 0;
 }

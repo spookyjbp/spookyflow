@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.3.5 (milestone 3)"
+#define APP_VERSION     "0.5.0 (milestone 5)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -24,12 +24,14 @@
 #define XFADE_TIME      0.18f
 #define LETTER_TIME     1.00f
 #define TOAST_TIME      2.20f
+#define MUSIC_CARD_TIME 4.50f  /* the "now playing" card (top left) stays this long */
 #define EXIT_FADE_TIME  0.30f
 #define PANEL_VISIBLE_ROWS 6
 #define SLEEP_TIME      300.0f  /* default idle time before the screen dims (Flow Settings > Sleep Mode) */
 #define SLEEP_DIM       0.72f   /* how dark sleep gets: the screen stays visible */
 #define SLEEP_FADE_TIME 1.5f
 #define WAKE_FADE_TIME  0.25f
+#define MUSIC_SLEEP_DUCK 0.6f  /* music drops to 40% while the screen sleeps */
 
 typedef enum { MODE_LOADING = 0, MODE_FLOW = 1 } AppMode;
 
@@ -61,6 +63,17 @@ typedef struct {
     int (*launch)(const char *request);
     /* optional: read webMAN's settings (wm_config.bin); leave cfg->valid 0 if unknown */
     void (*read_wm_config)(WmConfig *cfg);
+    /* optional: read part of a file (fs_ctx is passed); lets the scanner read
+     * NTFS index files (sizes, title IDs) */
+    ReadAtFn read_at;
+    /* optional: ask webMAN to re-index the NTFS drives (/refresh.ps3?prepntfs);
+     * blocks until done; returns the number of games webMAN found, or -1.
+     * Run before the scan on "Rescan Library" (on the scan thread). */
+    int (*ntfs_refresh)(void);
+    /* optional: folder with the background music (.mp3/.wav, see music.h);
+     * needs read_at. The host runs music_decode_step() on a thread and
+     * music_mix() in its audio callback. NULL = no music. */
+    const char *music_dir;
 } AppHost;
 
 typedef struct {
@@ -128,8 +141,13 @@ typedef struct {
     /* overlays */
     char letter[4];
     int letter_bucket, letter_prev_bucket;   /* the A-Z rail glides from the previous letter */
+    int music_gen;          /* last track counter seen (music_current) */
+    int music_scanned;      /* the music folder has been read */
+    char music_name[128];   /* song shown on the now-playing card */
+    float music_card_t;     /* time since the card appeared (>= MUSIC_CARD_TIME: hidden) */
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
     char toast[160];
+    volatile int ntfs_busy;  /* 1 while webMAN re-indexes the NTFS drives (Rescan) */
     int launched;           /* 1 = exiting because a game was launched */
     char last_launch[160];  /* name of the last game/disc launched (no pop-up is shown) */
     float toast_t;          /* seconds since shown */

@@ -932,6 +932,7 @@ static void run_frames(uint32_t held, float secs)
 static void tap(uint32_t b) { app_update(&g_app, b, 1.0f / 60.0f); app_update(&g_app, 0, 1.0f / 60.0f); }
 
 #include "test_covers.h"
+#include "test_music.h"
 
 static void test_app(void)
 {
@@ -1254,7 +1255,11 @@ int main(void)
     test_release_year();
     test_launch();
     test_launch_app();
+    test_ntfs();
+    test_ntfs_rescan();
     test_bg_and_reflect();
+    test_music();
+    test_music_app();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

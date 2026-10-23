@@ -44,7 +44,7 @@ void ps3_decode_lock(void)
 
 void ps3_decode_unlock(void) { __sync_lock_release(&g_dec_lock); }
 
-static int io_read_at(void *ctx, const char *path, uint64_t off, void *buf, uint32_t len)
+int ps3_read_at(void *ctx, const char *path, uint64_t off, void *buf, uint32_t len)
 {
     s32 fd;
     u64 pos = 0, got = 0, total = 0;
@@ -243,7 +243,7 @@ CoverLoader *ps3_covers_start(void)
         log_printf("covers: JPEG decoder module failed to load");
     if (sysModuleIsLoaded(SYSMODULE_PNGDEC) != 0 && sysModuleLoad(SYSMODULE_PNGDEC) != 0)
         log_printf("covers: PNG decoder module failed to load");
-    io.read_at = io_read_at;
+    io.read_at = ps3_read_at;
     io.is_file = io_is_file;
     io.is_dir = io_is_dir;
     io.decode = io_decode;

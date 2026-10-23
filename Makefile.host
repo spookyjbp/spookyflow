@@ -14,7 +14,7 @@ all: test preview
 $(OUT):
 	mkdir -p $(OUT)
 
-$(OUT)/test_core: $(CORE) $(wildcard src/core/*.h) tests/test_core.c tests/test_covers.h tests/null_render.c Makefile.host | $(OUT)
+$(OUT)/test_core: $(CORE) $(wildcard src/core/*.h) tests/test_core.c tests/test_covers.h tests/test_music.h tests/null_render.c Makefile.host | $(OUT)
 	$(CC) $(CFLAGS) $(SANFLAGS) -Isrc/core -o $@ $(CORE) tests/test_core.c tests/null_render.c -lm -lpthread
 
 $(OUT)/preview: $(CORE) $(wildcard src/core/*.h) $(wildcard tools/preview/*.c tools/preview/*.h) Makefile.host | $(OUT)

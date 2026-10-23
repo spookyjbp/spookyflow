@@ -10,6 +10,7 @@
 #define SF_DATA_DIR      "/dev_hdd0/tmp/spookyflow"
 #define SF_TABS_DIR      SF_DATA_DIR "/tabs"
 #define SF_SOUNDS_DIR    SF_DATA_DIR "/sounds"
+#define SF_MUSIC_DIR     SF_DATA_DIR "/music"    /* background music: .mp3 / .wav */
 #define SF_BG_IMAGE      SF_DATA_DIR "/background"   /* + .jpg or .png */
 #define SF_CASES_DIR     SF_DATA_DIR "/cases"    /* optional case images */
 #define SF_COVERS_DIR    SF_DATA_DIR "/covers"   /* processed cover cache (safe to delete) */
@@ -38,8 +39,13 @@ void ps3_load_tab_images(void);
 int ps3_webman_get(const char *command);
 /* send without waiting for the answer (launch requests); 0 = sent */
 int ps3_webman_send(const char *command);
+/* send and wait up to timeout_s for webMAN's answer; the answer's body goes
+ * to out (may be NULL). 0 = it answered */
+int ps3_webman_get_wait(const char *command, int timeout_s, char *out, size_t cap);
+/* read part of a file (ps3_covers.c) */
+int ps3_read_at(void *ctx, const char *path, uint64_t off, void *buf, uint32_t len);
 
-/* ps3_audio.c: UI sounds */
+/* ps3_audio.c: UI sounds and the background music decoder thread */
 void ps3_load_sounds(void);    /* optional user WAVs; call before ps3_audio_start */
 void ps3_audio_start(void);
 void ps3_audio_stop(void);

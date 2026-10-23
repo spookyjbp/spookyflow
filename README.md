@@ -1,9 +1,11 @@
-# spookyflow — milestone 3
+# spookyflow — milestone 4
 
 A cover-flow game launcher for a jailbroken/CFW/HEN PS3, written in C with
 PSL1GHT and Tiny3D. Milestone 1 was the **look and feel**; milestone 2 added
 **real cover art** from your webMAN / multiMAN cover folders; milestone 3
-**launches games through webMAN MOD**, with each game's settings applied.
+**launches games through webMAN MOD**, with each game's settings applied;
+milestone 4 adds **games on NTFS/exFAT external drives** (any number of
+drives at once), through webMAN MOD's NTFS index.
 
 ![PS2 tab](preview/18_covers_ps2.png)
 
@@ -120,7 +122,7 @@ install on your setup, try `spookyflow.gnpdrm.pkg` from the same artifact.
 | ▲ | Open **Game Settings** for the selected game | Close |
 | START | Open **Flow Settings** | Close |
 | ◯ | **Hold 1.5 s** to exit to the XMB (tap does nothing) | Back (tap). Holding here never exits |
-| SELECT | not used | not used |
+| SELECT | Next song (background music) | not used |
 
 L2 details: in the middle of a letter, L2 first goes to the start of that
 letter; press again for the previous letter. Empty letters are skipped. Jumps stop at the first and last letter (no wrap).
@@ -139,8 +141,8 @@ the cover flow.
 They are applied when the game is launched (see *Launching*). The RSX clock
 row was removed in milestone 3; overclocking may come back later.
 
-**Flow Settings (START)** — Auto-play (global, default Off), Music volume,
-Shuffle music, Background (Animated / Image), Download missing covers (stub),
+**Flow Settings (START)** — Auto-play (global, default Off), Music volume
+(0% turns the music off), Shuffle music, Background (Animated / Image), Download missing covers (stub),
 Ignore “The” when sorting, Rescan library, Quit to XMB.
 
 ## Where your games are read from (internal HDD)
@@ -265,6 +267,62 @@ Players are only known for demo games so far. Release years are planned but
 have no source yet (the info line shows a year when one is known; the cover
 cache keeps a field for it).
 
+## External NTFS drives (milestone 4)
+
+The PS3 can't read NTFS drives itself; **webMAN MOD's NTFS edition** can, and
+spookyflow uses its index. webMAN's prepNTFS walks **every NTFS drive it has
+mounted** (two drives, or more, at once) and writes one small pointer file per
+game into `/dev_hdd0/tmp/wmtmp/`:
+
+- `Name.ntfs[PS3ISO]` — a PS3 ISO (plus `Name.SFO`, its PARAM.SFO, and
+  `Name.PNG`, its icon or a cover found next to the ISO on the drive)
+- `Name.ntfs[PSXISO]` — a PS1 game (.bin/.iso, with its .cue)
+
+spookyflow lists those (PS3 ISOs on the PS3 tab, PS1 games on the PS1 tab)
+next to your internal-drive games: the size comes from the pointer file, the
+PS3 title ID from `Name.SFO` (so covers by title ID are found), and ✖
+launches the pointer file through webMAN like any other game.
+
+On the drive, webMAN looks in `PS3ISO` and `PSXISO` (also `BDISO`/`DVDISO`
+for videos, which spookyflow skips), at the drive's root or under `/PS3/`,
+including one level of sub-folders (shown as a `[Folder]` tag, which
+spookyflow drops from the title).
+
+**Rescan Library** first asks webMAN to re-index the NTFS drives
+(`/refresh.ps3?prepntfs`, "Updating NTFS drives…" on the loading screen) and
+then scans, so games added to or removed from a drive show up. A normal
+start reads the index as it is (webMAN also refreshes it itself when its
+setup option to scan NTFS is on).
+
+Not possible through webMAN's NTFS index: **PS2 ISOs** (webMAN doesn't index
+`PS2ISO` on NTFS; PS2 ISOs have to be on the internal drive), **PS3 games as
+folders** (only ISOs), and two copies of the same game file name on two
+drives (their pointer files share a name, so one replaces the other).
+A drive that is unplugged still shows its games until the next Rescan.
+
+## Background music (milestone 5)
+
+Put your music in **`/dev_hdd0/tmp/spookyflow/music/`** (the folder is made
+on the first start; copy files with webMAN's FTP or a file manager). Files
+directly in it and in its sub-folders (one level, e.g. `music/Album/`) are
+played:
+
+- **.mp3** — any bitrate, CBR or VBR, mono or stereo, any sample rate
+  (decoded by minimp3, public domain). ID3 tags and embedded cover pictures
+  are skipped.
+- **.wav** — 16-bit PCM, mono or stereo, any sample rate.
+
+Music starts when the cover flow appears and loops through the folder.
+**Shuffle music** On plays every song once in a random order before any
+repeats; Off plays them by file name. **Music volume** sets the level (the
+UI sounds have their own volume); 0% stops it. **SELECT** skips to the next
+song. Whenever a new song starts, a **Now Playing** card with the kittens
+slides in at the top left for a few seconds (very long names are shrunk,
+then cut with “…”).
+It gets quieter while the screen sleeps and fades out when you exit or
+launch a game. Files that can't be played are skipped (the log says which).
+Rescan Library also re-reads the music folder.
+
 ## Launching (milestone 3)
 
 ✖ on a game (or on a disc in **Choose Disc**) hands it to **webMAN MOD** and
@@ -376,7 +434,13 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.3.5:** the A–Z rail uses the controls bar's fill and outline.
+15. **Milestone 5 (0.5.0):** background music from
+    `/dev_hdd0/tmp/spookyflow/music` (.mp3/.wav), Music volume and Shuffle
+    work, SELECT skips; check it never stutters while you scroll fast or
+    while covers load, and send the log.
+    **Milestone 4 (0.4.0):** games on NTFS/exFAT drives (any number) through
+    webMAN MOD's NTFS index; Rescan re-indexes the drives first.
+    **0.3.5:** the A–Z rail uses the controls bar's fill and outline.
     **0.3.4:** the PS1/PS2 Full Screen / Smoothing options (0.3.1-0.3.3) are
     removed: the emulator uses the XMB's own Game Settings (set them once there).
     The A–Z jump shows an alphabet rail instead of the big letter.
@@ -461,6 +525,9 @@ contents (or attach it) in our chat.
 - The CI toolchain tarball (from bucanero/ps3toolchain, used by Apollo Save
   Tool's CI) and the Docker fallback image are not maintained by us.
 - `sfo.xml` uses ATTRIBUTE 0 and CATEGORY HG (standard homebrew).
+- Music: MP3 decoding runs on the PPU in its own thread (priority 1100) with
+  2 s buffered ahead; its CPU cost on the Cell is expected to be small (a few
+  percent) but not measured.
 - Cover textures use Tiny3D's 16-bit `A1R5G5B5` format. JPEGs are decoded
   with the system decoder (at 1/2–1/8 size when a cover is much bigger than
   needed), PNGs with `pngLoadFromFile` (PNG covers larger than 2048 px are
@@ -469,10 +536,8 @@ contents (or attach it) in our chat.
 ## Not yet (on purpose)
 
 - Downloading missing covers (the Flow Settings row is still a stub).
-- Music playback (the volume/shuffle settings are stored only), background
-  image (the “Image” option shows a still background for now), cover
-  download and the PS2 config editor (stubs that show a message).
-- NTFS/exFAT external drives (the scanner has a slot for an NTFS index source).
+- The PS2 config editor (a stub that shows a message).
+- PS2 ISOs and PS3 game folders on NTFS drives (webMAN's NTFS index has neither).
 - Folder sizes for `GAMES`/`GAMEZ` entries are not computed (chip hidden).
 
 ## For developers
@@ -490,7 +555,8 @@ python3 tools/gen_cats.py       # art/cats.png -> src/core/cats_data.c + pkgfile
 - `src/core/` — portable C99, no PS3 headers: title cleanup, sorting, letter
   table, springs, layout, settings, demo library, scanner, input/hold logic,
   cover cache, cover art lookup/processing/worker (`coverart.c`), title IDs
-  from disc images (`discid.c`), app state machine and the whole UI drawing
+  from disc images (`discid.c`), background music (`music.c`, with
+  `minimp3.h`), app state machine and the whole UI drawing
   (`ui.c`) on top of a tiny primitive interface (`render.h`).
 - `src/ps3/` — PSL1GHT/Tiny3D: `render_tiny3d.c` implements `render.h`,
   plus pads, file system, tab images, the cover worker thread and JPEG/PNG
