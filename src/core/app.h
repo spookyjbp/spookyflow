@@ -12,7 +12,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.2.0 (milestone 2)"
+#define APP_VERSION     "0.2.1 (milestone 2, fix 1)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -26,6 +26,9 @@
 #define TOAST_TIME      2.20f
 #define EXIT_FADE_TIME  0.30f
 #define PANEL_VISIBLE_ROWS 6
+#define SLEEP_TIME      300.0f  /* idle seconds before the screen goes dark (5 minutes) */
+#define SLEEP_FADE_TIME 1.5f
+#define WAKE_FADE_TIME  0.25f
 
 typedef enum { MODE_LOADING = 0, MODE_FLOW = 1 } AppMode;
 
@@ -118,6 +121,13 @@ typedef struct {
     int quit;               /* host should leave the main loop */
     int poweroff;           /* ...and then power the console off */
     float poweroff_arm;     /* >0: "press ✖ again" window (seconds left) */
+
+    /* sleep: after SLEEP_TIME without input the screen fades to black; any
+     * button wakes it, and that press does nothing else */
+    float idle_t;
+    int asleep;
+    int wake_block;         /* swallow input until the waking press is released */
+    float sleep_t;          /* 0..1 fade to black */
 } App;
 
 void app_init(App *a, Library *lib, const AppHost *host);

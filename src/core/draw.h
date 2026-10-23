@@ -25,6 +25,8 @@ float d_xu(float v);
 
 void d_rect(float x, float y, float w, float h, uint32_t col);
 void d_rect_grad(float x, float y, float w, float h, uint32_t top, uint32_t bot);
+/* Horizontal gradient: left color -> right color. */
+void d_rect_hgrad(float x, float y, float w, float h, uint32_t left, uint32_t right);
 void d_rrect(float x, float y, float w, float h, float r, uint32_t col);
 void d_rrect_grad(float x, float y, float w, float h, float r, uint32_t top, uint32_t bot);
 void d_rrect_stroke(float x, float y, float w, float h, float r, float thick, uint32_t col);

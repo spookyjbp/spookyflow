@@ -558,6 +558,23 @@ void app_update(App *a, uint32_t held, float dt)
     if (dt > 0.1f) dt = 0.1f;
     a->time += dt;
     log_set_time(a->time);
+
+    /* sleep / wake */
+    if (held) a->idle_t = 0.0f; else a->idle_t += dt;
+    if (a->asleep && held) {
+        a->asleep = 0;
+        a->wake_block = 1;
+        log_printf("wake (button pressed)");
+    }
+    if (a->wake_block) {
+        if (held) held = 0; else a->wake_block = 0;
+    }
+    if (!a->asleep && a->mode == MODE_FLOW && !a->exiting && a->idle_t >= SLEEP_TIME) {
+        a->asleep = 1;
+        log_printf("sleep (no input for %.0f s)", (double)SLEEP_TIME);
+    }
+    anim_approach(&a->sleep_t, a->asleep ? 1.0f : 0.0f, 1.0f / (a->asleep ? SLEEP_FADE_TIME : WAKE_FADE_TIME), dt);
+
     input_update(&a->input, held, dt);
 
     if (a->exiting) {

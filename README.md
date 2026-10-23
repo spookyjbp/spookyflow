@@ -254,6 +254,13 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
+15. **Fix 1 (0.2.1):** cases look like real plastic cases (spine/hinge on the
+    left, cover in the front); no highlight behind the selected case; the
+    active tab is an outline in your UI color; the A–Z letter uses the UI
+    color; the title sits centered between the tabs and the case, the info
+    chips between the case and the controls; Flow Settings → Show Game Info
+    hides the chips; after 5 minutes without input the screen fades to black
+    and any button wakes it (that press does nothing else).
 
 ## Known unverified things (could not run on a PS3 or with the PS3 toolchain here)
 

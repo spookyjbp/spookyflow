@@ -258,40 +258,45 @@ static void test_layout(void)
     }
 }
 
-/* Vertical stacking: tabs < title pill < frame < chips < bar, with the 2.5% chip gap. */
+/* Vertical stacking: tabs < title pill < case < chips < bar; the title is
+ * centered between the tabs and the selected case, the chips between the
+ * case and the bar, for every platform's case size. */
 static void test_vertical_spacing(void)
 {
     Screen scr[4];
-    int k;
+    int k, plat;
     printf("vertical spacing\n");
     scr[0] = screen_ps3(1280, 720); scr[1] = screen_ps3(1920, 1080);
     scr[2] = screen_direct(1280, 720); scr[3] = screen_direct(1920, 1080);
     for (k = 0; k < 4; k++) {
         UiMetrics m;
         float H = scr[k].H, onepx = 1.0f / scr[k].px;
-        float tabs_b, title_t, title_b, frame_t, frame_b, chips_t, chips_b, bar_t, bar_b;
+        float tabs_b, bar_t;
         d_set_screen(&scr[k]);
         layout_ui(&scr[k], &m);
-        layout_frame_extent(&scr[k], &frame_t, &frame_b);
         tabs_b = m.tabs_y + m.tab_h * 0.5f;
-        title_t = m.title_y - m.title_h * 0.5f; title_b = m.title_y + m.title_h * 0.5f;
-        chips_t = m.chips_y - m.chip_h * 0.5f; chips_b = m.chips_y + m.chip_h * 0.5f;
-        bar_t = m.bar_y - m.bar_h * 0.5f; bar_b = m.bar_y + m.bar_h * 0.5f;
+        bar_t = m.bar_y - m.bar_h * 0.5f;
         CHECK(m.tabs_y - m.tab_h * 0.5f > 0.0f);
-        CHECK(tabs_b + 0.01f * H < title_t);
-        CHECK(title_b + 0.01f * H < frame_t);
-        CHECK_NEAR(chips_t - frame_b, 0.025f * H, onepx);
-        CHECK(chips_b + 0.03f * H < bar_t);              /* clear gap above the bar */
-        CHECK(bar_b < H);
-        /* flow centered between title pill and chips (within 1% of H) */
-        CHECK_NEAR((frame_t - title_b) - (chips_t - frame_b), 0.0, 0.01 * H);
-        /* the selected case itself sits inside the frame */
-        {
+        CHECK(m.bar_y + m.bar_h * 0.5f < H);
+        for (plat = 0; plat < PLAT_COUNT; plat++) {
             CoverPos c;
-            layout_cover(&scr[k], PLAT_PS3, 0.0f, &c);
-            CHECK(c.cy - c.h * 0.5f > frame_t && c.cy + c.h * 0.5f < frame_b);
+            float ty, cy, case_t, case_b;
+            layout_cover(&scr[k], plat, 0.0f, &c);
+            layout_info_y(&scr[k], &m, plat, &ty, &cy);
+            case_t = c.cy - c.h * 0.5f; case_b = c.cy + c.h * 0.5f;
+            CHECK_NEAR(ty - tabs_b, case_t - ty, onepx);                  /* title centered */
+            CHECK_NEAR(cy - case_b, bar_t - cy, onepx);                   /* chips centered */
+            CHECK(tabs_b + 0.01f * H < ty - m.title_h * 0.5f);            /* nothing touches */
+            CHECK(ty + m.title_h * 0.5f + 0.01f * H < case_t);
+            CHECK(case_b + 0.01f * H < cy - m.chip_h * 0.5f);
+            CHECK(cy + m.chip_h * 0.5f + 0.01f * H < bar_t);
         }
+        CHECK(fabsf(m.title_y - (tabs_b + (LY_FLOW_CY - LY_SEL_H * 0.5f) * H) * 0.5f) < onepx);   /* default = full-size case */
     }
+    /* the cover window matches real cover art shapes */
+    CHECK_NEAR(layout_window_aspect(PLAT_PS1), 1.00, 0.005);
+    CHECK_NEAR(layout_window_aspect(PLAT_PS2), 0.70, 0.005);
+    CHECK_NEAR(layout_window_aspect(PLAT_PS3), 0.86, 0.005);
 }
 
 static void test_bar_layout(void)
@@ -455,9 +460,9 @@ static void test_menu(void)
     CHECK(menu_rows(PANEL_GAME, PLAT_PS2, r, MENU_MAX_ROWS) == 5);
     CHECK(r[4] == ROW_G_PS2CFG);
     CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 3);
-    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 13);
-    CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_SFX && r[6] == ROW_F_UI_COLOR && r[9] == ROW_F_XMB_TOP &&
-          r[11] == ROW_F_QUIT && r[12] == ROW_F_POWEROFF);
+    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 14);
+    CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_SFX && r[6] == ROW_F_UI_COLOR && r[7] == ROW_F_INFO && r[10] == ROW_F_XMB_TOP &&
+          r[12] == ROW_F_QUIT && r[13] == ROW_F_POWEROFF);
     settings_defaults(&s);
     memset(&g, 0, sizeof(g));
     menu_value_text(ROW_G_EMULATOR, PLAT_PS1, &s, &g, v, sizeof(v)); CHECK_STR(v, "Standard");
@@ -885,7 +890,7 @@ static void test_sfo(void)
         g_app.settings.xmb_top = 0;
         run_frames(0, LOAD_MIN_TIME + 1.5f);
         tap(SFB_START);
-        for (i = 0; i < 9; i++) tap(SFB_DOWN);
+        for (i = 0; i < 10; i++) tap(SFB_DOWN);
         CHECK(g_app.rows[g_app.row] == ROW_F_XMB_TOP);
         tap(SFB_CROSS);
         CHECK(g_app.settings.xmb_top == 1);
@@ -1047,17 +1052,17 @@ static void test_app(void)
         char key[SET_KEY_MAX];
         sf_strlcpy(key, lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), sizeof(key));
         tap(SFB_START);
-        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 13);
-        for (i = 0; i < 8; i++) tap(SFB_DOWN);
+        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 14);
+        for (i = 0; i < 9; i++) tap(SFB_DOWN);
         CHECK(g_app.rows[g_app.row] == ROW_F_IGNORE_THE);
         tap(SFB_CROSS);
         CHECK(g_app.settings.ignore_the == 1);
         CHECK_STR(lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), key);
         run_frames(0, 0.5f);
-        CHECK(fabsf(g_app.list_scroll.x - 3.0f) < 0.01f);   /* row 9 of 13: scrolled by three */
+        CHECK(fabsf(g_app.list_scroll.x - 4.0f) < 0.01f);   /* row 10 of 14: scrolled by four */
         tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN); run_frames(0, 0.5f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
-        CHECK(fabsf(g_app.list_scroll.x - 6.0f) < 0.01f);   /* scrolled to keep row 12 visible */
+        CHECK(fabsf(g_app.list_scroll.x - 7.0f) < 0.01f);   /* scrolled to keep row 13 visible */
         /* the menus ignore the stick, and holding the D-pad moves only one row */
         run_frames(SFB_STICK_UP, 1.0f); run_frames(0, 0.1f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
@@ -1118,7 +1123,7 @@ static void test_app(void)
     app_init(&g_app, &g_lib, &host);
     run_frames(0, LOAD_MIN_TIME + 1.5f);   /* loading screen + intro */
     tap(SFB_START);
-    for (i = 0; i < 10; i++) tap(SFB_DOWN);
+    for (i = 0; i < 11; i++) tap(SFB_DOWN);
     CHECK(g_app.rows[g_app.row] == ROW_F_RESCAN);
     tap(SFB_CROSS);
     CHECK(g_app.mode == MODE_LOADING && g_app.panel == PANEL_NONE);
@@ -1193,6 +1198,7 @@ int main(void)
     test_cover_loader();
     test_cover_cache_gpu();
     test_app_covers();
+    test_sleep_and_info();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

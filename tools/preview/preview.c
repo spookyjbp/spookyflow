@@ -281,6 +281,15 @@ int main(int argc, char **argv)
     while (cover_worker_step(&g_pv_loader)) { }
     step(0, 0.10f);
     render("22_covers_fading_in", 1280, 720);
+    /* fix 1: letter jump in a UI color, Show Game Info off */
+    g_app.settings.ui_color = 0;
+    press(SFB_R2); step(0, 0.12f);
+    render("23_letter_blue", 1280, 720);
+    step(0, 1.2f);
+    g_app.settings.ui_color = UI_COLOR_WHITE;
+    g_app.settings.show_info = 0;
+    render("24_no_game_info", 1280, 720);
+    g_app.settings.show_info = 1;
     pv_covers_on(0);
     soft_shutdown();
     return 0;

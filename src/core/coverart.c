@@ -34,6 +34,7 @@ static const char *const k_exts[] = { ".JPG", ".PNG", ".jpg", ".png" };
 static const char *const k_plat_dir[PLAT_COUNT] = { "ps1", "ps2", "ps3" };
 
 #define CVR_HEADER 16
+#define CVR_VERSION 2     /* 2: cropped to the case window (fix 1 of milestone 2) */
 
 int cover_folder_count(void) { return F_COUNT; }
 const char *cover_folder(int i) { return (i >= 0 && i < F_COUNT) ? k_folders[i] : ""; }
@@ -52,8 +53,7 @@ void cover_tex_size(int plat, int *w, int *h)
 
 float cover_art_aspect(int plat)
 {
-    float asp = layout_case_aspect(plat);
-    return (asp - 2.0f * LY_CASE_BORDER) / (1.0f - 2.0f * LY_CASE_BORDER);
+    return layout_window_aspect(plat);
 }
 
 /* ------------------------------------------------------------------ */
@@ -399,7 +399,7 @@ static int read_cache(CoverLoader *L, const char *cvr, int tw, int th)
     uint32_t n = (uint32_t)tw * (uint32_t)th * 2u;
     if (!L->io.read_at || L->io.read_at(L->io.ctx, cvr, 0, h, CVR_HEADER) != CVR_HEADER) return 0;
     memcpy(&bom, h + 10, 2);
-    if (memcmp(h, "SFCV", 4) != 0 || h[4] != 1 || bom != 0xFEFF) return 0;
+    if (memcmp(h, "SFCV", 4) != 0 || h[4] != CVR_VERSION || bom != 0xFEFF) return 0;
     if (((h[6] << 8) | h[7]) != tw || ((h[8] << 8) | h[9]) != th) return 0;
     return L->io.read_at(L->io.ctx, cvr, CVR_HEADER, L->scratch, n) == (int)n;
 }
@@ -410,7 +410,7 @@ static void write_cache(CoverLoader *L, const char *cvr, int plat, int tw, int t
     uint16_t bom = 0xFEFF;
     memset(h, 0, sizeof(h));
     memcpy(h, "SFCV", 4);
-    h[4] = 1;
+    h[4] = CVR_VERSION;
     h[5] = (unsigned char)plat;
     h[6] = (unsigned char)(tw >> 8); h[7] = (unsigned char)tw;
     h[8] = (unsigned char)(th >> 8); h[9] = (unsigned char)th;

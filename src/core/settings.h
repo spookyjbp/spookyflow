@@ -31,6 +31,7 @@ typedef struct {
     int sfx_volume;          /* UI sound effects volume 0..100 (0 = off), default 50 */
     int background;          /* BG_*, default animated */
     int ui_color;            /* UI_COLOR_*, default white */
+    int show_info;           /* genre / players / size chips under the case, default 1 */
     int ignore_the;          /* default 0 */
     int xmb_top;             /* pin spookyflow to the top of the XMB Game column, default 0 */
     int last_tab;            /* 0..2 */

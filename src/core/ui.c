@@ -83,7 +83,6 @@ static uint32_t accent_or(uint32_t white_col, float color_alpha)
 {
     return accent_white() ? white_col : sf_col_alpha(accent(), color_alpha);
 }
-static uint32_t on_accent(void) { return accent_white() ? TH_TEXT_ON_WHITE : 0xFFFFFFFFu; }
 
 static float W(void) { return d_screen()->W; }
 static float H(void) { return d_screen()->H; }
@@ -120,6 +119,84 @@ static void draw_background(const App *a, float alpha, int animated)
 
 #define COVER_FADE_FRAMES 14.0f   /* ~0.23 s at 60 fps */
 
+/* ---- 3D-looking cases (front view, like ManaGunZ): a plastic body with a
+ * rounded spine/hinge on the left, the cover sitting in a window, a soft
+ * shadow where the cover tucks under the hinge and a thin raised rim. All
+ * drawn with plain shapes: no logos, no images. ---- */
+
+typedef struct { float x, y, w, h; } Rect;
+
+static uint32_t shade(uint32_t c, float b, float al) { return sf_col_alpha(sf_col_dim(c, b), al); }
+
+typedef struct {
+    uint32_t top, bot;          /* body gradient */
+    uint32_t sp_dark, sp_light; /* spine cylinder */
+    float radius;               /* corner radius, fraction of case height */
+    uint32_t rim;               /* raised rim highlight */
+} CaseStyle;
+
+static const CaseStyle k_case[PLAT_COUNT] = {
+    /* PS1 jewel case: dark tray under clear plastic, bright clear edges */
+    { 0x2C2E34FFu, 0x1A1B1FFFu, 0x131418FFu, 0x41444DFFu, 0.010f, 0xFFFFFF4Cu },
+    /* PS2 DVD keep case: black plastic */
+    { 0x232326FFu, 0x0F0F11FFu, 0x0A0A0CFFu, 0x3C3C44FFu, 0.022f, 0xFFFFFF26u },
+    /* PS3 Blu-ray case: dark smoked plastic */
+    { 0x282C33FFu, 0x131519FFu, 0x0E1014FFu, 0x474D5AFFu, 0.028f, 0xFFFFFF2Eu },
+};
+
+static void case_window(int plat, float x, float y, float w, float h, Rect *r)
+{
+    CaseWindow cw;
+    layout_case_window(plat, &cw);
+    r->x = x + w * cw.x0;
+    r->w = w * (cw.x1 - cw.x0);
+    r->y = y + h * cw.y0;
+    r->h = h * (cw.y1 - cw.y0);
+}
+
+/* rounded spine: dark edge -> light middle -> dark edge */
+static void cylinder(float x, float y, float w, float h, uint32_t dark, uint32_t light, float b, float al)
+{
+    d_rect_hgrad(x, y, w * 0.45f, h, shade(dark, b, al), shade(light, b, al));
+    d_rect_hgrad(x + w * 0.45f, y, w * 0.55f, h, shade(light, b, al), shade(dark, b, al));
+}
+
+static void draw_case_back(int plat, float x, float y, float w, float h, float b, float al, const Rect *win)
+{
+    const CaseStyle *cs = &k_case[plat];
+    float sx = x + d_xu(h * 0.010f), sw = win->x - sx - d_xu(h * 0.006f);
+    d_rrect_grad(x, y, w, h, h * cs->radius, shade(cs->top, b, al), shade(cs->bot, b, al));
+    if (plat == PLAT_PS1) {
+        /* jewel case: flat tray edge with two hinge knuckles */
+        d_rect(sx, y + h * 0.02f, sw, h * 0.96f, shade(cs->sp_dark, b, al));
+        cylinder(sx, y + h * 0.05f, sw, h * 0.11f, cs->sp_dark, cs->sp_light, b, al);
+        cylinder(sx, y + h * 0.84f, sw, h * 0.11f, cs->sp_dark, cs->sp_light, b, al);
+    } else {
+        float gy = y + h * 0.03f, gh = h * 0.94f, lw = d_xu(h * 0.0035f);
+        cylinder(sx, gy, sw, gh, cs->sp_dark, cs->sp_light, b, al);
+        /* moulded ribs along the spine */
+        d_rect(sx + sw * 0.30f, gy, lw, gh, shade(0x0000005Au, 1.0f, al));
+        if (plat == PLAT_PS2) d_rect(sx + sw * 0.66f, gy, lw, gh, shade(0x0000005Au, 1.0f, al));
+    }
+}
+
+static void draw_case_front(int plat, float x, float y, float w, float h, float b, float al, const Rect *win)
+{
+    const CaseStyle *cs = &k_case[plat];
+    float lw = h * 0.0035f;
+    /* the cover tucks under the hinge and the rim: soft shadows on two edges */
+    d_rect_hgrad(win->x, win->y, d_xu(h * 0.030f), win->h, shade(0x00000088u, 1.0f, al), 0x00000000u);
+    d_rect_grad(win->x, win->y, win->w, h * 0.014f, shade(0x00000060u, 1.0f, al), 0x00000000u);
+    /* clear sleeve / lid edge catching the light */
+    d_rect(win->x, win->y, win->w, lw * 0.8f, shade(0xFFFFFF22u, b, al));
+    d_rect(win->x + win->w - d_xu(lw * 0.8f), win->y, d_xu(lw * 0.8f), win->h, shade(0xFFFFFF14u, b, al));
+    if (plat == PLAT_PS1)   /* the clear lid's outline */
+        d_rrect_stroke(win->x - d_xu(lw), win->y - lw, win->w + d_xu(2.0f * lw), win->h + 2.0f * lw, h * 0.006f, lw,
+                       shade(0xFFFFFF26u, b, al));
+    /* raised rim */
+    d_rrect_stroke(x, y, w, h, h * cs->radius, lw * (plat == PLAT_PS1 ? 1.3f : 1.0f), shade(cs->rim, b, al));
+}
+
 /* tex >= 0: real cover art in that texture, faded in by `art` (0..1). */
 static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art)
 {
@@ -128,33 +205,27 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
     float hue = (float)(h32 & 0xFFFF) / 65535.0f;
     float b = p->bright;
     float x = p->cx - p->w * 0.5f, y = p->cy - p->h * 0.5f, w = p->w, h = p->h;
-    float bord = h * LY_CASE_BORDER, hh = h * (plat == PLAT_PS1 ? 0.075f : 0.085f);
-    float ax = x + d_xu(bord), aw = w - 2.0f * d_xu(bord);
-    float ay = y + bord + hh, ah = h - 2.0f * bord - hh;
-    uint32_t top = sf_hsv(hue, 0.42f, 0.58f, 255);
+    Rect win;
     if (alpha <= 0.003f) return;
     if (tex < 0) art = 0.0f;
-    /* case body */
-    d_rrect(x, y, w, h, h * 0.014f, sf_col_alpha(sf_col_dim(TH_CASE, b), alpha));
+    case_window(plat, x, y, w, h, &win);
+    draw_case_back(plat, x, y, w, h, b, alpha, &win);
     if (art < 1.0f) {
+        /* placeholder: flat hashed color, platform name and title */
         float pa = alpha * (1.0f - art);
-        /* header strip with platform name */
-        d_rect(ax, y + bord, aw, hh, sf_col_alpha(sf_col_dim(TH_CASE_HEADER, b), pa));
-        d_text_fit(&g_font_main, ax + d_xu(hh * 0.30f), y + bord + hh * 0.52f, hh * 0.56f,
-                   sf_col_alpha(sf_col_dim(0xFFFFFFE0u, b), pa), k_plat_case[plat], ALIGN_LEFT, aw * 0.9f);
-        /* placeholder art: flat hashed color + title (no lighting effects) */
-        d_rect(ax, ay, aw, ah, sf_col_alpha(sf_col_dim(top, b), pa));
-        d_text_box(&g_font_main, ax + aw * 0.5f, ay + ah * 0.36f, aw * 0.84f, h * 0.068f, 4,
-                   sf_col_alpha(sf_col_dim(0xFFFFFFF0u, b), pa), title);
+        d_rect(win.x, win.y, win.w, win.h, shade(sf_hsv(hue, 0.42f, 0.58f, 255), b, pa));
+        d_rect(win.x, win.y, win.w, win.h * 0.085f, shade(TH_CASE_HEADER, b, pa * 0.85f));
+        d_text_fit(&g_font_main, win.x + d_xu(win.h * 0.025f), win.y + win.h * 0.045f, win.h * 0.050f,
+                   shade(0xFFFFFFD0u, b, pa), k_plat_case[plat], ALIGN_LEFT, win.w * 0.9f);
+        d_text_box(&g_font_main, win.x + win.w * 0.5f, win.y + win.h * 0.40f, win.w * 0.84f, h * 0.068f, 4,
+                   shade(0xFFFFFFF0u, b, pa), title);
     }
-    if (art > 0.0f)   /* real cover fills the whole art area (no header strip) */
-        d_image(tex, ax, y + bord, aw, h - 2.0f * bord, sf_col_alpha(sf_col_dim(0xFFFFFFFFu, b), alpha * art));
-    if (plat == PLAT_PS1)   /* jewel case clear edge */
-        d_rrect_stroke(x, y, w, h, h * 0.014f, h * 0.006f, sf_col_alpha(sf_col_dim(TH_CASE_JEWEL, b), alpha * 0.55f));
+    if (art > 0.0f) d_image(tex, win.x, win.y, win.w, win.h, shade(0xFFFFFFFFu, b, alpha * art));
+    draw_case_front(plat, x, y, w, h, b, alpha, &win);
 }
 
 /* Draw one tab's cover row. xoff = horizontal slide (logical), alpha = fade. */
-static void draw_flow_row(App *a, int tab, float xoff, float alpha, int with_frame)
+static void draw_flow_row(App *a, int tab, float xoff, float alpha)
 {
     const GameList *gl = &a->lib->tab[tab];
     float scroll = a->view[tab].scroll.x;
@@ -163,18 +234,6 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha, int with_fra
     if (gl->count <= 0) {
         d_text(&g_font_main, W() * 0.5f + xoff, H() * LY_FLOW_CY, H() * 0.03f, sf_col_alpha(TH_TEXT_DIM, alpha), "No games", ALIGN_CENTER);
         return;
-    }
-    if (with_frame) {
-        CoverPos p;
-        float frac = sf_absf(scroll - (float)center);
-        float fa = alpha * (1.0f - frac * 1.5f);
-        float pad = LY_FRAME_PAD * H();
-        layout_cover(s, tab, 0.0f, &p);
-        if (fa > 0.0f) {
-            float fx = p.cx - p.w * 0.5f - d_xu(pad) + xoff, fy = p.cy - p.h * 0.5f - pad;
-            float fw = p.w + 2.0f * d_xu(pad), fh = p.h + 2.0f * pad;
-            d_rrect(fx, fy, fw, fh, 0.03f * H(), sf_col_alpha(accent_or(TH_SEL_FRAME, 0.30f), fa));
-        }
     }
     for (k = LY_MAX_DRAW; k >= 0; k--) {
         int side;
@@ -231,10 +290,12 @@ static void draw_tabs(const App *a, float alpha, float yoff)
         hx = sf_lerp(xs[i0 + 1], xs[i1 + 1], f);
         hw = sf_lerp(tw[i0], tw[i1], f);
     }
-    d_rrect(hx - hw * 0.5f, y - m.tab_h * 0.5f, hw, m.tab_h, m.tab_h * 0.5f, sf_col_alpha(accent_or(TH_TAB_ACTIVE, 1.0f), alpha));
+    /* active tab: an outline in the UI color (the pill itself stays dark) */
+    d_rrect_stroke(hx - hw * 0.5f, y - m.tab_h * 0.5f, hw, m.tab_h, m.tab_h * 0.5f, 0.0040f * H(),
+                   sf_col_alpha(accent_or(TH_TAB_ACTIVE, 1.0f), alpha));
     for (i = 0; i < PLAT_COUNT; i++) {
         float k = 1.0f - sf_minf(1.0f, sf_absf(hl - (float)i));
-        uint32_t tc = sf_col_mix(TH_TEXT_DIM, on_accent(), k);
+        uint32_t tc = sf_col_mix(TH_TEXT_DIM, TH_TEXT, k);
         if (g_tab_img[i].present) {
             const TabImage *ti = &g_tab_img[i];
             float box_w = tw[i] - d_xu(m.tab_h * 0.55f);           /* clear of the rounded ends */
@@ -344,8 +405,24 @@ void ui_update_targets(App *a)
     else spring_set(&a->title_w, target);
 }
 
-static void draw_info(App *a, float alpha, const UiMetrics *m)
+static void draw_info(App *a, float alpha, const UiMetrics *m0)
 {
+    UiMetrics mm = *m0;
+    const UiMetrics *m = &mm;
+    /* centered between tabs/case and case/bar for the current tab's case
+     * size (PS1 cases are shorter); glides during a tab switch */
+    {
+        float ty, cy;
+        layout_info_y(d_screen(), m0, a->tab, &ty, &cy);
+        if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
+            float ty0, cy0, e = ease_in_out(a->tab_anim);
+            layout_info_y(d_screen(), m0, a->tab_prev, &ty0, &cy0);
+            ty = sf_lerp(ty0, ty, e);
+            cy = sf_lerp(cy0, cy, e);
+        }
+        mm.title_y = ty;
+        mm.chips_y = cy;
+    }
     const char *cur = info_title(a, a->info_tab, a->info_idx);
     float pad = d_xu(m->title_pad);
     float maxw = W() * m->title_max_w - 2.0f * pad;
@@ -361,10 +438,10 @@ static void draw_info(App *a, float alpha, const UiMetrics *m)
     maxw = sf_minf(maxw, pw - 2.0f * pad * 0.6f);
     if (t < 1.0f) {
         draw_title_text(info_title(a, a->prev_tab, a->prev_idx), alpha * (1.0f - t), m, maxw);
-        draw_chips(a, a->prev_tab, a->prev_idx, alpha * (1.0f - t), m);
+        if (a->settings.show_info) draw_chips(a, a->prev_tab, a->prev_idx, alpha * (1.0f - t), m);
     }
     draw_title_text(cur, alpha * t, m, maxw);
-    draw_chips(a, a->info_tab, a->info_idx, alpha * t, m);
+    if (a->settings.show_info) draw_chips(a, a->info_tab, a->info_idx, alpha * t, m);
 }
 
 /* ------------------------------------------------------------------ */
@@ -569,10 +646,16 @@ static void draw_letter(const App *a)
     al = t < 0.35f ? 1.0f : 1.0f - (t - 0.35f) / (LETTER_TIME - 0.35f);
     sc = 0.85f + 0.15f * ease_out_back(sf_minf(1.0f, t / 0.22f));
     sz = 0.24f * H() * sc;
-    d_rrect(W() * 0.5f - d_xu(sz) * 0.5f, H() * LY_FLOW_CY - sz * 0.5f, d_xu(sz), sz, 0.05f * H() * sc, sf_col_alpha(TH_LETTER_BOX, al));
-    d_rrect_stroke(W() * 0.5f - d_xu(sz) * 0.5f, H() * LY_FLOW_CY - sz * 0.5f, d_xu(sz), sz, 0.05f * H() * sc, 0.002f * H(),
-                   sf_col_alpha(TH_PANEL_OUTLINE, al));
-    d_text(&g_font_big, W() * 0.5f, H() * LY_FLOW_CY, 0.16f * H() * sc, sf_col_alpha(TH_TEXT, al), a->letter, ALIGN_CENTER);
+    {
+        /* matches the UI color: tinted box, colored outline and letter */
+        uint32_t box = accent_white() ? TH_LETTER_BOX : sf_col_mix(TH_LETTER_BOX, accent() | 0xFFu, 0.22f);
+        uint32_t txt = accent_white() ? TH_TEXT : sf_col_mix(accent() | 0xFFu, 0xFFFFFFFFu, 0.30f);
+        d_rrect(W() * 0.5f - d_xu(sz) * 0.5f, H() * LY_FLOW_CY - sz * 0.5f, d_xu(sz), sz, 0.05f * H() * sc,
+                sf_col_alpha(box | 0xFFu, al * (float)(TH_LETTER_BOX & 255u) / 255.0f));
+        d_rrect_stroke(W() * 0.5f - d_xu(sz) * 0.5f, H() * LY_FLOW_CY - sz * 0.5f, d_xu(sz), sz, 0.05f * H() * sc, 0.0035f * H(),
+                       sf_col_alpha(accent_or(TH_PANEL_OUTLINE, 0.95f), al));
+        d_text(&g_font_big, W() * 0.5f, H() * LY_FLOW_CY, 0.16f * H() * sc, sf_col_alpha(txt, al), a->letter, ALIGN_CENTER);
+    }
 }
 
 static void draw_toast(const App *a)
@@ -639,6 +722,7 @@ void ui_draw(App *a)
     int animated = a->settings.background == BG_ANIMATED || a->mode == MODE_LOADING;
     ui_set_color(a->settings.ui_color);
     layout_ui(d_screen(), &m);
+    if (a->sleep_t >= 0.999f) return;          /* asleep: the cleared screen stays black */
     draw_background(a, 1.0f, animated);
 
     if (a->mode == MODE_LOADING) {
@@ -651,10 +735,10 @@ void ui_draw(App *a)
         /* cover rows (tab switch: old slides out, new slides in) */
         if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
             float e = ease_out_cubic(a->tab_anim), dist = W() * 0.45f;
-            draw_flow_row(a, a->tab_prev, -(float)a->tab_dir * e * dist, (1.0f - e) * ia, 1);
-            draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist, e * ia, 1);
+            draw_flow_row(a, a->tab_prev, -(float)a->tab_dir * e * dist, (1.0f - e) * ia);
+            draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist, e * ia);
         } else {
-            draw_flow_row(a, a->tab, (1.0f - intro) * W() * 0.12f, ia, 1);
+            draw_flow_row(a, a->tab, (1.0f - intro) * W() * 0.12f, ia);
         }
         draw_info(a, ia, &m);
         if (a->panel != PANEL_NONE) {
@@ -673,4 +757,5 @@ void ui_draw(App *a)
         }
     }
     if (a->exit_fade > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(TH_FADE, ease_in_out(a->exit_fade)));
+    if (a->sleep_t > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, ease_in_out(a->sleep_t)));
 }

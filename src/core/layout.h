@@ -10,10 +10,8 @@ enum { PLAT_PS1 = 0, PLAT_PS2 = 1, PLAT_PS3 = 2, PLAT_COUNT = 3 };
 
 /* Cover flow (fractions of H) */
 #define LY_SEL_H      0.53f    /* selected case height */
-#define LY_CASE_BORDER 0.016f  /* case rim around the art, fraction of case height */
 #define LY_NB_H       0.34f    /* neighbor case height (~0.64x selected) */
-#define LY_FLOW_CY    0.485f   /* vertical center of the row (centered between title pill and chips) */
-#define LY_FRAME_PAD  0.020f   /* highlight frame padding around the selected case */
+#define LY_FLOW_CY    0.485f   /* vertical center of the row */
 #define LY_GAP_NB     0.12f    /* gap between neighbors, fraction of neighbor width */
 #define LY_GAP_SEL    0.30f    /* gap selected<->first neighbor, fraction of neighbor width */
 #define LY_MAX_DRAW   7        /* draw items with |d| <= 7  (15 covers) */
@@ -31,6 +29,13 @@ float layout_case_scale(int plat);
 /* Position of the item at distance d (= index - scroll) from the center. */
 void  layout_cover(const Screen *s, int plat, float d, CoverPos *out);
 
+/* Where the cover sits on the front of a case, as fractions of the case's
+ * width and height (the rest is the hinge/spine and the plastic rim). */
+typedef struct { float x0, y0, x1, y1; } CaseWindow;
+void  layout_case_window(int plat, CaseWindow *w);
+/* Physical width/height of that window (what covers are cropped to). */
+float layout_window_aspect(int plat);
+
 /* UI anchors, all in fractions of H unless noted */
 typedef struct {
     float tabs_y, tab_h, tab_w, tab_gap, tab_em;
@@ -41,10 +46,12 @@ typedef struct {
     float icon_size, icon_gap;                  /* inside bar groups */
 } UiMetrics;
 
+/* title_y / chips_y are for a full-height case (PS2/PS3); see layout_info_y. */
 void layout_ui(const Screen *s, UiMetrics *m);
 
-/* Vertical extent of the selected-cover highlight frame (largest platform). */
-void layout_frame_extent(const Screen *s, float *top, float *bottom);
+/* Title pill centered between the tabs and the selected case of `plat`, and
+ * the info chips centered between that case and the bottom bar. */
+void layout_info_y(const Screen *s, const UiMetrics *m, int plat, float *title_y, float *chips_y);
 
 /* Tab bar positions. tab_w[3] = width of each tab pill (logical; pass NULL
  * for the default width). shoulder_w = width of the L2/R2 badges (logical).

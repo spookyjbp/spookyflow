@@ -5,11 +5,29 @@
 
 float layout_case_aspect(int plat)
 {
+    /* chosen so the cover window (layout_case_window) matches real cover art:
+     * PS1 fronts are square, PS2 ~0.70, PS3 (webMAN COV packs) ~0.86 */
     switch (plat) {
-    case PLAT_PS1: return 1.0f;    /* square jewel case */
-    case PLAT_PS2: return 0.70f;   /* tall DVD keep case */
-    default:       return 0.84f;   /* Blu-ray case */
+    case PLAT_PS1: return 1.0857f;   /* jewel case: hinge on the left */
+    case PLAT_PS2: return 0.7600f;   /* DVD keep case: spine on the left */
+    default:       return 0.8985f;   /* Blu-ray case */
     }
+}
+
+void layout_case_window(int plat, CaseWindow *w)
+{
+    switch (plat) {
+    case PLAT_PS1: w->x0 = 0.100f; w->x1 = 0.975f; w->y0 = 0.025f; w->y1 = 0.975f; break;
+    case PLAT_PS2: w->x0 = 0.095f; w->x1 = 0.975f; w->y0 = 0.022f; w->y1 = 0.978f; break;
+    default:       w->x0 = 0.065f; w->x1 = 0.980f; w->y0 = 0.022f; w->y1 = 0.978f; break;
+    }
+}
+
+float layout_window_aspect(int plat)
+{
+    CaseWindow w;
+    layout_case_window(plat, &w);
+    return layout_case_aspect(plat) * (w.x1 - w.x0) / (w.y1 - w.y0);
 }
 
 float layout_case_scale(int plat)
@@ -50,24 +68,23 @@ void layout_ui(const Screen *s, UiMetrics *m)
     float H = s->H;
     m->tabs_y = 0.072f * H; m->tab_h = 0.072f * H; m->tab_w = 0.165f * H; m->tab_gap = 0.016f * H; m->tab_em = 0.037f * H;
     m->small_h = 0.040f * H; m->small_w = 0.074f * H; m->small_gap = 0.030f * H; m->small_em = 0.021f * H;
-    m->title_y = 0.150f * H; m->title_h = 0.060f * H; m->title_em = 0.034f * H; m->title_pad = 0.030f * H; m->title_max_w = 0.80f;
-    {
-        /* chips sit 2.5% of H below the highlight frame */
-        float ftop, fbot;
-        layout_frame_extent(s, &ftop, &fbot);
-        m->chip_h = 0.038f * H;
-        m->chips_y = fbot + 0.025f * H + m->chip_h * 0.5f;
-    }
+    m->title_h = 0.060f * H; m->title_em = 0.034f * H; m->title_pad = 0.030f * H; m->title_max_w = 0.80f;
+    m->chip_h = 0.038f * H;
     m->chip_em = 0.021f * H; m->chip_pad = 0.018f * H; m->chip_gap = 0.010f * H;
     m->bar_y = 0.935f * H; m->bar_h = 0.054f * H; m->bar_em = 0.023f * H; m->bar_margin_x = 0.015f;
     m->icon_size = 0.036f * H; m->icon_gap = 0.012f * H;
+    layout_info_y(s, m, PLAT_PS2, &m->title_y, &m->chips_y);
 }
 
-void layout_frame_extent(const Screen *s, float *top, float *bottom)
+void layout_info_y(const Screen *s, const UiMetrics *m, int plat, float *title_y, float *chips_y)
 {
-    float half = (LY_SEL_H * 0.5f + LY_FRAME_PAD) * s->H;
-    *top = LY_FLOW_CY * s->H - half;
-    *bottom = LY_FLOW_CY * s->H + half;
+    CoverPos c;
+    float case_t, case_b, tabs_b = m->tabs_y + m->tab_h * 0.5f, bar_t = m->bar_y - m->bar_h * 0.5f;
+    layout_cover(s, plat, 0.0f, &c);
+    case_t = c.cy - c.h * 0.5f;
+    case_b = c.cy + c.h * 0.5f;
+    *title_y = (tabs_b + case_t) * 0.5f;
+    *chips_y = (case_b + bar_t) * 0.5f;
 }
 
 void layout_tabs(const Screen *s, const UiMetrics *m, const float *tab_w, float shoulder_w, float out_x[5])

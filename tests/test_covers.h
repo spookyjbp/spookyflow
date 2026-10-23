@@ -622,3 +622,57 @@ static void test_app_covers(void)
     cover_loader_stop(&L);
     memfs_reset();
 }
+
+/* fix 1: sleep after 5 idle minutes, any button wakes without acting;
+ * Show Game Info persists */
+static void test_sleep_and_info(void)
+{
+    AppHost host;
+    int sel;
+    Settings s1, s2;
+    printf("sleep mode, game info toggle\n");
+    memset(&host, 0, sizeof(host));
+    host.fs_list = fake_none;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    CHECK(g_app.mode == MODE_FLOW && !g_app.asleep);
+    run_frames(0, SLEEP_TIME - 10.0f);
+    CHECK(!g_app.asleep);
+    tap(SFB_RIGHT);                                   /* activity resets the timer */
+    run_frames(0, SLEEP_TIME - 10.0f);
+    CHECK(!g_app.asleep);
+    run_frames(0, 12.0f + SLEEP_FADE_TIME);
+    CHECK(g_app.asleep && g_app.sleep_t >= 0.999f);
+    ui_draw(&g_app);                                  /* asleep: draws nothing */
+    sel = g_app.view[g_app.tab].sel;
+    run_frames(SFB_RIGHT, 0.6f);                      /* the waking press doesn't move... */
+    run_frames(0, 0.1f);
+    CHECK(!g_app.asleep && g_app.view[g_app.tab].sel == sel);
+    run_frames(0, WAKE_FADE_TIME + 0.05f);
+    CHECK(g_app.sleep_t == 0.0f);
+    tap(SFB_RIGHT);                                   /* ...the next one does */
+    CHECK(g_app.view[g_app.tab].sel == sel + 1);
+    run_frames(0, SLEEP_TIME + 2.0f);
+    CHECK(g_app.asleep);
+    run_frames(SFB_CIRCLE, HOLD_EXIT_TIME + 1.0f);    /* holding ◯ to wake never exits */
+    CHECK(!g_app.asleep && !g_app.exiting);
+    run_frames(0, 0.1f);
+
+    settings_defaults(&s1);
+    CHECK(s1.show_info == 1);
+    s1.show_info = 0;
+    CHECK(settings_save(&s1, "build-host/test_info.ini") == 0);
+    settings_defaults(&s2);
+    CHECK(settings_load(&s2, "build-host/test_info.ini") == 0 && s2.show_info == 0);
+    {
+        GameCfg g;
+        char txt[32];
+        memset(&g, 0, sizeof(g));
+        CHECK(menu_change(ROW_F_INFO, 0, 0, &s1, &g) == MENU_FX_CHANGED && s1.show_info == 1);
+        menu_value_text(ROW_F_INFO, 0, &s1, &g, txt, sizeof(txt));
+        CHECK_STR(txt, "On");
+        CHECK_STR(menu_label(ROW_F_INFO), "Show Game Info");
+    }
+    g_app.settings.show_info = 0;
+    ui_draw(&g_app);
+}

@@ -87,6 +87,16 @@ void d_rect_grad(float x, float y, float w, float h, uint32_t top, uint32_t bot)
     r_tris_end();
 }
 
+void d_rect_hgrad(float x, float y, float w, float h, uint32_t left, uint32_t right)
+{
+    if ((left & 255) == 0 && (right & 255) == 0) return;
+    if (w <= 0 || h <= 0) return;
+    r_tris_begin();
+    r_vtx(x, y, left); r_vtx(x + w, y, right); r_vtx(x + w, y + h, right);
+    r_vtx(x, y, left); r_vtx(x + w, y + h, right); r_vtx(x, y + h, left);
+    r_tris_end();
+}
+
 /* Rounded rectangle as a 9-slice of the anti-aliased disc texture: 9 quads
  * (36 vertices) whatever the size, instead of hundreds of feathered
  * triangles. Corner quads map the disc's quadrants; edges and center use the
