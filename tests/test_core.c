@@ -294,6 +294,23 @@ static void test_vertical_spacing(void)
             CHECK(cy + m.chip_h * 0.5f + 0.01f * H < bar_t);
         }
         CHECK(fabsf(m.title_y - (tabs_b + (LY_FLOW_CY - LY_SEL_H * 0.5f) * H) * 0.5f) < onepx);   /* default = full-size case */
+        /* other backgrounds: the original centered row */
+        {
+            CoverPos c0, c1;
+            UiMetrics mc;
+            CHECK(layout_floor() == 1);
+            layout_set_floor(0);
+            layout_cover(&scr[k], PLAT_PS2, 0.0f, &c0);
+            layout_cover(&scr[k], PLAT_PS2, 1.0f, &c1);
+            CHECK_NEAR(c0.h, LY_C_SEL_H * H, 1e-3);
+            CHECK_NEAR(c1.h, LY_C_NB_H * H, 1e-3);
+            CHECK_NEAR(c0.cy, LY_C_CY * H, 1e-3);
+            CHECK_NEAR(c1.cy, c0.cy, 1e-3);                              /* centers in line */
+            CHECK_NEAR(layout_flow_cy(), LY_C_CY, 1e-6);
+            layout_ui(&scr[k], &mc);
+            CHECK(fabsf(mc.title_y - (tabs_b + (LY_C_CY - LY_C_SEL_H * 0.5f) * H) * 0.5f) < onepx);
+            layout_set_floor(1);
+        }
     }
     /* the cover window matches real cover art shapes */
     CHECK_NEAR(layout_window_aspect(PLAT_PS1), 1.00, 0.005);

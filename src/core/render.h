@@ -19,7 +19,9 @@ enum {
     TEX_STAGE = 13, TEX_STAGE_SHAPES = 14,   /* built-in Stage background (brightness) + its floating shapes */
     TEX_STAGE_HI = 15,                        /* Stage's white-hot cores */
     TEX_STAGE_FX = 16,                        /* Stage's ribbons, flare and stars (brightness) */
-    TEX_COUNT_FIXED = 17
+    TEX_STAGE_RIB = 17,                       /* Stage's light ribbons */
+    TEX_STAGE_GLOW = 18,                      /* Stage's glow halos */
+    TEX_COUNT_FIXED = 19
 };
 
 /* Cover art: R_COVER_SLOTS textures TEX_COVER0 + slot, one per cover cache

@@ -4,14 +4,17 @@
 Needs Pillow + numpy.
 
   art/stage.jpg         1280x720 base scene, brightness only (tinted by the app)
-  art/stage_fx.png      1024x1024 brightness atlas (ribbons, glows, stars, mist) + art/stage_fx.json
+  art/stage_rib.jpg     1024x904 light ribbons (left | right; bodies over white-hot cores)
+  art/stage_glow.jpg    512x512 glow halos: scene (top), left | right ribbons (bottom)
+  art/stage_fx.png      1024x1024 brightness atlas (glows, mist, particles) + art/stage_fx.json
   art/stage_shapes.png  1024x896 RGBA: 4 shapes x 2 angles x (glass body, white-hot edges)
 
 Everything becomes brightness (premultiplied by the asset's alpha, so dark
 cut-out edges and leftover checkerboard fade away) so the app can tint it
 with the UI color.
 
-usage: python3 tools/make_stage.py <asset folder>   then: python3 tools/gen_stage.py
+usage: python3 tools/make_stage.py <asset folder> <base picture> <particle png folder> <base picture with ribbons>
+       then: python3 tools/gen_stage.py
 """
 import os, sys, json
 import numpy as np
@@ -55,19 +58,71 @@ base = np.clip(base, 0, 255)
 Image.fromarray(base.astype(np.uint8), 'L').resize((1280, 720), Image.LANCZOS).save(
     os.path.join(root, 'art', 'stage.jpg'), quality=92, optimize=True)
 
+# 1b. ribbons: the same scene with its light ribbons (fourth argument) minus the
+# plain scene = just the ribbons. Split into a left and a right wave set
+# (cross-fading over the middle fifth) so each can sway on its own.
+# art/stage_rib.jpg 1024x904: top = left | right bodies, bottom = their white-hot cores.
+rib_src = sys.argv[4] if len(sys.argv) > 4 else None
+if rib_src:
+    _a = np.asarray(Image.open(rib_src).convert('RGB').resize(Image.open(base_src).size, Image.LANCZOS)).astype(np.float32)
+    body = np.clip(_a - _rgb, 0, 255).max(axis=2)
+    body = 255.0 * np.clip(body / 235.0, 0, 1) ** 1.15
+    hot = 255.0 * np.clip((_a.min(axis=2) - _rgb.min(axis=2) - 70.0) / 130.0, 0, 1) ** 1.2
+    H0, W0 = body.shape
+    sky = int(round(H0 * 0.627))                        # LY_HORIZON_Y
+    fade = np.clip((sky - np.arange(H0)) / (H0 * 0.03), 0, 1)[:, None]
+    body, hot = (body * fade)[:sky], (hot * fade)[:sky]
+    xs = np.arange(W0) / W0
+    wl = np.clip((0.6 - xs) / 0.2, 0, 1)[None, :]
+    wr = 1.0 - wl
+    out = np.zeros((904, 1024), np.float32)
+    for k, m in enumerate((body, hot)):
+        for side, (wgt, x0) in enumerate(((wl, 0.0), (wr, 0.4))):
+            part = (m * wgt)[:, int(x0 * W0):int((x0 + 0.6) * W0)]
+            im = Image.fromarray(np.clip(part, 0, 255).astype(np.uint8), 'L').resize((512, 452), Image.LANCZOS)
+            out[k * 452:(k + 1) * 452, side * 512:(side + 1) * 512] = np.asarray(im)
+    Image.fromarray(out.astype(np.uint8), 'L').save(os.path.join(root, 'art', 'stage_rib.jpg'), quality=92, optimize=True)
+
+    # 1c. glow (bloom): soft halos around everything bright. art/stage_glow.jpg 512x512:
+    # rows 0..287 = the scene (whole screen), rows 288..511 = left | right ribbon sets
+    def bloom(v, scale):
+        b = 255.0 * np.clip((v - 105.0) / 150.0, 0, 1) ** 1.5
+        im = Image.fromarray(b.astype(np.uint8), 'L')
+        acc = np.zeros(b.shape, np.float32)
+        for r, wt in ((6, 0.45), (18, 0.35), (48, 0.30)):
+            acc += wt * np.asarray(im.filter(ImageFilter.GaussianBlur(r * scale))).astype(np.float32)
+        return 255.0 * np.clip(acc / max(acc.max(), 1.0), 0, 1) ** 0.8
+    glow = np.zeros((512, 512), np.float32)
+    scene = np.asarray(Image.open(os.path.join(root, 'art', 'stage.jpg')).convert('L')).astype(np.float32)
+    glow[:288] = np.asarray(Image.fromarray(bloom(scene, 1.0).astype(np.uint8)).resize((512, 288), Image.LANCZOS))
+    ribs = np.maximum(out[:452], out[452:])
+    for side in range(2):
+        g = bloom(ribs[:, side * 512:(side + 1) * 512], 0.8)
+        glow[288:, side * 256:(side + 1) * 256] = np.asarray(Image.fromarray(g.astype(np.uint8)).resize((256, 224), Image.LANCZOS))
+    Image.fromarray(glow.astype(np.uint8), 'L').save(os.path.join(root, 'art', 'stage_glow.jpg'), quality=92, optimize=True)
+
 # 2. effects atlas (brightness), packed in rows
 elems = [
-    ('ribbon_a', P('Ribbons', 'large_wave_01.png')),
-    ('ribbon_b', P('Ribbons', 'large_wave_02.png')),
-    ('ribbon_c', P('Ribbons', 'large_wave_03.png')),
-    ('ribbon_d', P('Ribbons', 'large_wave_04.png')),
     ('glow',     P('Lighting', 'glow_01.png')),
     ('line',     P('Lighting', 'glow_04.png')),
     ('star',     P('Lighting', 'glow_05.png')),
-    ('stars_a',  P('Particles', 'particles_01.png')),
-    ('stars_b',  P('Particles', 'particles_05.png')),
-    ('mist',     P('Atmosphere', 'mist_01.png')),
 ]
+# particles: from the XMB particle PNGs (third argument: their folder). Those
+# files were cut out of a 4x4 sheet off-grid, so the columns are stacked back
+# together and re-cut at the empty gaps: 5 rows x 4 columns of clean sprites.
+PROWS = [(0, 200), (200, 385), (385, 582), (582, 745), (745, 901)]
+PICK = {'sparks_a': (1, 0),    # dense fine sparkle band
+        'sparks_b': (0, 3),    # twinkling star band
+        'orbs':     (0, 1),    # floating orbs
+        'streaks':  (3, 0)}    # light streaks (heads point right)
+part_dir = sys.argv[3] if len(sys.argv) > 3 else None
+def particle(row, col):
+    import glob
+    fs = sorted(glob.glob(os.path.join(part_dir, '*.png')))
+    colimg = np.concatenate([rgba(fs[r * 4 + col]) for r in range(4)], 0)
+    cell = colimg[PROWS[row][0]:PROWS[row][1]]
+    ys, xs = np.nonzero(cell[..., 3] > 8)
+    return cell[max(0, ys.min() - 6):ys.max() + 7, max(0, xs.min() - 6):xs.max() + 7]
 AW, AH = 1024, 1024
 atlas = np.zeros((AH, AW), np.float32)
 rects = {}
@@ -79,13 +134,34 @@ def smooth(v, close=3, blur=1.4, floor=14.0):
     im = im.filter(ImageFilter.GaussianBlur(blur))
     return np.clip((np.asarray(im).astype(np.float32) - floor) * 255.0 / (255.0 - floor), 0, 255)
 
-for name, path in elems:
-    v = bright(rgba(path))
-    if name.startswith('ribbon') or name == 'mist':
-        v = smooth(v)
-    elif name.startswith('stars'):
-        v = np.clip((v - 40.0) * 1.6, 0, 255)       # only the points of light, no cloudy haze
-    v = feather(v, 12 if name.startswith("ribbon") else 4)
+def fog(w=1024, h=256, seed=7):
+    """seamless (wraps left-right) soft fog: periodic fractal noise, stretched
+    sideways into wisps, denser in the middle band and fading out above and
+    below. Returned as an RGBA-like array (white, alpha = density)."""
+    rng = np.random.default_rng(seed)
+    fy = np.fft.fftfreq(h)[:, None]
+    fx = np.fft.fftfreq(w)[None, :] * 3.0           # x3: wisps 3x wider than tall
+    f = np.sqrt(fx * fx + fy * fy)
+    f[0, 0] = 1.0
+    spec = np.fft.fft2(rng.standard_normal((h, w))) / f ** 1.8
+    spec[np.sqrt(fx * fx + fy * fy) < 7.5 / w] = 0    # no single tile-wide blob
+    spec[0, 0] = 0
+    spec *= np.exp(-(f / 0.06) ** 2)                # soft: no fine grain
+    n = np.real(np.fft.ifft2(spec))
+    n = (n - n.mean()) / n.std()
+    d = np.clip((n + 1.1) / 3.4, 0, 1) ** 1.5      # soft wisps, thin between them
+    yy = (np.arange(h) / (h - 1))[:, None]
+    env = np.exp(-((yy - 0.55) / 0.22) ** 2)         # thickest a little below the middle
+    a = 255.0 * d * env
+    return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
+
+srcs = [(n, rgba(p)) for n, p in elems] + [(n, particle(*rc)) for n, rc in PICK.items()] + [('mist', fog())]
+for name, px in srcs:
+    v = bright(px)
+    if name in ('glow', 'line', 'star'):           # no checkerboard here: keep the white cores
+        v = px[..., :3].max(axis=2) * px[..., 3] / 255.0
+    if name != 'mist':                               # the fog wraps left-right: no feathered sides
+        v = feather(v, 10 if name in PICK else 4)
     h, w = v.shape
     if x + w > AW: x = 0; y += rowh + 4; rowh = 0
     atlas[y:y + h, x:x + w] = v

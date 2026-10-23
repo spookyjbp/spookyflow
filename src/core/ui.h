@@ -28,6 +28,8 @@ void ui_set_background_image(int tex);
 void ui_set_stage(int bg_tex, int shapes_tex);
 void ui_set_stage_highlight(int tex);
 void ui_set_stage_fx(int tex);
+void ui_set_stage_ribbons(int tex);
+void ui_set_stage_glow(int tex);
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */
 void ui_set_color(int idx);

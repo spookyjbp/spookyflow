@@ -16,6 +16,10 @@ enum { PLAT_PS1 = 0, PLAT_PS2 = 1, PLAT_PS3 = 2, PLAT_COUNT = 3 };
                                 * Smaller cases are farther back, so they stand nearer the
                                 * horizon (bottom = horizon + (floor - horizon) * h / selected h) */
 #define LY_FLOW_CY    (LY_FLOOR_Y - LY_SEL_H * 0.5f)   /* middle of the selected case (letter overlay etc.) */
+/* every other background: the original centered row */
+#define LY_C_SEL_H    0.53f
+#define LY_C_NB_H     0.34f
+#define LY_C_CY       0.485f   /* vertical center of the row */
 #define LY_GAP_NB     0.12f    /* gap between neighbors, fraction of neighbor width */
 #define LY_GAP_SEL    0.30f    /* gap selected<->first neighbor, fraction of neighbor width */
 #define LY_MAX_DRAW   7        /* draw items with |d| <= 7  (15 covers) */
@@ -60,6 +64,11 @@ typedef struct {
 
 /* title_y / chips_y are for a full-height case (PS2/PS3); see layout_info_y. */
 void layout_ui(const Screen *s, UiMetrics *m);
+/* 1 (default) = cases stand on the Stage floor in perspective (LY_SEL_H...);
+ * 0 = the original centered row (LY_C_...) for every other background */
+void  layout_set_floor(int on);
+int   layout_floor(void);
+float layout_flow_cy(void);   /* middle of the selected case, fraction of H */
 
 /* Title pill centered between the tabs and the selected case of `plat`, and
  * the info chips centered between that case and the bottom bar. */

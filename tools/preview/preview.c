@@ -429,6 +429,30 @@ int main(int argc, char **argv)
                     if (load_raw_alpha(a1, TEX_STAGE, TEX_STAGE_HI) == 0 && load_raw(a2, TEX_STAGE_SHAPES, NULL, NULL) == 0) {
                         char a3[512];
                         FILE *ff;
+                        snprintf(a3, sizeof(a3), "%s/rib.rgba", sdir);
+                        ff = fopen(a3, "rb");
+                        if (ff) {
+                            int rw = 0, rh = 0;
+                            if (fscanf(ff, "%d %d", &rw, &rh) == 2 && fgetc(ff) == '\n') {
+                                unsigned char *px = (unsigned char *)malloc((size_t)rw * rh);
+                                if (px && fread(px, 1, (size_t)rw * rh, ff) == (size_t)rw * rh &&
+                                    r_texture_upload_alpha(TEX_STAGE_RIB, rw, rh, px) == 0) ui_set_stage_ribbons(TEX_STAGE_RIB);
+                                free(px);
+                            }
+                            fclose(ff);
+                        }
+                        snprintf(a3, sizeof(a3), "%s/glow.rgba", sdir);
+                        ff = fopen(a3, "rb");
+                        if (ff) {
+                            int gw = 0, gh = 0;
+                            if (fscanf(ff, "%d %d", &gw, &gh) == 2 && fgetc(ff) == '\n') {
+                                unsigned char *px = (unsigned char *)malloc((size_t)gw * gh);
+                                if (px && fread(px, 1, (size_t)gw * gh, ff) == (size_t)gw * gh &&
+                                    r_texture_upload_alpha(TEX_STAGE_GLOW, gw, gh, px) == 0) ui_set_stage_glow(TEX_STAGE_GLOW);
+                                free(px);
+                            }
+                            fclose(ff);
+                        }
                         snprintf(a3, sizeof(a3), "%s/fx.rgba", sdir);
                         ff = fopen(a3, "rb");
                         if (ff) {

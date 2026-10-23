@@ -6,14 +6,23 @@
 
 extern const unsigned char g_stage_jpg[];          /* 1280x720 base scene, brightness */
 extern const unsigned int g_stage_jpg_size;
+extern const unsigned char g_stage_rib_jpg[];      /* 1024x904 light ribbons, brightness: top = left | right
+                                                       wave sets, bottom = their white-hot cores */
+extern const unsigned int g_stage_rib_jpg_size;
+extern const unsigned char g_stage_glow_jpg[];     /* 512x512 glow halos (brightness): rows 0..287 the scene,
+                                                       rows 288..511 left | right ribbon sets */
+extern const unsigned int g_stage_glow_jpg_size;
+#define STAGE_GLOW_SPLIT (288.0f / 512.0f)
+#define STAGE_RIB_SPLIT 0.4f   /* left set covers screen x 0..0.6, right set 0.4..1 (cross-faded) */
 extern const unsigned char g_stage_fx_png[];       /* brightness atlas, rects below */
 extern const unsigned int g_stage_fx_png_size;
 extern const unsigned char g_stage_shapes_png[];   /* RGBA 1024x896: columns = shape, rows = angle 1 body,
                                                        angle 1 edges, angle 2 body, angle 2 edges */
 extern const unsigned int g_stage_shapes_png_size;
 
-enum { STAGE_FX_RIBBON_A, STAGE_FX_RIBBON_B, STAGE_FX_RIBBON_C, STAGE_FX_RIBBON_D, STAGE_FX_GLOW, STAGE_FX_LINE,
-       STAGE_FX_STAR, STAGE_FX_STARS_A, STAGE_FX_STARS_B, STAGE_FX_MIST, STAGE_FX_COUNT };
+enum { STAGE_FX_GLOW, STAGE_FX_LINE,
+       STAGE_FX_STAR, STAGE_FX_MIST,
+       STAGE_FX_SPARKS_A, STAGE_FX_SPARKS_B, STAGE_FX_ORBS, STAGE_FX_STREAKS, STAGE_FX_COUNT };
 extern const int g_stage_fx_size[2];
 extern const int g_stage_fx_rect[STAGE_FX_COUNT][4];   /* x, y, w, h in the atlas */
 

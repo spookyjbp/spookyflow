@@ -263,6 +263,30 @@ static int upload_png_buffer(int tex, const unsigned char *buf, unsigned size, i
     return rc;
 }
 
+/* decode a brightness-only JPEG (R = G = B) into an alpha texture */
+static int upload_gray_jpg(int tex, const unsigned char *buf, unsigned int size)
+{
+    jpgData j;
+    int rc;
+    u32 x, y;
+    unsigned char *a8;
+    memset(&j, 0, sizeof(j));
+    ps3_decode_lock();
+    rc = jpgLoadFromBuffer(buf, size, &j);
+    ps3_decode_unlock();
+    if (rc != 0 || !j.bmp_out) return -1;
+    a8 = (unsigned char *)malloc((size_t)j.width * j.height);
+    if (!a8) { free(j.bmp_out); return -1; }
+    for (y = 0; y < j.height; y++) {
+        const unsigned char *row = (const unsigned char *)j.bmp_out + (size_t)y * j.pitch;
+        for (x = 0; x < j.width; x++) a8[(size_t)y * j.width + x] = row[x * 4u + 1u];
+    }
+    free(j.bmp_out);
+    rc = r_texture_upload_alpha(tex, (int)j.width, (int)j.height, a8);
+    free(a8);
+    return rc;
+}
+
 static void load_stage(void)
 {
     jpgData jpg;
@@ -316,6 +340,11 @@ static void load_stage(void)
             log_printf("stage: effects could not be decoded (%d)", frc);
         }
     }
+    /* light ribbons and glow halos: grayscale JPEGs -> alpha textures */
+    if (upload_gray_jpg(TEX_STAGE_RIB, g_stage_rib_jpg, g_stage_rib_jpg_size) == 0) ui_set_stage_ribbons(TEX_STAGE_RIB);
+    else log_printf("stage: ribbons could not be decoded");
+    if (upload_gray_jpg(TEX_STAGE_GLOW, g_stage_glow_jpg, g_stage_glow_jpg_size) == 0) ui_set_stage_glow(TEX_STAGE_GLOW);
+    else log_printf("stage: glow could not be decoded");
     if (upload_png_buffer(TEX_STAGE_SHAPES, g_stage_shapes_png, g_stage_shapes_png_size, &w, &h) != 0) {
         log_printf("stage: shapes could not be decoded");
         ui_set_stage(TEX_STAGE, -1);

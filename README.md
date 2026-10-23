@@ -196,20 +196,26 @@ covers, where each one came from (or the title ID it looked for).
 
 ## Stage background (default)
 
-The default background is **Stage**: a dark scene with curved light waves and
-a reflective floor, four wave ribbons that sway and breathe over it, a slowly
-drifting star field, a light line and glows pulsing on the horizon (one star
-glides along it), mist drifting over the floor, and glassy triangle / circle /
-cross / square shapes floating in the sky beside the title. The cases stand
-on its floor in perspective: the selected case stands in front of the horizon
-(`LY_FLOOR_Y`), smaller cases farther back stand nearer it (`LY_HORIZON_Y`),
-and each casts a soft contact shadow and a reflection. Everything is stored as
-brightness and tinted with the UI color on the GPU (Flow Settings → UI Color);
-the brightest parts stay white-hot. Assets: `art/stage.jpg`, `art/stage_fx.png`
-(+ `.json`), `art/stage_shapes.png`, embedded by `tools/gen_stage.py`;
-`tools/make_stage.py <asset folder>` rebuilds them from the animation asset
-folders (Background, Ribbons, Lighting, Particles, Atmosphere, Symbols); an
-optional second argument replaces the base scene picture. Pick other styles in Flow
+The default background is **Stage**: a dark stage with a reflective floor and
+lights along its horizon. Over it, the left and right sets of light ribbons
+sway, tilt and breathe on their own; bands of fine sparkles drift across the
+sky, orbs rise slowly from the floor lights, light streaks sweep past now and
+then, the horizon line and its glows pulse (one star glides along it), soft
+fog drifts over the floor in three layers (a seamless generated texture, each
+layer at its own depth, pace and thickness), and glassy triangle / circle / cross / square shapes
+float beside the title. The cases stand on its floor in perspective: the
+selected case stands in front of the horizon (`LY_FLOOR_Y`), smaller cases
+farther back stand nearer it (`LY_HORIZON_Y`), and each casts a soft contact
+shadow and a reflection (every other background keeps the original centered
+row). The lights, the horizon and the ribbons glow: soft halos (`art/stage_glow.jpg`)
+breathe around them, and the ribbons' halos move with them. Everything is stored as brightness and tinted with
+the UI color on the GPU (Flow Settings → UI Color); the brightest parts stay
+white-hot. Assets: `art/stage.jpg` (scene), `art/stage_rib.jpg` (ribbons),
+`art/stage_fx.png` (+ `.json`: glows, mist, particles), `art/stage_shapes.png`,
+embedded by `tools/gen_stage.py`. `tools/make_stage.py <asset folder> <scene>
+<particle folder> <scene with ribbons>` rebuilds them; the ribbons are the
+difference between the two scene pictures, and the particle PNGs (cut off-grid
+from their sheet) are stitched back together and re-cut. Pick other styles in Flow
 Settings → Background.
 
 ## Background picture (optional)
@@ -331,7 +337,13 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 17 (0.2.17):** new Stage scene; cases stand on the floor in
+15. **Fix 20 (0.2.20):** Stage lights and ribbons glow; other backgrounds use
+    the original centered case row again.
+    **Fix 19 (0.2.19):** natural fog over the floor replaces the mist sprites.
+    **Fix 18 (0.2.18):** plain Stage scene with crisp animated light ribbons;
+    new particles (sparkle bands, rising orbs, light streaks) replace the
+    dusty star field.
+    **Fix 17 (0.2.17):** new Stage scene; cases stand on the floor in
     perspective with contact shadows.
     **Fix 16 (0.2.16):** the cases stand on the floor (bottoms on the
     horizon); Stage rebuilt from the full-size animation assets.

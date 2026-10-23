@@ -240,8 +240,8 @@ static void bg_halo(float t, float alpha)
 {
     uint32_t c = sf_col_mix(bg_tint(), 0x000000FFu, 0.35f);
     float br = 0.85f + 0.15f * sinf(t * 0.35f);
-    d_blob(W() * 0.5f, H() * LY_FLOW_CY, H() * 0.62f * br, sf_col_alpha(c, 0.42f * alpha));
-    d_blob(W() * 0.5f, H() * LY_FLOW_CY, H() * 0.30f, sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.2f), 0.18f * alpha * br));
+    d_blob(W() * 0.5f, H() * layout_flow_cy(), H() * 0.62f * br, sf_col_alpha(c, 0.42f * alpha));
+    d_blob(W() * 0.5f, H() * layout_flow_cy(), H() * 0.30f, sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.2f), 0.18f * alpha * br));
     d_blob_ellipse(W() * 0.5f, H() * 1.02f, W() * 0.6f * d_screen()->pa, H() * 0.18f, sf_col_alpha(c, 0.25f * alpha));
     vignette(alpha);
 }
@@ -273,6 +273,10 @@ void ui_set_stage_highlight(int tex) { g_stage_hi = tex; }
 
 static int g_stage_fx = -1;
 void ui_set_stage_fx(int tex) { g_stage_fx = tex; }
+static int g_stage_rib = -1;
+void ui_set_stage_ribbons(int tex) { g_stage_rib = tex; }
+static int g_stage_glow = -1;
+void ui_set_stage_glow(int tex) { g_stage_glow = tex; }
 
 /* one atlas element stretched over (x, y, w, h), tinted */
 static void stage_fx(int el, float x, float y, float w, float h, uint32_t tint)
@@ -317,24 +321,53 @@ static void bg_stage(float t, float alpha)
     d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, alpha));
     d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(tint, alpha));
     if (g_stage_hi >= 0) d_image(g_stage_hi, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, 0.35f * alpha));
-    if (g_stage_fx >= 0) {
-        /* star field: a fine layer drifting slowly, twinkling (stars_a is kept for later) */
-        for (i = 1; i < 2; i++) {
-            int el = i ? STAGE_FX_STARS_B : STAGE_FX_STARS_A;
-            float tw = W() * (0.42f + 0.08f * (float)i), th = H() * (0.15f + 0.05f * (float)i);
-            float y = H() * (0.02f + 0.20f * (float)i), off = fmodf(t * (i ? -5.0f : 3.5f), tw), x;
-            float al = alpha * (0.22f + 0.10f * sinf(t * 0.4f + (float)i * 2.0f));
-            if (off > 0.0f) off -= tw;
-            for (x = off; x < W(); x += tw) stage_fx(el, x, y, tw, th, sf_col_alpha(lite, al));
+    /* glow: soft halos around the lights, breathing slowly */
+    if (g_stage_glow >= 0)
+        d_image_rot(g_stage_glow, W() * 0.5f, H() * 0.5f, W(), H(), 0.0f, 0.0f, 1.0f, 0.0f, STAGE_GLOW_SPLIT,
+                    sf_col_alpha(lite, alpha * (0.55f + 0.15f * sinf(t * 0.45f))));
+    /* light ribbons: the left and right wave sets sway, tilt and breathe on
+     * their own (slightly oversized so their outer edges never show) */
+    if (g_stage_rib >= 0) {
+        for (i = 0; i < 2; i++) {
+            float ph = (float)i * 2.3f, sgn = i ? 1.0f : -1.0f;
+            float sx = 1.07f + 0.02f * sinf(t * 0.08f + ph), sy = 1.06f + 0.03f * sinf(t * 0.06f + ph * 1.7f);
+            float w = W() * (1.0f - STAGE_RIB_SPLIT) * sx, h = hy * sy;
+            float cx = W() * (0.5f + sgn * (0.5f - (1.0f - STAGE_RIB_SPLIT) * 0.5f)) + sgn * W() * 0.01f
+                       + W() * 0.012f * sinf(t * 0.05f + ph);
+            float cy = hy - h * 0.5f + H() * 0.015f * sinf(t * 0.09f + ph * 1.4f);
+            float ang = sgn * 0.015f * sinf(t * 0.07f + ph);
+            float al = alpha * (0.80f + 0.20f * sinf(t * 0.21f + ph));
+            float u0 = (float)i * 0.5f;
+            if (g_stage_glow >= 0)    /* the ribbons' own glow moves with them */
+                d_image_rot(g_stage_glow, cx, cy, w, h, ang, u0, u0 + 0.5f, STAGE_GLOW_SPLIT, 1.0f, sf_col_alpha(lite, al * 0.55f));
+            d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 0.5f, sf_col_alpha(tint, al));
+            d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.5f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al * 0.85f));
         }
-        /* wave ribbons: four layers swaying and breathing over the scene's own waves */
+    }
+    if (g_stage_fx >= 0) {
+        /* sparkle bands drifting slowly across the sky (wrapping), each breathing */
         for (i = 0; i < 4; i++) {
-            float ph = (float)i * 1.9f;
-            float w = W() * (1.25f + 0.06f * sinf(t * 0.07f + ph)), h = H() * (0.15f + 0.03f * sinf(t * 0.11f + ph));
-            float x = W() * 0.5f - w * 0.5f + W() * 0.06f * sinf(t * 0.05f + ph * 1.3f);
-            float y = H() * (0.10f + 0.115f * (float)i) + H() * 0.025f * sinf(t * 0.09f + ph);
-            float al = alpha * (0.10f + 0.06f * sinf(t * 0.13f + ph * 1.7f));
-            stage_fx(STAGE_FX_RIBBON_A + i, x, y, w, h, sf_col_alpha(tint, al));
+            int el = (i & 1) ? STAGE_FX_SPARKS_A : STAGE_FX_SPARKS_B;
+            const int *r = g_stage_fx_rect[el];
+            float bw = W() * 0.46f, bh = bw * (float)r[3] / (float)r[2];
+            float sp = (i & 1) ? 7.0f : -5.0f;                     /* two layers, opposite drift */
+            float span = W() + bw;
+            float x = fmodf((float)(i / 2) * span * 0.5f + (float)(i & 1) * span * 0.25f + t * sp, span);
+            float y = H() * ((i & 1) ? 0.24f : 0.05f) + H() * 0.04f * sinf(t * 0.07f + (float)i * 1.3f);
+            float al = alpha * (0.30f + 0.22f * sinf(t * 0.6f + (float)i * 2.1f));
+            if (x < 0.0f) x += span;
+            stage_fx(el, x - bw, y, bw, bh, sf_col_alpha(lite, al * 0.85f));
+        }
+        /* floating orbs: rise slowly from the floor lights, swaying, fading in and out */
+        for (i = 0; i < 3; i++) {
+            static const float ox[3] = { 0.16f, 0.52f, 0.84f };
+            const int *r = g_stage_fx_rect[STAGE_FX_ORBS];
+            float per = 24.0f + 5.0f * (float)i, u = fmodf(t + (float)i * 9.0f, per) / per;
+            float bw = W() * 0.22f, bh = bw * (float)r[3] / (float)r[2];
+            float cx = W() * (ox[i] + 0.04f * sinf(t * 0.21f + (float)i * 2.0f));
+            float cy = H() * (LY_HORIZON_Y - 0.05f - 0.45f * u);
+            float al = alpha * 0.45f * sinf(3.14159f * u);
+            stage_fx(STAGE_FX_ORBS, cx - bw * 0.5f, cy - bh * 0.5f, bw, bh, sf_col_alpha(lite, al));
         }
         /* horizon: a bright line breathing along it, glows pulsing at the floor
          * lights, one gliding slowly back and forth */
@@ -353,12 +386,35 @@ static void bg_stage(float t, float alpha)
                 stage_fx(STAGE_FX_STAR, gx - fw * 0.5f, hy - fh * 0.5f, fw, fh, sf_col_alpha(0xFFFFFFFFu, alpha * 0.55f));
             }
         }
-        /* low mist drifting across the floor */
-        for (i = 0; i < 3; i++) {
-            float mw = W() * 0.55f, mh = H() * 0.07f;
-            float x = fmodf(t * (6.0f + 2.0f * (float)i) + (float)i * W() * 0.45f, W() + mw) - mw;
-            float y = hy + H() * (0.03f + 0.05f * (float)i);
-            stage_fx(STAGE_FX_MIST, x, y, mw, mh, sf_col_alpha(tint, alpha * 0.16f));
+        /* light streaks: now and then a burst sweeps across above the horizon */
+        for (i = 0; i < 2; i++) {
+            const int *r = g_stage_fx_rect[STAGE_FX_STREAKS];
+            float per = i ? 17.0f : 11.0f, run = 4.0f, u = fmodf(t + (float)i * 5.0f, per);
+            if (u < run) {
+                float k = u / run, bw = W() * 0.42f, bh = bw * (float)r[3] / (float)r[2];
+                float x = -bw + k * (W() + bw);
+                float y = H() * (i ? 0.40f : 0.50f) - bh * 0.5f;
+                stage_fx(STAGE_FX_STREAKS, x, y, bw, bh, sf_col_alpha(lite, alpha * 0.80f * sinf(3.14159f * k)));
+            }
+        }
+        /* fog hugging the floor: three seamless layers at different depths drifting
+         * at their own slow pace (near = bigger, faster), each thickening and
+         * thinning over time; a far, thin veil also lies across the horizon */
+        {
+            static const struct { float w, h, y, sp, a, ph; } fl[3] = {
+                { 1.70f, 0.12f, -0.035f,  0.0040f, 0.42f, 0.0f },   /* veil on the horizon */
+                { 1.35f, 0.20f,  0.045f, -0.0060f, 0.38f, 2.1f },   /* mid floor */
+                { 1.10f, 0.30f,  0.170f,  0.0095f, 0.30f, 4.3f },   /* near floor */
+            };
+            uint32_t fc = sf_col_mix(tint, 0xFFFFFFFFu, 0.45f);
+            for (i = 0; i < 3; i++) {
+                float tw = W() * fl[i].w, th = H() * fl[i].h;
+                float y = hy + H() * fl[i].y - th * 0.5f + H() * 0.006f * sinf(t * 0.05f + fl[i].ph);
+                float off = fmodf(t * W() * fl[i].sp, tw), x;
+                float al = alpha * fl[i].a * (0.80f + 0.20f * sinf(t * 0.07f + fl[i].ph));
+                if (off > 0.0f) off -= tw;
+                for (x = off; x < W(); x += tw) stage_fx(STAGE_FX_MIST, x, y, tw, th, sf_col_alpha(fc, al));
+            }
         }
     }
     if (g_stage_shapes < 0) return;
@@ -480,7 +536,7 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
         if (cased) reflect_tex(g_case_tex[plat], x, y, w, h, A, depth, white, k);
     }
     /* contact shadow: grounds the case on the floor */
-    d_blob_ellipse(p->cx, y + h, w * 0.62f, h * 0.045f, sf_col_alpha(0x000000FFu, 0.70f * alpha));
+    if (layout_floor()) d_blob_ellipse(p->cx, y + h, w * 0.62f, h * 0.045f, sf_col_alpha(0x000000FFu, 0.70f * alpha));
     if (art < 1.0f) {
         float pa = alpha * (1.0f - art);
         d_rect(win.x, win.y, win.w, win.h, shade(0x1E1F24FFu, b, pa));     /* empty front */
@@ -508,7 +564,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     int center = (int)floorf(scroll + 0.5f), k;
     const Screen *s = d_screen();
     if (gl->count <= 0) {
-        d_text(&g_font_main, W() * 0.5f + xoff, H() * LY_FLOW_CY, H() * 0.03f, sf_col_alpha(TH_TEXT_DIM, alpha), "No games", ALIGN_CENTER);
+        d_text(&g_font_main, W() * 0.5f + xoff, H() * layout_flow_cy(), H() * 0.03f, sf_col_alpha(TH_TEXT_DIM, alpha), "No games", ALIGN_CENTER);
         return;
     }
     /* a soft line in the UI color under the selected case: brightest in the
@@ -1060,8 +1116,8 @@ static void draw_letter(const App *a)
          * readable over bright covers */
         uint32_t txt = accent_white() ? TH_TEXT : sf_col_mix(accent() | 0xFFu, 0xFFFFFFFFu, 0.30f);
         float em = 0.20f * H() * sc, off = 0.006f * H();
-        d_text(&g_font_big, W() * 0.5f + d_xu(off), H() * LY_FLOW_CY + off, em, sf_col_alpha(0x000000A0u, al), a->letter, ALIGN_CENTER);
-        d_text(&g_font_big, W() * 0.5f, H() * LY_FLOW_CY, em, sf_col_alpha(txt, al), a->letter, ALIGN_CENTER);
+        d_text(&g_font_big, W() * 0.5f + d_xu(off), H() * layout_flow_cy() + off, em, sf_col_alpha(0x000000A0u, al), a->letter, ALIGN_CENTER);
+        d_text(&g_font_big, W() * 0.5f, H() * layout_flow_cy(), em, sf_col_alpha(txt, al), a->letter, ALIGN_CENTER);
     }
 }
 
@@ -1130,6 +1186,7 @@ void ui_draw(App *a)
     ui_set_color(a->settings.ui_color);
     set_glow(a->time);
     layout_use_case_images(a->settings.cases);
+    layout_set_floor(a->settings.background == BG_STAGE);   /* Stage: on its floor; others: centered */
     layout_ui(d_screen(), &m);
     draw_background(a, 1.0f, animated);
 

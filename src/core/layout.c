@@ -65,10 +65,15 @@ float layout_case_scale(int plat)
     return plat == PLAT_PS1 ? 0.88f : 1.0f;
 }
 
+static int g_floor = 1;
+void  layout_set_floor(int on) { g_floor = on ? 1 : 0; }
+int   layout_floor(void) { return g_floor; }
+float layout_flow_cy(void) { return g_floor ? LY_FLOW_CY : LY_C_CY; }
+
 void layout_cover(const Screen *s, int plat, float d, CoverPos *out)
 {
     float H = s->H, asp = layout_case_aspect(plat), sc = layout_case_scale(plat);
-    float hs = LY_SEL_H * H * sc, hn = LY_NB_H * H * sc;
+    float hs = (g_floor ? LY_SEL_H : LY_C_SEL_H) * H * sc, hn = (g_floor ? LY_NB_H : LY_C_NB_H) * H * sc;
     float ws = d_xu(hs * asp), wn = d_xu(hn * asp);
     float x1 = ws * 0.5f + wn * LY_GAP_SEL + wn * 0.5f;   /* center of first neighbor */
     float pitch = wn * (1.0f + LY_GAP_NB);
@@ -86,7 +91,8 @@ void layout_cover(const Screen *s, int plat, float d, CoverPos *out)
     }
     out->cx = s->W * 0.5f + sign * x;
     /* stand on the floor in perspective: nearer (bigger) cases stand lower */
-    out->cy = (LY_HORIZON_Y + (LY_FLOOR_Y - LY_HORIZON_Y) * (h / hs)) * H - h * 0.5f;
+    if (g_floor) out->cy = (LY_HORIZON_Y + (LY_FLOOR_Y - LY_HORIZON_Y) * (h / hs)) * H - h * 0.5f;
+    else out->cy = LY_C_CY * H;                                  /* centered row */
     out->h = h;
     out->w = d_xu(h * asp);
     out->bright = b;
