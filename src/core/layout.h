@@ -36,6 +36,11 @@ typedef struct { float x0, y0, x1, y1; } CaseWindow;
 void  layout_case_window(int plat, CaseWindow *w);
 /* Physical width/height of that window (what covers are cropped to). */
 float layout_window_aspect(int plat);
+/* Use a case image's shape instead of the drawn case: the image is
+ * img_w x img_h and the cover goes in the rectangle (cx, cy, cw, ch) of it.
+ * Call before covers are loaded (during the loading screen). */
+void  layout_set_case_image(int plat, float img_w, float img_h, float cx, float cy, float cw, float ch);
+void  layout_clear_case_images(void);
 
 /* UI anchors, all in fractions of H unless noted */
 typedef struct {

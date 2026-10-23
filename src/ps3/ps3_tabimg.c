@@ -120,6 +120,82 @@ static void load_one(int plat)
     free(rgba);
 }
 
+/* ---- case images --------------------------------------------------
+ * spookyflow ships no case art. It uses, in this order:
+ *   1. /dev_hdd0/tmp/spookyflow/cases/ps1.png, ps2.png, ps3.png (your own)
+ *   2. ManaGunZ's, if ManaGunZ is installed on this PS3:
+ *      /dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS1_CASE.PNG ...
+ * The cover goes where ManaGunZ puts it (its Draw_CASE: PS1 30,5 240x240 of
+ * 275x250; PS2 0,10 260x370 of 270x390; PS3 0,30 260x300 of 270x340), as
+ * fractions, so your own images must use the same layout at any size. */
+#define CASE_IMG_MAX 1024
+
+static const float k_case_geo[PLAT_COUNT][6] = {
+    /* ref w, ref h, cover x, y, w, h */
+    { 275.0f, 250.0f, 30.0f,  5.0f, 240.0f, 240.0f },
+    { 270.0f, 390.0f,  0.0f, 10.0f, 260.0f, 370.0f },
+    { 270.0f, 340.0f,  0.0f, 30.0f, 260.0f, 300.0f },
+};
+
+static int load_case(int plat, const char *path)
+{
+    pngData png;
+    unsigned char *rgba;
+    u32 x, y, w, h;
+    const float *g = k_case_geo[plat];
+    if (!ps3_fs_exists(path)) return 0;
+    memset(&png, 0, sizeof(png));
+    ps3_decode_lock();
+    if (pngLoadFromFile(path, &png) != 0 || !png.bmp_out) {
+        ps3_decode_unlock();
+        log_printf("cases: %s could not be decoded", path);
+        return 0;
+    }
+    ps3_decode_unlock();
+    w = png.width; h = png.height;
+    if (w == 0 || h == 0 || w > CASE_IMG_MAX || h > CASE_IMG_MAX) {
+        log_printf("cases: %s is %ux%u, must be at most %d px", path, (unsigned)w, (unsigned)h, CASE_IMG_MAX);
+        free(png.bmp_out);
+        return 0;
+    }
+    rgba = (unsigned char *)malloc((size_t)w * h * 4u);
+    if (!rgba) { free(png.bmp_out); return 0; }
+    for (y = 0; y < h; y++) {
+        const unsigned char *row = (const unsigned char *)png.bmp_out + (size_t)y * png.pitch;
+        for (x = 0; x < w; x++) {
+            const unsigned char *p = row + x * 4u;          /* A, R, G, B */
+            unsigned char *d = rgba + ((size_t)y * w + x) * 4u;
+            d[0] = p[1]; d[1] = p[2]; d[2] = p[3]; d[3] = p[0];
+        }
+    }
+    free(png.bmp_out);
+    if (r_texture_upload_rgba(TEX_CASE_PS1 + plat, (int)w, (int)h, rgba) != 0) {
+        log_printf("cases: no texture memory for %s", path);
+        free(rgba);
+        return 0;
+    }
+    free(rgba);
+    layout_set_case_image(plat, (float)w, (float)h,
+                          g[2] / g[0] * (float)w, g[3] / g[1] * (float)h, g[4] / g[0] * (float)w, g[5] / g[1] * (float)h);
+    ui_set_case_image(plat, TEX_CASE_PS1 + plat);
+    log_printf("cases: using %s (%ux%u)", path, (unsigned)w, (unsigned)h);
+    return 1;
+}
+
+static void load_case_images(void)
+{
+    static const char *const mine[PLAT_COUNT] = { SF_CASES_DIR "/ps1.png", SF_CASES_DIR "/ps2.png", SF_CASES_DIR "/ps3.png" };
+    static const char *const mgz[PLAT_COUNT] = {
+        "/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS1_CASE.PNG",
+        "/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS2_CASE.PNG",
+        "/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS3_CASE.PNG",
+    };
+    int p;
+    for (p = 0; p < PLAT_COUNT; p++)
+        if (!load_case(p, mine[p]) && !load_case(p, mgz[p]))
+            log_printf("cases: no case image for %s, drawing a plain case", p == 0 ? "PS1" : p == 1 ? "PS2" : "PS3");
+}
+
 void ps3_load_tab_images(void)
 {
     static int done;
@@ -132,4 +208,5 @@ void ps3_load_tab_images(void)
         return;
     }
     for (p = 0; p < PLAT_COUNT; p++) load_one(p);
+    load_case_images();
 }

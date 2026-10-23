@@ -42,6 +42,10 @@ void ui_tab_image_box_px(float *w_px, float *h_px)
 
 void ui_clear_tab_images(void) { memset(g_tab_img, 0, sizeof(g_tab_img)); }
 
+static int g_case_tex[PLAT_COUNT] = { -1, -1, -1 };
+void ui_set_case_image(int plat, int tex) { if (plat >= 0 && plat < PLAT_COUNT) g_case_tex[plat] = tex; }
+void ui_clear_case_images(void) { int i; for (i = 0; i < PLAT_COUNT; i++) g_case_tex[i] = -1; layout_clear_case_images(); }
+
 /* ------------------------------------------------------------------ */
 
 int ui_upload_textures(unsigned char *scratch, unsigned scratch_size)
@@ -160,8 +164,8 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
     if (alpha <= 0.003f) return;
     if (tex < 0) art = 0.0f;
     case_window(plat, x, y, w, h, &win);
-    /* plastic rim */
-    d_rrect_grad(x, y, w, h, r, shade(cs->top, b, alpha), shade(cs->bot, b, alpha));
+    /* plastic rim (only without a case image) */
+    if (g_case_tex[plat] < 0) d_rrect_grad(x, y, w, h, r, shade(cs->top, b, alpha), shade(cs->bot, b, alpha));
     if (art < 1.0f) {
         float pa = alpha * (1.0f - art);
         d_rect(win.x, win.y, win.w, win.h, shade(0x1E1F24FFu, b, pa));     /* empty case */
@@ -177,6 +181,10 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
         }
     }
     if (art > 0.0f) d_image(tex, win.x, win.y, win.w, win.h, shade(0xFFFFFFFFu, b, alpha * art));
+    if (g_case_tex[plat] >= 0) {   /* case image on top: its clear plastic and gloss cover the art */
+        d_image(g_case_tex[plat], x, y, w, h, shade(0xFFFFFFFFu, b, alpha));
+        return;
+    }
     /* thin dark seam where the cover meets the plastic, and a light outer edge */
     d_rrect_stroke(win.x, win.y, win.w, win.h, h * 0.004f, lw * 0.8f, shade(cs->inner, 1.0f, alpha));
     d_rrect_stroke(x, y, w, h, r, lw, shade(cs->edge, b, alpha));

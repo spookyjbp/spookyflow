@@ -16,6 +16,10 @@ int  ui_upload_textures(unsigned char *scratch, unsigned scratch_size);
  * (white) tab. */
 void ui_set_tab_image(int plat, int tex, int w, int h, int tintable);
 void ui_clear_tab_images(void);
+/* Case image for a platform (texture holds it; layout_set_case_image has its
+ * geometry). It is drawn over the cover, as ManaGunZ does. */
+void ui_set_case_image(int plat, int tex);
+void ui_clear_case_images(void);
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */
 void ui_set_color(int idx);

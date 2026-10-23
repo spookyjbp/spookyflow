@@ -291,6 +291,44 @@ int main(int argc, char **argv)
     while (cover_worker_step(&g_pv_loader)) { }
     step(0, 0.10f);
     render("22_covers_fading_in", 1280, 720);
+    /* case images (raw RGBA dumps; only used if SF_PREVIEW_CASES points at them) */
+    {
+        static const float geo[3][6] = { { 275, 250, 30, 5, 240, 240 }, { 270, 390, 0, 10, 260, 370 }, { 270, 340, 0, 30, 260, 300 } };
+        const char *dir = getenv("SF_PREVIEW_CASES");
+        int p, loaded = 0;
+        for (p = 0; dir && p < 3; p++) {
+            char fn[512];
+            FILE *f;
+            int w = 0, h = 0;
+            snprintf(fn, sizeof(fn), "%s/ps%d.rgba", dir, p + 1);
+            f = fopen(fn, "rb");
+            if (f && fscanf(f, "%d %d", &w, &h) == 2 && fgetc(f) == '\n' && w > 0 && h > 0) {
+                unsigned char *px = (unsigned char *)malloc((size_t)w * h * 4);
+                if (px && fread(px, 1, (size_t)w * h * 4, f) == (size_t)w * h * 4 &&
+                    r_texture_upload_rgba(TEX_CASE_PS1 + p, w, h, px) == 0) {
+                    layout_set_case_image(p, (float)w, (float)h, geo[p][2] / geo[p][0] * w, geo[p][3] / geo[p][1] * h,
+                                          geo[p][4] / geo[p][0] * w, geo[p][5] / geo[p][1] * h);
+                    ui_set_case_image(p, TEX_CASE_PS1 + p);
+                    loaded++;
+                }
+                free(px);
+            }
+            if (f) fclose(f);
+        }
+        if (loaded) {
+            cc_invalidate(&g_app.covers);
+            cover_cancel_all(&g_pv_loader);
+            app_select(&g_app, PLAT_PS3, 6, 0);
+            press(SFB_R1); step_covers(1.0f);
+            render("25_case_images_ps3", 1280, 720);
+            press(SFB_L1); step_covers(1.0f);
+            render("26_case_images_ps2", 1280, 720);
+            press(SFB_L1); step_covers(1.0f);
+            render("27_case_images_ps1", 1280, 720);
+            ui_clear_case_images();
+        }
+    }
+
     /* fix 1: letter jump in a UI color, Show Game Info off */
     g_app.settings.ui_color = 0;
     press(SFB_R2); step(0, 0.12f);

@@ -194,6 +194,30 @@ game folders. Nothing is renamed.
 The log lists the cover folders that were found and, for the first 400
 covers, where each one came from (or the title ID it looked for).
 
+## Case images (ManaGunZ's cases)
+
+spookyflow ships no case artwork. If **ManaGunZ** is installed on your PS3,
+spookyflow uses its case images straight from its folder, so the cases look
+exactly like ManaGunZ's:
+
+```
+/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS1_CASE.PNG  (and PS2_, PS3_)
+```
+
+To use other case images, put PNGs here (they win over ManaGunZ's):
+
+```
+/dev_hdd0/tmp/spookyflow/cases/ps1.png
+/dev_hdd0/tmp/spookyflow/cases/ps2.png
+/dev_hdd0/tmp/spookyflow/cases/ps3.png
+```
+
+They must use ManaGunZ's layout (any size, same proportions): the cover sits
+at 30,5 240×240 in a 275×250 PS1 image, 0,10 260×370 in a 270×390 PS2 image,
+and 0,30 260×300 in a 270×340 PS3 image, and the image is drawn over the
+cover (its clear parts show the cover through). Without any images, a plain
+rim is drawn. The log says which case images were used.
+
 ## Optional: your own tab images
 
 You can replace the “PS1 / PS2 / PS3” tab text with your own pictures
@@ -255,7 +279,8 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 2 (0.2.2):** cases are a thin clear plastic rim around the whole
+15. **Fix 3 (0.2.3):** with ManaGunZ installed, the cases are ManaGunZ's own
+    case images. **Fix 2 (0.2.2):** cases are a thin clear plastic rim around the whole
     cover (ManaGunZ style; PS2 cases are black); covers are never cut at the
     edges; switching tabs shows covers at once and never flashes titles. **Fix 1 (0.2.1):** no highlight behind the selected case; the
     active tab is an outline in your UI color; the A–Z letter uses the UI

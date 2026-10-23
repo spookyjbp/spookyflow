@@ -706,3 +706,23 @@ static void test_cover_cache_tabs(void)
     for (i = 100 - 7, ok = 1; i <= 100 + 7; i++) if (cc_lookup(&cc, 1, i) < 0) ok = 0;
     CHECK(ok);
 }
+
+/* fix 3: case images (ManaGunZ's layout) set the case shape and cover window */
+static void test_case_images(void)
+{
+    CaseWindow w;
+    printf("case images\n");
+    layout_set_case_image(PLAT_PS3, 270.0f, 340.0f, 0.0f, 30.0f, 260.0f, 300.0f);
+    CHECK_NEAR(layout_case_aspect(PLAT_PS3), 270.0 / 340.0, 1e-5);
+    layout_case_window(PLAT_PS3, &w);
+    CHECK_NEAR(w.x0, 0.0, 1e-6); CHECK_NEAR(w.x1, 260.0 / 270.0, 1e-5);
+    CHECK_NEAR(w.y0, 30.0 / 340.0, 1e-5); CHECK_NEAR(w.y1, 330.0 / 340.0, 1e-5);
+    CHECK_NEAR(layout_window_aspect(PLAT_PS3), 260.0 / 300.0, 1e-4);    /* = the cover's shape */
+    ui_set_case_image(PLAT_PS3, TEX_CASE_PS3);
+    g_app.tab = PLAT_PS3;
+    ui_draw(&g_app);
+    ui_clear_case_images();
+    CHECK_NEAR(layout_window_aspect(PLAT_PS3), 0.86, 0.002);             /* back to the drawn case */
+    layout_set_case_image(PLAT_PS1, 0.0f, 250.0f, 30.0f, 5.0f, 240.0f, 240.0f);   /* bad size: ignored */
+    CHECK_NEAR(layout_window_aspect(PLAT_PS1), 1.0, 0.002);
+}

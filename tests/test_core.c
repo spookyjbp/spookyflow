@@ -1200,6 +1200,7 @@ int main(void)
     test_app_covers();
     test_sleep_and_info();
     test_cover_cache_tabs();
+    test_case_images();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
