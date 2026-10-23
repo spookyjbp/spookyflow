@@ -102,10 +102,29 @@ if rib_src:
     Image.fromarray(glow.astype(np.uint8), 'L').save(os.path.join(root, 'art', 'stage_glow.jpg'), quality=92, optimize=True)
 
 # 2. effects atlas (brightness), packed in rows
-elems = [
-    ('glow',     P('Lighting', 'glow_01.png')),
-    ('line',     P('Lighting', 'glow_04.png')),
-]
+# horizon light flares, generated (the asset sprites carried stray fragments
+# that drifted into view as the flares pulse): white, alpha = brightness
+def flare(w=256, h=80):
+    """a floor light: bright core, soft halo, thin horizontal streak"""
+    x = (np.arange(w) - (w - 1) / 2.0)[None, :] / (w / 2.0)
+    y = (np.arange(h) - (h - 1) / 2.0)[:, None] / (h / 2.0)
+    core = np.exp(-(x / 0.10) ** 2 - (y / 0.22) ** 2)
+    halo = 0.45 * np.exp(-(x / 0.30) ** 2 - (y / 0.55) ** 2)
+    streak = 0.75 * np.exp(-(y / 0.06) ** 2) * np.clip(1.0 - np.abs(x), 0, 1) ** 1.6
+    v = np.clip(core + halo + streak, 0, 1)
+    edge = np.clip(1.0 - np.maximum(np.abs(x), np.abs(y)), 0, 1) / 0.08    # zero at the borders
+    a = 255.0 * v * np.clip(edge, 0, 1)
+    return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
+def hline(w=256, h=44):
+    """the horizon line: thin, bright in the middle, tapering to both ends"""
+    x = (np.arange(w) - (w - 1) / 2.0)[None, :] / (w / 2.0)
+    y = (np.arange(h) - (h - 1) / 2.0)[:, None] / (h / 2.0)
+    along = np.clip(1.0 - np.abs(x), 0, 1) ** 0.8
+    v = along * (np.exp(-(y / 0.07) ** 2) + 0.35 * np.exp(-(y / 0.30) ** 2))
+    edge = np.clip((1.0 - np.abs(y)) / 0.15, 0, 1)
+    a = 255.0 * np.clip(v, 0, 1) * edge
+    return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
+elems = []
 # particles: single sprites from the XMB particle PNGs (third argument: their
 # folder), each animated on its own by the app. Those files were cut out of a
 # 4x4 sheet off-grid, so the columns are stacked back together first.
@@ -169,11 +188,11 @@ def fog(w=1024, h=256, seed=7):
     a = 1.4 * cap * np.tanh(a / cap)
     return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
 
-srcs = [(n, rgba(p)) for n, p in elems] + [('dots', dots_grid()), ('mist', fog())]
+srcs = [('glow', flare()), ('line', hline()), ('dots', dots_grid()), ('mist', fog())]
 for name, px in srcs:
     v = bright(px)
-    if name in ('glow', 'line'):           # no checkerboard here: keep the white cores
-        v = px[..., :3].max(axis=2) * px[..., 3] / 255.0
+    if name in ('glow', 'line'):           # generated: alpha is the brightness
+        v = px[..., 3]
     if name not in ('mist', 'dots'):                 # fog wraps left-right; dot cells are already padded
         v = feather(v, 4)
     h, w = v.shape
