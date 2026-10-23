@@ -12,7 +12,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.2.3 (milestone 2, fix 3)"
+#define APP_VERSION     "0.2.6 (milestone 2, fix 6)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -26,7 +26,8 @@
 #define TOAST_TIME      2.20f
 #define EXIT_FADE_TIME  0.30f
 #define PANEL_VISIBLE_ROWS 6
-#define SLEEP_TIME      300.0f  /* idle seconds before the screen goes dark (5 minutes) */
+#define SLEEP_TIME      300.0f  /* default idle time before the screen dims (Flow Settings > Sleep Mode) */
+#define SLEEP_DIM       0.72f   /* how dark sleep gets: the screen stays visible */
 #define SLEEP_FADE_TIME 1.5f
 #define WAKE_FADE_TIME  0.25f
 

@@ -8,6 +8,8 @@
 #define LIB_MAX_GAMES   2000          /* per platform tab */
 #define LIB_POOL_SIZE   (640 * 1024)  /* shared string pool */
 #define LIB_BUCKETS     27            /* 0 = '#', 1..26 = A..Z */
+#define LIB_MAX_DISCS   1024          /* discs of multi-disc games (all tabs) */
+#define LIB_DISCS_PER_GAME 8
 
 enum { GAME_DEMO = 1, GAME_DIR = 2 /* a game folder, not an image file */ };
 
@@ -20,7 +22,15 @@ typedef struct {
     uint8_t pmin, pmax; /* players, 0 = unknown */
     uint8_t bucket;
     uint8_t flags;
+    uint8_t ndisc;      /* >1: a multi-disc game, its discs are lib->disc[disc0 ..] */
+    uint16_t disc0;
 } Game;
+
+typedef struct {
+    uint32_t path, id;  /* pool offsets */
+    uint64_t size;
+    uint8_t num;        /* disc number from the name, 1.. */
+} Disc;
 
 typedef struct {
     Game games[LIB_MAX_GAMES];
@@ -32,6 +42,8 @@ typedef struct {
 
 typedef struct {
     GameList tab[PLAT_COUNT];
+    Disc disc[LIB_MAX_DISCS];
+    int ndiscs;
     char pool[LIB_POOL_SIZE];
     uint32_t pool_used;
     int pool_full;
@@ -58,6 +70,13 @@ int  lib_find_key(const Library *lib, int plat, const char *key);
 /* Letter jumps. They stop at the first/last letter (no wrap): return sel. */
 int  lib_letter_prev(const GameList *gl, int sel);
 int  lib_letter_next(const GameList *gl, int sel);
+
+/* Merge "Name (Disc 1)", "Name (Disc 2)"... of a tab into one game called
+ * "Name" (path/ID of its first disc, sizes added) whose discs are listed in
+ * lib->disc. Call once after scanning. Returns the number of games merged away. */
+int  lib_group_discs(Library *lib, int plat);
+/* Disc i (0..ndisc-1, in disc order) of a multi-disc game, NULL otherwise. */
+const Disc *lib_game_disc(const Library *lib, const Game *g, int i);
 
 /* Built-in demo library (demo.c). Fills a tab with demo games. */
 void demo_fill(Library *lib, int plat);

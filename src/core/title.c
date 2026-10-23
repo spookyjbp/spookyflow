@@ -180,6 +180,45 @@ int title_extract_id(const char *raw, char *out, size_t cap)
     return 0;
 }
 
+int title_disc_split(const char *title, char *base, size_t cap, int *disc)
+{
+    const char *p, *open = NULL;
+    size_t i, n;
+    *disc = 0;
+    sf_strlcpy(base, title, cap);
+    for (p = title; *p; p++) if (*p == '(') open = p;           /* title_clean writes "(Disc 2)" */
+    while (open) {
+        size_t len = disc_group_len(open);
+        if (len > 0) {
+            const char *q = open + 1;
+            int num = 0;
+            while (*q && !sf_isdigit(*q)) q++;
+            while (sf_isdigit(*q)) { num = num * 10 + (*q - '0'); q++; if (num > 99) break; }
+            if (num <= 0) return 0;
+            /* base = text before the group + text after it, spaces tidied */
+            n = (size_t)(open - title);
+            if (n >= cap) n = cap - 1;
+            memcpy(base, title, n);
+            base[n] = '\0';
+            sf_strlcat(base, open + len, cap);
+            n = strlen(base);
+            while (n > 0 && (base[n - 1] == ' ' || base[n - 1] == '-')) base[--n] = '\0';
+            for (i = 0; base[i] == ' '; i++) { }
+            if (i) memmove(base, base + i, strlen(base + i) + 1);
+            if (!base[0]) { sf_strlcpy(base, title, cap); return 0; }
+            *disc = num;
+            return 1;
+        }
+        /* look for an earlier "(" */
+        {
+            const char *prev = NULL;
+            for (p = title; p < open; p++) if (*p == '(') prev = p;
+            open = prev;
+        }
+    }
+    return 0;
+}
+
 const char *title_sort_key(const char *title, int ignore_the)
 {
     if (ignore_the && sf_strnicmp(title, "the ", 4) == 0 && title[4] != '\0') return title + 4;

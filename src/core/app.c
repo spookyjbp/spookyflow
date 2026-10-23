@@ -172,6 +172,13 @@ static void finish_library(App *a)
         }
     }
     if (a->lib->pool_full) log_printf("library: string pool full, some games skipped");
+    for (t = 0; t < PLAT_COUNT; t++) {
+        if (a->lib->tab[t].demo) continue;
+        {
+            int merged = lib_group_discs(a->lib, t);
+            if (merged > 0) log_printf("library: %s multi-disc games grouped (%d disc entries folded into their first disc)", k_plat_name[t], merged);
+        }
+    }
     sort_all(a, 0);
     for (t = 0; t < PLAT_COUNT; t++) {
         int idx = lib_find_key(a->lib, t, a->settings.last_key[t]);
@@ -307,10 +314,17 @@ static void loading_update(App *a, float dt)
 void app_open_panel(App *a, int panel)
 {
     const Game *g = app_selected_game(a, a->tab);
-    if (panel == PANEL_GAME && !g) return;
+    if ((panel == PANEL_GAME || panel == PANEL_DISC) && !g) return;
+    if (panel == PANEL_DISC && g->ndisc < 2) return;
     a->panel = panel;
     a->panel_open = 1;
-    a->nrows = menu_rows(panel, a->tab, a->rows, MENU_MAX_ROWS);
+    if (panel == PANEL_DISC) {
+        int i;
+        a->nrows = g->ndisc < MENU_MAX_ROWS ? g->ndisc : MENU_MAX_ROWS;
+        for (i = 0; i < a->nrows; i++) a->rows[i] = ROW_D_DISC;
+    } else {
+        a->nrows = menu_rows(panel, a->tab, a->rows, MENU_MAX_ROWS);
+    }
     a->row = 0;
     spring_snap(&a->row_hl, 0.0f);
     spring_snap(&a->list_scroll, 0.0f);
@@ -318,8 +332,8 @@ void app_open_panel(App *a, int panel)
     a->panel_game = a->view[a->tab].sel;
     if (g) a->panel_cfg = settings_game_get(&a->settings, lib_key(a->lib, g));
     sound_play(SND_OPEN);
-    log_printf("panel: open %s%s%s", panel == PANEL_GAME ? "Game Settings" : "Flow Settings",
-               g && panel == PANEL_GAME ? " for " : "", g && panel == PANEL_GAME ? lib_title(a->lib, g) : "");
+    log_printf("panel: open %s%s%s", panel == PANEL_GAME ? "Game Settings" : panel == PANEL_DISC ? "Choose Disc" : "Flow Settings",
+               g && panel != PANEL_FLOW ? " for " : "", g && panel != PANEL_FLOW ? lib_title(a->lib, g) : "");
 }
 
 void app_close_panel(App *a)
@@ -417,6 +431,8 @@ static void apply_fx(App *a, RowKind k, int fx)
     }
 }
 
+static void launch_disc(App *a, int disc);
+
 static void panel_input(App *a)
 {
     const Input *in = &a->input;
@@ -435,11 +451,15 @@ static void panel_input(App *a)
     }
     if (in->pressed & (SFB_UP | SFB_DOWN)) a->poweroff_arm = 0.0f;
     k = a->rows[a->row];
-    if (!menu_is_action(k)) {
-        if (in->pressed & SFB_LEFT) apply_fx(a, k, menu_change(k, a->panel_plat, -1, &a->settings, &a->panel_cfg));
-        if (in->pressed & SFB_RIGHT) apply_fx(a, k, menu_change(k, a->panel_plat, +1, &a->settings, &a->panel_cfg));
+    if (a->panel == PANEL_DISC) {
+        if (in->pressed & SFB_CROSS) { launch_disc(a, a->row); app_close_panel(a); }
+    } else {
+        if (!menu_is_action(k)) {
+            if (in->pressed & SFB_LEFT) apply_fx(a, k, menu_change(k, a->panel_plat, -1, &a->settings, &a->panel_cfg));
+            if (in->pressed & SFB_RIGHT) apply_fx(a, k, menu_change(k, a->panel_plat, +1, &a->settings, &a->panel_cfg));
+        }
+        if (in->pressed & SFB_CROSS) apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
     }
-    if (in->pressed & SFB_CROSS) apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
     if (a->mode != MODE_FLOW) return;      /* rescan switched modes */
     spring_set(&a->row_hl, (float)a->row);
     first = (int)(a->list_scroll.target + 0.5f);
@@ -452,20 +472,35 @@ static void panel_input(App *a)
 /* ------------------------------------------------------------------ */
 /* Cover flow                                                          */
 
+/* disc < 0: a single-disc game */
+static void launch_disc(App *a, int disc)
+{
+    const Game *g = app_selected_game(a, a->tab);
+    const Disc *d;
+    GameCfg c;
+    char msg[160], name[TITLE_MAX + 16];
+    const char *path, *id;
+    if (!g) return;
+    d = lib_game_disc(a->lib, g, disc);
+    path = d ? lib_str(a->lib, d->path) : lib_path(a->lib, g);
+    id = d ? lib_str(a->lib, d->id) : lib_id(a->lib, g);
+    if (d) snprintf(name, sizeof(name), "%s (Disc %d)", lib_title(a->lib, g), d->num);
+    else sf_strlcpy(name, lib_title(a->lib, g), sizeof(name));
+    c = settings_game_get(&a->settings, lib_key(a->lib, g));   /* one set of settings for all discs */
+    log_printf("LAUNCH (stub, milestone 3 launches): %s \"%s\" path=\"%s\" id=%s autoplay=%s emulator=%d offline=%d rsx=%d",
+               k_plat_name[a->tab], name, path, id[0] ? id : "-",
+               settings_autoplay_effective(&a->settings, &c) ? "on" : "off", c.emulator, settings_offline_effective(&a->settings, &c), c.rsx);
+    sound_play(SND_CONFIRM);
+    snprintf(msg, sizeof(msg), "Launch: %s", name);
+    app_show_toast(a, msg);
+}
+
 static void launch(App *a)
 {
     const Game *g = app_selected_game(a, a->tab);
-    GameCfg c;
-    char msg[160];
     if (!g) return;
-    c = settings_game_get(&a->settings, lib_key(a->lib, g));
-    log_printf("LAUNCH (stub, milestone 1): %s \"%s\" path=\"%s\" id=%s autoplay=%s emulator=%d offline=%d rsx=%d",
-               k_plat_name[a->tab], lib_title(a->lib, g), lib_path(a->lib, g),
-               lib_id(a->lib, g)[0] ? lib_id(a->lib, g) : "-",
-               settings_autoplay_effective(&a->settings, &c) ? "on" : "off", c.emulator, settings_offline_effective(&a->settings, &c), c.rsx);
-    sound_play(SND_CONFIRM);
-    snprintf(msg, sizeof(msg), "Launch: %s", lib_title(a->lib, g));
-    app_show_toast(a, msg);
+    if (g->ndisc > 1) app_open_panel(a, PANEL_DISC);   /* choose which disc */
+    else launch_disc(a, -1);
 }
 
 static void switch_tab(App *a, int dir)
@@ -573,9 +608,10 @@ void app_update(App *a, uint32_t held, float dt)
     if (a->wake_block) {
         if (held) held = 0; else a->wake_block = 0;
     }
-    if (!a->asleep && a->mode == MODE_FLOW && !a->exiting && a->idle_t >= SLEEP_TIME) {
+    if (!a->asleep && a->mode == MODE_FLOW && !a->exiting && a->settings.sleep_min > 0 &&
+        a->idle_t >= (float)a->settings.sleep_min * 60.0f) {
         a->asleep = 1;
-        log_printf("sleep (no input for %.0f s)", (double)SLEEP_TIME);
+        log_printf("sleep (no input for %d min)", a->settings.sleep_min);
     }
     anim_approach(&a->sleep_t, a->asleep ? 1.0f : 0.0f, 1.0f / (a->asleep ? SLEEP_FADE_TIME : WAKE_FADE_TIME), dt);
 

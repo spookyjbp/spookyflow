@@ -121,13 +121,12 @@ static void load_one(int plat)
 }
 
 /* ---- case images --------------------------------------------------
- * spookyflow ships no case art. It uses, in this order:
- *   1. /dev_hdd0/tmp/spookyflow/cases/ps1.png, ps2.png, ps3.png (your own)
- *   2. ManaGunZ's, if ManaGunZ is installed on this PS3:
- *      /dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS1_CASE.PNG ...
- * The cover goes where ManaGunZ puts it (its Draw_CASE: PS1 30,5 240x240 of
- * 275x250; PS2 0,10 260x370 of 270x390; PS3 0,30 260x300 of 270x340), as
- * fractions, so your own images must use the same layout at any size. */
+ * spookyflow ships no case art. Optional images, used when Flow Settings >
+ * Custom Cases is On:
+ *   /dev_hdd0/tmp/spookyflow/cases/ps1.png, ps2.png, ps3.png
+ * The cover goes in the same spot as in ManaGunZ's case images (PS1 30,5
+ * 240x240 of 275x250; PS2 0,10 260x370 of 270x390; PS3 0,30 260x300 of
+ * 270x340), as fractions, so images with that layout work at any size. */
 #define CASE_IMG_MAX 1024
 
 static const float k_case_geo[PLAT_COUNT][6] = {
@@ -185,15 +184,10 @@ static int load_case(int plat, const char *path)
 static void load_case_images(void)
 {
     static const char *const mine[PLAT_COUNT] = { SF_CASES_DIR "/ps1.png", SF_CASES_DIR "/ps2.png", SF_CASES_DIR "/ps3.png" };
-    static const char *const mgz[PLAT_COUNT] = {
-        "/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS1_CASE.PNG",
-        "/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS2_CASE.PNG",
-        "/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS3_CASE.PNG",
-    };
     int p;
     for (p = 0; p < PLAT_COUNT; p++)
-        if (!load_case(p, mine[p]) && !load_case(p, mgz[p]))
-            log_printf("cases: no case image for %s, drawing a plain case", p == 0 ? "PS1" : p == 1 ? "PS2" : "PS3");
+        if (!load_case(p, mine[p]))
+            log_printf("cases: %s not found, %s covers are shown without a case", mine[p], p == 0 ? "PS1" : p == 1 ? "PS2" : "PS3");
 }
 
 void ps3_load_tab_images(void)

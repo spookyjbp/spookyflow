@@ -9,13 +9,15 @@ typedef enum {
     /* Game settings (per game) */
     ROW_G_AUTOPLAY, ROW_G_EMULATOR, ROW_G_OFFLINE, ROW_G_RSX, ROW_G_PS2CFG,
     /* Flow settings (global) */
-    ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_COVERS,
-    ROW_F_IGNORE_THE, ROW_F_XMB_TOP, ROW_F_RESCAN, ROW_F_QUIT, ROW_F_POWEROFF
+    ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_SLEEP, ROW_F_COVERS,
+    ROW_F_IGNORE_THE, ROW_F_XMB_TOP, ROW_F_RESCAN, ROW_F_QUIT, ROW_F_POWEROFF,
+    /* Choose Disc (multi-disc games): row i = disc i */
+    ROW_D_DISC
 } RowKind;
 
-enum { PANEL_NONE = 0, PANEL_GAME = 1, PANEL_FLOW = 2 };
+enum { PANEL_NONE = 0, PANEL_GAME = 1, PANEL_FLOW = 2, PANEL_DISC = 3 };
 
-#define MENU_MAX_ROWS 16
+#define MENU_MAX_ROWS 20
 
 /* Effects a change can request from the app. */
 enum {

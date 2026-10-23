@@ -20,6 +20,9 @@ int title_extract_id(const char *raw, char *out, size_t cap);
 /* Normalize s[0..n) like "SLUS_209.14", "BLES-80608" or "slus20914" to
  * "SLUS20914" (4 letters + 5 digits). Returns 1 on success. */
 int title_normalize_id(const char *s, size_t n, char *out, size_t cap);
+/* "Final Fantasy VII (Disc 2)" -> base "Final Fantasy VII", *disc = 2.
+ * Returns 0 (base = title, *disc = 0) if the title has no disc number. */
+int title_disc_split(const char *title, char *base, size_t cap, int *disc);
 
 /* Pointer into `title` where sorting starts (skips a leading "The " when
  * ignore_the is set). */

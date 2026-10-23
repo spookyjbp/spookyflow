@@ -6,7 +6,7 @@
  *   2. webMAN's temp covers:  /dev_hdd0/tmp/wmtmp/<game file name>.*
  *   by title ID (from the file name, else read from the disc image):
  *   3. PS1/PS2: <mm>/covers_retro/psx/SLUS_209.14_COV.*   (mm = multiMAN roots)
- *   4. <mm>/covers/<ID>.*, also ManaGunZ, /dev_hdd0/GAMES/covers, /dev_hdd0/GAMEZ/covers
+ *   4. <mm>/covers/<ID>.*, also /dev_hdd0/GAMES/covers, /dev_hdd0/GAMEZ/covers
  *   5. /dev_hdd0/tmp/wmtmp/covers/<ID>.*
  *   6. the game's own folder: <folder>/<ID>.*
  *

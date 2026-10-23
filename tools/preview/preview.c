@@ -271,7 +271,7 @@ int main(int argc, char **argv)
     }
 
     /* milestone 2: real cover art (synthetic stand-ins; 1 in 5 has none) */
-    g_app.settings.ui_color = UI_COLOR_WHITE;
+    g_app.settings.ui_color = UI_COLOR_BLUE;
     pv_covers_on(1);
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Gran Turismo 4"), 0);
     g_app.tab = PLAT_PS2;
@@ -325,6 +325,12 @@ int main(int argc, char **argv)
             render("26_case_images_ps2", 1280, 720);
             press(SFB_L1); step_covers(1.0f);
             render("27_case_images_ps1", 1280, 720);
+            g_app.sleep_t = 1.0f;
+            render("28_sleep_dimmed", 1280, 720);
+            g_app.sleep_t = 0.0f;
+            g_app.settings.cases = 0;
+            render("29_custom_cases_off", 1280, 720);
+            g_app.settings.cases = 1;
             ui_clear_case_images();
         }
     }
@@ -334,7 +340,7 @@ int main(int argc, char **argv)
     press(SFB_R2); step(0, 0.12f);
     render("23_letter_blue", 1280, 720);
     step(0, 1.2f);
-    g_app.settings.ui_color = UI_COLOR_WHITE;
+    g_app.settings.ui_color = UI_COLOR_BLUE;
     g_app.settings.show_info = 0;
     render("24_no_game_info", 1280, 720);
     g_app.settings.show_info = 1;

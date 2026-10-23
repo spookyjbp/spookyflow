@@ -11,6 +11,7 @@ void lib_clear(Library *lib)
     lib->pool[0] = '\0';
     lib->pool_used = 1;           /* offset 0 is the empty string */
     lib->pool_full = 0;
+    lib->ndiscs = 0;
     for (p = 0; p < PLAT_COUNT; p++) lib_clear_tab(lib, p);
 }
 
@@ -138,4 +139,73 @@ int lib_letter_next(const GameList *gl, int sel)
     for (k = b + 1; k < LIB_BUCKETS; k++)                                /* no wrap: stops at the last letter */
         if (gl->first[k] >= 0) return gl->first[k];
     return sel;
+}
+
+const Disc *lib_game_disc(const Library *lib, const Game *g, int i)
+{
+    if (!g || g->ndisc < 2 || i < 0 || i >= g->ndisc || g->disc0 + i >= lib->ndiscs) return NULL;
+    return &lib->disc[g->disc0 + i];
+}
+
+int lib_group_discs(Library *lib, int plat)
+{
+    GameList *gl;
+    int i, merged = 0;
+    char base[TITLE_MAX], base2[TITLE_MAX];
+    if (plat < 0 || plat >= PLAT_COUNT) return 0;
+    gl = &lib->tab[plat];
+    if (gl->count < 2) return 0;
+    lib_sort(lib, plat, 0);              /* discs of one game end up next to each other */
+    for (i = 0; i < gl->count; i++) {
+        int num, j, a, b, n = 1, members[LIB_DISCS_PER_GAME];
+        Disc tmp[LIB_DISCS_PER_GAME];
+        uint64_t total = 0;
+        uint32_t t;
+        if (!title_disc_split(lib_title(lib, &gl->games[i]), base, sizeof(base), &num)) continue;
+        members[0] = i;
+        /* the following games with the same base title (sorting keeps them close) */
+        for (j = i + 1; j < gl->count && j <= i + 2 * LIB_DISCS_PER_GAME && n < LIB_DISCS_PER_GAME; j++) {
+            int num2;
+            if (title_disc_split(lib_title(lib, &gl->games[j]), base2, sizeof(base2), &num2) && sf_stricmp(base, base2) == 0)
+                members[n++] = j;
+            else if (sf_strnicmp(lib_title(lib, &gl->games[j]), base, strlen(base)) != 0)
+                break;
+        }
+        if (n < 2 || lib->ndiscs + n > LIB_MAX_DISCS) continue;
+        for (a = 0; a < n; a++) {
+            const Game *m = &gl->games[members[a]];
+            int dn;
+            title_disc_split(lib_title(lib, m), base2, sizeof(base2), &dn);
+            tmp[a].path = m->path; tmp[a].id = m->id; tmp[a].size = m->size; tmp[a].num = (uint8_t)dn;
+            total += m->size;
+        }
+        for (a = 1; a < n; a++)                             /* disc order */
+            for (b = a; b > 0 && tmp[b - 1].num > tmp[b].num; b--) { Disc d = tmp[b]; tmp[b] = tmp[b - 1]; tmp[b - 1] = d; }
+        t = pool_add(lib, base);
+        if (t == 0) continue;                               /* pool full: leave them separate */
+        for (a = 0; a < n; a++) lib->disc[lib->ndiscs + a] = tmp[a];
+        {
+            Game *g = &gl->games[i];
+            g->title = t;
+            g->path = tmp[0].path;
+            g->id = tmp[0].id;
+            g->size = total;
+            g->ndisc = (uint8_t)n;
+            g->disc0 = (uint16_t)lib->ndiscs;
+            g->bucket = (uint8_t)title_bucket(base, 0);
+        }
+        lib->ndiscs += n;
+        /* drop the other discs' entries (all after i) */
+        {
+            int r, w = i + 1, c;
+            for (r = i + 1; r < gl->count; r++) {
+                int is_member = 0;
+                for (c = 1; c < n; c++) if (members[c] == r) is_member = 1;
+                if (!is_member) gl->games[w++] = gl->games[r];
+            }
+            merged += gl->count - w;
+            gl->count = w;
+        }
+    }
+    return merged;
 }

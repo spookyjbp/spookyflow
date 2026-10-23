@@ -77,7 +77,7 @@ static const uint32_t k_accent[UI_COLOR_COUNT] = {
     0xF28A1EFFu,   /* Orange */
     0xFFFFFFFFu,   /* White (the original look) */
 };
-static int g_accent = UI_COLOR_WHITE;
+static int g_accent = UI_COLOR_BLUE;
 
 void ui_set_color(int idx) { g_accent = (idx >= 0 && idx < UI_COLOR_COUNT) ? idx : UI_COLOR_WHITE; }
 static int accent_white(void) { return g_accent == UI_COLOR_WHITE; }
@@ -123,24 +123,14 @@ static void draw_background(const App *a, float alpha, int animated)
 
 #define COVER_FADE_FRAMES 14.0f   /* ~0.23 s at 60 fps */
 
-/* ---- Cases like ManaGunZ: the cover fills the front and a thin clear
- * plastic rim (lighter at the top, like light on plastic) frames it with
- * rounded corners. Nothing is drawn over the cover art. ---- */
+/* ---- Cases: with Custom Cases on and a case image loaded (ManaGunZ's or
+ * your own), the cover sits in the image and the image is drawn over it.
+ * Otherwise just the cover is shown. Either way a thin outline in the UI
+ * color goes around it. ---- */
 
 typedef struct { float x, y, w, h; } Rect;
 
 static uint32_t shade(uint32_t c, float b, float al) { return sf_col_alpha(sf_col_dim(c, b), al); }
-
-typedef struct { uint32_t top, bot, edge, inner; } CaseStyle;
-
-static const CaseStyle k_case[PLAT_COUNT] = {
-    /* PS1 jewel case: clear plastic */
-    { 0xD5D9E0B0u, 0x8C9099A0u, 0xFFFFFF70u, 0x00000070u },
-    /* PS2 DVD case: black plastic */
-    { 0x3A3B40F0u, 0x141417F0u, 0xFFFFFF30u, 0x000000A0u },
-    /* PS3 Blu-ray case: clear plastic */
-    { 0xC9CDD5B0u, 0x7E838C9Cu, 0xFFFFFF70u, 0x00000070u },
-};
 
 static void case_window(int plat, float x, float y, float w, float h, Rect *r)
 {
@@ -152,23 +142,20 @@ static void case_window(int plat, float x, float y, float w, float h, Rect *r)
     r->h = h * (cw.y1 - cw.y0);
 }
 
-/* state: 0 = cover still loading (empty case), 1 = no cover (title card),
- * art > 0 = real cover in tex, faded in */
+/* no_cover: the game has no cover (title card); otherwise an empty dark
+ * front is shown until the cover (tex, faded in by art) arrives */
 static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art, int no_cover)
 {
-    const CaseStyle *cs = &k_case[plat];
     float b = p->bright;
     float x = p->cx - p->w * 0.5f, y = p->cy - p->h * 0.5f, w = p->w, h = p->h;
-    float r = h * 0.030f, lw = h * 0.0030f;
+    int cased = layout_case_image_active(plat) && g_case_tex[plat] >= 0;
     Rect win;
     if (alpha <= 0.003f) return;
     if (tex < 0) art = 0.0f;
     case_window(plat, x, y, w, h, &win);
-    /* plastic rim (only without a case image) */
-    if (g_case_tex[plat] < 0) d_rrect_grad(x, y, w, h, r, shade(cs->top, b, alpha), shade(cs->bot, b, alpha));
     if (art < 1.0f) {
         float pa = alpha * (1.0f - art);
-        d_rect(win.x, win.y, win.w, win.h, shade(0x1E1F24FFu, b, pa));     /* empty case */
+        d_rect(win.x, win.y, win.w, win.h, shade(0x1E1F24FFu, b, pa));     /* empty front */
         if (no_cover) {
             const char *title = lib_title(a->lib, g);
             float hue = (float)(sf_hash(title) & 0xFFFF) / 65535.0f;
@@ -181,13 +168,10 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
         }
     }
     if (art > 0.0f) d_image(tex, win.x, win.y, win.w, win.h, shade(0xFFFFFFFFu, b, alpha * art));
-    if (g_case_tex[plat] >= 0) {   /* case image on top: its clear plastic and gloss cover the art */
-        d_image(g_case_tex[plat], x, y, w, h, shade(0xFFFFFFFFu, b, alpha));
-        return;
-    }
-    /* thin dark seam where the cover meets the plastic, and a light outer edge */
-    d_rrect_stroke(win.x, win.y, win.w, win.h, h * 0.004f, lw * 0.8f, shade(cs->inner, 1.0f, alpha));
-    d_rrect_stroke(x, y, w, h, r, lw, shade(cs->edge, b, alpha));
+    if (cased) d_image(g_case_tex[plat], x, y, w, h, shade(0xFFFFFFFFu, b, alpha));   /* plastic + gloss over the art */
+    /* outline in the UI color (a little inside the edge so it hugs the case) */
+    d_rrect_stroke(x, y, w, h, h * (cased ? 0.020f : 0.008f), h * 0.0045f,
+                   sf_col_alpha(sf_col_dim(accent_or(0xFFFFFFC0u, 1.0f), 0.55f + 0.45f * b), alpha));
 }
 
 /* Draw one tab's cover row. xoff = horizontal slide (logical), alpha = fade. */
@@ -339,6 +323,8 @@ static void draw_chips(const App *a, int tab, int idx, float alpha, const UiMetr
     x = W() * 0.5f - total * 0.5f;
     for (i = 0; i < n; i++) {
         d_rrect(x, m->chips_y - m->chip_h * 0.5f, w[i], m->chip_h, m->chip_h * 0.5f, sf_col_alpha(TH_CHIP, alpha));
+        d_rrect_stroke(x, m->chips_y - m->chip_h * 0.5f, w[i], m->chip_h, m->chip_h * 0.5f, 0.0028f * H(),
+                       sf_col_alpha(accent_or(0xFFFFFF59u, 0.85f), alpha));
         d_text(&g_font_main, x + w[i] * 0.5f, m->chips_y, m->chip_em, sf_col_alpha(TH_TEXT_DIM, alpha), txt[i], ALIGN_CENTER);
         x += w[i] + d_xu(m->chip_gap);
     }
@@ -405,7 +391,7 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
     if (cur[0]) {
         d_rrect(W() * 0.5f - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f, sf_col_alpha(TH_CHIP, alpha));
         d_rrect_stroke(W() * 0.5f - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f,
-                       0.0022f * H(), sf_col_alpha(accent_or(0xFFFFFF33u, 0.70f), alpha));
+                       0.0028f * H(), sf_col_alpha(accent_or(0xFFFFFF59u, 0.85f), alpha));
     }
     /* clip text to the (animating) pill so a wide old title never spills out */
     maxw = sf_minf(maxw, pw - 2.0f * pad * 0.6f);
@@ -452,7 +438,7 @@ void ui_bar_layout(int panel_mode, BarLayout *L)
         group_add_badge(&L->g[4], ICON_CIRCLE, L->icon);   L->g[4].label = "Exit (Hold)";
         L->n = 5;
     } else {
-        group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = "Change";
+        group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = panel_mode == 2 ? "Launch" : "Change";
         group_add_badge(&L->g[1], ICON_CIRCLE, L->icon);   L->g[1].label = "Back";
         L->n = 2;
     }
@@ -504,8 +490,10 @@ static void draw_bar(const App *a, float alpha)
     BarLayout main_l, panel_l;
     float pe = ease_out_cubic(a->panel_anim);
     ui_bar_layout(0, &main_l);
-    ui_bar_layout(1, &panel_l);
+    ui_bar_layout(a->panel == PANEL_DISC ? 2 : 1, &panel_l);
     d_rrect(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, sf_col_alpha(TH_BAR, alpha));
+    d_rrect_stroke(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, 0.0028f * H(),
+                   sf_col_alpha(accent_or(0xFFFFFF59u, 0.85f), alpha));
     if (pe < 1.0f) draw_bar_groups(a, &main_l, alpha * (1.0f - pe), 1);
     if (pe > 0.0f) draw_bar_groups(a, &panel_l, alpha * pe, 0);
 }
@@ -541,16 +529,19 @@ static void draw_panel(App *a)
     float em = 0.026f * H() * sc;
     float list_y = py + pad + th, ix = px + d_xu(pad), iw = pw - 2.0f * d_xu(pad);
     float sbw = 0.0f;
-    const Game *g = a->panel == PANEL_GAME ? &a->lib->tab[a->panel_plat].games[a->panel_game] : NULL;
+    int per_game = a->panel == PANEL_GAME || a->panel == PANEL_DISC;
+    const char *ptitle = a->panel == PANEL_GAME ? "Game Settings" : a->panel == PANEL_DISC ? "Choose Disc" : "Flow Settings";
+    const Game *g;
     if (e <= 0.0f) return;
-    if (a->panel == PANEL_GAME && (a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_plat].count)) return;
+    if (per_game && (a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_plat].count)) return;
+    g = per_game ? &a->lib->tab[a->panel_plat].games[a->panel_game] : NULL;
 
     d_rrect(px, py, pw, ph, 0.05f * H(), sf_col_alpha(TH_PANEL, e));
     d_rrect_stroke(px, py, pw, ph, 0.05f * H(), 0.0021f * H(), sf_col_alpha(TH_PANEL_OUTLINE, e));
     d_text(&g_font_main, ix + d_xu(rh * 0.3f), py + pad + th * 0.45f, 0.034f * H() * sc, sf_col_alpha(TH_TEXT, e),
-           a->panel == PANEL_GAME ? "Game Settings" : "Flow Settings", ALIGN_LEFT);
+           ptitle, ALIGN_LEFT);
     if (g) {
-        float tw = d_text_width(&g_font_main, 0.034f * H() * sc, "Game Settings");
+        float tw = d_text_width(&g_font_main, 0.034f * H() * sc, ptitle);
         d_text_fit(&g_font_main, ix + iw - d_xu(rh * 0.3f), py + pad + th * 0.45f, em * 0.92f, sf_col_alpha(TH_TEXT_FAINT, e),
                    lib_title(a->lib, g), ALIGN_RIGHT, iw - tw - d_xu(rh * 1.2f));
     }
@@ -584,6 +575,16 @@ static void draw_panel(App *a)
         if (rel < 0.0f) fa = 1.0f + rel;
         else if (rel > (float)vis - 1.0f) fa = (float)vis - rel;
         fa = sf_clampf(fa, 0.0f, 1.0f) * e;
+        if (k == ROW_D_DISC) {
+            const Disc *dd = lib_game_disc(a->lib, g, i);
+            char lab[24];
+            snprintf(lab, sizeof(lab), "Disc %d", dd ? dd->num : i + 1);
+            d_text(&g_font_main, ix + d_xu(rh * 0.42f), cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), lab, ALIGN_LEFT);
+            val[0] = '\0';
+            if (dd && dd->size) sf_format_size(dd->size, val, sizeof(val));
+            if (val[0]) draw_value(xr, cy, em, val, sel, 0, fa);
+            continue;
+        }
         d_text(&g_font_main, ix + d_xu(rh * 0.42f), cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), menu_label(k), ALIGN_LEFT);
         menu_value_text(k, a->panel_plat, &a->settings, &a->panel_cfg, val, sizeof(val));
         if (menu_is_slider(k)) {
@@ -694,8 +695,8 @@ void ui_draw(App *a)
     float intro, ia;
     int animated = a->settings.background == BG_ANIMATED || a->mode == MODE_LOADING;
     ui_set_color(a->settings.ui_color);
+    layout_use_case_images(a->settings.cases);
     layout_ui(d_screen(), &m);
-    if (a->sleep_t >= 0.999f) return;          /* asleep: the cleared screen stays black */
     draw_background(a, 1.0f, animated);
 
     if (a->mode == MODE_LOADING) {
@@ -730,5 +731,5 @@ void ui_draw(App *a)
         }
     }
     if (a->exit_fade > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(TH_FADE, ease_in_out(a->exit_fade)));
-    if (a->sleep_t > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, ease_in_out(a->sleep_t)));
+    if (a->sleep_t > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, SLEEP_DIM * ease_in_out(a->sleep_t)));
 }

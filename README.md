@@ -165,7 +165,7 @@ game, in this order (`.JPG`, `.PNG`, `.jpg`, `.png`):
 3. PS1 / PS2 retro packs: `/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SLUS_209.14_COV.JPG`
    (also under `/dev_hdd0/tmp/game_repo/main` and `/dev_hdd0/game/NPEA00374/USRDIR`)
 4. By title ID: `<the same three folders>/covers/BLES80608.JPG`, plus
-   `/dev_hdd0/game/MANAGUNZ0/USRDIR/covers`, `/dev_hdd0/GAMES/covers`,
+   `/dev_hdd0/GAMES/covers`,
    `/dev_hdd0/GAMEZ/covers`
 5. `/dev_hdd0/tmp/wmtmp/covers/<ID>.jpg`
 6. The game's own folder: `/dev_hdd0/PS2ISO/SLUS20914.jpg`
@@ -194,17 +194,10 @@ game folders. Nothing is renamed.
 The log lists the cover folders that were found and, for the first 400
 covers, where each one came from (or the title ID it looked for).
 
-## Case images (ManaGunZ's cases)
+## Case images (optional)
 
-spookyflow ships no case artwork. If **ManaGunZ** is installed on your PS3,
-spookyflow uses its case images straight from its folder, so the cases look
-exactly like ManaGunZ's:
-
-```
-/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/PS1_CASE.PNG  (and PS2_, PS3_)
-```
-
-To use other case images, put PNGs here (they win over ManaGunZ's):
+spookyflow ships no case artwork. To show covers inside cases, put PNGs here
+(Flow Settings → Custom Cases turns them on or off):
 
 ```
 /dev_hdd0/tmp/spookyflow/cases/ps1.png
@@ -212,11 +205,20 @@ To use other case images, put PNGs here (they win over ManaGunZ's):
 /dev_hdd0/tmp/spookyflow/cases/ps3.png
 ```
 
-They must use ManaGunZ's layout (any size, same proportions): the cover sits
-at 30,5 240×240 in a 275×250 PS1 image, 0,10 260×370 in a 270×390 PS2 image,
-and 0,30 260×300 in a 270×340 PS3 image, and the image is drawn over the
-cover (its clear parts show the cover through). Without any images, a plain
-rim is drawn. The log says which case images were used.
+They use ManaGunZ's case layout, so ManaGunZ's own `PS1_CASE.PNG`,
+`PS2_CASE.PNG` and `PS3_CASE.PNG` (from `/dev_hdd0/game/MANAGUNZ0/USRDIR/GUI/common/`)
+work once copied and renamed in lowercase. Any size with the same
+proportions works: the cover sits at 30,5 240×240 in a 275×250 PS1 image,
+0,10 260×370 in a 270×390 PS2 image, and 0,30 260×300 in a 270×340 PS3
+image, and the image is drawn over the cover. Without an image the cover is
+shown on its own. The log says which case images were used.
+
+## Multi-disc games
+
+Games named like `Final Fantasy VII (Disc 1)`, `(Disc 2)`… (also `(Disk 1 of 2)`,
+`(CD1)`, `[Disc1of2]`) show as **one** game called `Final Fantasy VII`, with
+the sizes added up. Its cover, title ID and Game Settings come from disc 1.
+Pressing ✖ opens **Choose Disc**; pick a disc and press ✖ to launch it.
 
 ## Optional: your own tab images
 
@@ -279,7 +281,14 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 3 (0.2.3):** with ManaGunZ installed, the cases are ManaGunZ's own
+15. **Fix 6 (0.2.6):** ManaGunZ's covers folder is no longer searched.
+    **Fix 5 (0.2.5):** multi-disc games show once and ✖ asks which disc;
+    case images only come from `tmp/spookyflow/cases` (ManaGunZ's folder is no
+    longer read). **Fix 4 (0.2.4):** sleep dims the screen (still visible); Flow Settings →
+    Sleep Mode (Off, 1, 5, 10, 15, 30, 60 min; default 5) and Custom Cases
+    (On/Off); UI-color outlines around the title, info chips, cases and the
+    controls bar; Blue is the default UI color; without case images covers
+    are shown bare (the drawn cases are gone). **Fix 3 (0.2.3):** with ManaGunZ installed, the cases are ManaGunZ's own
     case images. **Fix 2 (0.2.2):** cases are a thin clear plastic rim around the whole
     cover (ManaGunZ style; PS2 cases are black); covers are never cut at the
     edges; switching tabs shows covers at once and never flashes titles. **Fix 1 (0.2.1):** no highlight behind the selected case; the

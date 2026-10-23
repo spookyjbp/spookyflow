@@ -19,14 +19,14 @@ typedef char sf_static_slots[(R_COVER_SLOTS >= CC_MAX_SLOTS) ? 1 : -1];
 
 enum {
     F_RETRO_STD, F_RETRO_STL, F_RETRO_SSTL,
-    F_COV_STD, F_COV_STL, F_COV_SSTL, F_COV_MGZ, F_COV_GAMES, F_COV_GAMEZ,
+    F_COV_STD, F_COV_STL, F_COV_SSTL, F_COV_GAMES, F_COV_GAMEZ,
     F_WMTMP_COV, F_WMTMP, F_COUNT
 };
 
 static const char *const k_folders[F_COUNT] = {
     MM_STD "/covers_retro/psx", MM_STL "/covers_retro/psx", MM_SSTL "/covers_retro/psx",
     MM_STD "/covers", MM_STL "/covers", MM_SSTL "/covers",
-    "/dev_hdd0/game/MANAGUNZ0/USRDIR/covers", "/dev_hdd0/GAMES/covers", "/dev_hdd0/GAMEZ/covers",
+    "/dev_hdd0/GAMES/covers", "/dev_hdd0/GAMEZ/covers",
     WMTMP "/covers", WMTMP,
 };
 

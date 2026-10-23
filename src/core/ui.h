@@ -59,7 +59,8 @@ typedef struct {
 } BarLayout;
 
 /* panel_mode = 0: main bar (Launch, Game settings, L1 R1 A-Z, Flow settings, Exit)
- * panel_mode = 1: panel bar (Change, Back). Uses the current d_screen(). */
+ * panel_mode = 1: panel bar (Change, Back); 2: Choose Disc (Launch, Back).
+ * Uses the current d_screen(). */
 void ui_bar_layout(int panel_mode, BarLayout *out);
 
 /* Title pill fitting: returns the text width; *em_out = font size used and

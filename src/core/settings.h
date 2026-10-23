@@ -30,7 +30,9 @@ typedef struct {
     int shuffle;             /* default 1 */
     int sfx_volume;          /* UI sound effects volume 0..100 (0 = off), default 50 */
     int background;          /* BG_*, default animated */
-    int ui_color;            /* UI_COLOR_*, default white */
+    int ui_color;            /* UI_COLOR_*, default blue */
+    int cases;               /* draw covers inside case images (ManaGunZ's / your own), default 1 */
+    int sleep_min;           /* minutes without input before the screen dims, 0 = never, default 5 */
     int show_info;           /* genre / players / size chips under the case, default 1 */
     int ignore_the;          /* default 0 */
     int xmb_top;             /* pin spookyflow to the top of the XMB Game column, default 0 */

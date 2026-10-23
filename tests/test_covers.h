@@ -324,6 +324,7 @@ static void test_cover_lookup(void)
     CHECK_STR(c[1].base, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SCUS_944.26_COV");
     CHECK_STR(c[2].base, "/dev_hdd0/PSXISO/SCUS94426");
     CHECK(cover_candidates(PLAT_PS1, "", 0, "X", NULL, c, COVER_MAX_CANDS) == 0);
+    for (i = 0; i < cover_folder_count(); i++) CHECK(strstr(cover_folder(i), "MANAGUNZ") == NULL);   /* fix 6 */
     CHECK(cover_candidates(PLAT_PS2, "/a/b.iso", 0, "SLUS20914", NULL, c, 2) == 2);   /* respects max */
     /* cache names: stable, per platform, change with the file */
     cover_cache_stem("/c", PLAT_PS2, "/dev_hdd0/PS2ISO/A.iso", 100, stem, sizeof(stem));
@@ -646,7 +647,7 @@ static void test_sleep_and_info(void)
     CHECK(!g_app.asleep);
     run_frames(0, 12.0f + SLEEP_FADE_TIME);
     CHECK(g_app.asleep && g_app.sleep_t >= 0.999f);
-    ui_draw(&g_app);                                  /* asleep: draws nothing */
+    ui_draw(&g_app);                                  /* asleep: dimmed, still drawn */
     sel = g_app.view[g_app.tab].sel;
     run_frames(SFB_RIGHT, 0.6f);                      /* the waking press doesn't move... */
     run_frames(0, 0.1f);
@@ -661,12 +662,40 @@ static void test_sleep_and_info(void)
     CHECK(!g_app.asleep && !g_app.exiting);
     run_frames(0, 0.1f);
 
+    /* Sleep Mode setting: Off never sleeps; other times are honored */
+    g_app.settings.sleep_min = 0;
+    run_frames(0, 0.5f);
+    run_frames(0, 400.0f);
+    CHECK(!g_app.asleep);
+    g_app.settings.sleep_min = 1;
+    run_frames(0, 1.0f);
+    CHECK(g_app.asleep);
+    tap(SFB_CROSS); run_frames(0, 0.5f);
+    CHECK(!g_app.asleep && g_app.mode == MODE_FLOW);
+    {
+        Settings ss;
+        GameCfg gg;
+        char t[32];
+        settings_defaults(&ss);
+        memset(&gg, 0, sizeof(gg));
+        menu_value_text(ROW_F_SLEEP, 0, &ss, &gg, t, sizeof(t));
+        CHECK_STR(t, "After 5 min");
+        CHECK(menu_change(ROW_F_SLEEP, 0, 1, &ss, &gg) == MENU_FX_CHANGED && ss.sleep_min == 10);
+        CHECK(menu_change(ROW_F_SLEEP, 0, -1, &ss, &gg) == MENU_FX_CHANGED && ss.sleep_min == 5);
+        menu_change(ROW_F_SLEEP, 0, -1, &ss, &gg); menu_change(ROW_F_SLEEP, 0, -1, &ss, &gg);
+        menu_value_text(ROW_F_SLEEP, 0, &ss, &gg, t, sizeof(t));
+        CHECK(ss.sleep_min == 0);
+        CHECK_STR(t, "Off");
+        CHECK(menu_change(ROW_F_CASES, 0, 0, &ss, &gg) == MENU_FX_CHANGED && ss.cases == 0);
+        CHECK_STR(menu_label(ROW_F_CASES), "Custom Cases");
+        CHECK_STR(menu_label(ROW_F_SLEEP), "Sleep Mode");
+    }
     settings_defaults(&s1);
     CHECK(s1.show_info == 1);
-    s1.show_info = 0;
+    s1.show_info = 0; s1.cases = 0; s1.sleep_min = 15;
     CHECK(settings_save(&s1, "build-host/test_info.ini") == 0);
     settings_defaults(&s2);
-    CHECK(settings_load(&s2, "build-host/test_info.ini") == 0 && s2.show_info == 0);
+    CHECK(settings_load(&s2, "build-host/test_info.ini") == 0 && s2.show_info == 0 && s2.cases == 0 && s2.sleep_min == 15);
     {
         GameCfg g;
         char txt[32];
@@ -721,8 +750,102 @@ static void test_case_images(void)
     ui_set_case_image(PLAT_PS3, TEX_CASE_PS3);
     g_app.tab = PLAT_PS3;
     ui_draw(&g_app);
+    layout_use_case_images(0);                                           /* Custom Cases off: bare cover */
+    CHECK_NEAR(layout_case_aspect(PLAT_PS3), 0.86, 0.002);
+    layout_use_case_images(1);
+    CHECK_NEAR(layout_case_aspect(PLAT_PS3), 270.0 / 340.0, 1e-5);
     ui_clear_case_images();
-    CHECK_NEAR(layout_window_aspect(PLAT_PS3), 0.86, 0.002);             /* back to the drawn case */
+    CHECK_NEAR(layout_window_aspect(PLAT_PS3), 0.86, 0.002);             /* no image: bare cover */
+    {
+        CaseWindow bare;
+        layout_case_window(PLAT_PS2, &bare);
+        CHECK(bare.x0 == 0.0f && bare.y0 == 0.0f && bare.x1 == 1.0f && bare.y1 == 1.0f);
+    }
     layout_set_case_image(PLAT_PS1, 0.0f, 250.0f, 30.0f, 5.0f, 240.0f, 240.0f);   /* bad size: ignored */
     CHECK_NEAR(layout_window_aspect(PLAT_PS1), 1.0, 0.002);
+}
+
+/* fix 5: multi-disc games show once; ✖ asks which disc */
+static int fake_discs(void *ctx, const char *dir, FsEntry *out, int max)
+{
+    static const struct { const char *name; uint64_t size; } k[] = {
+        { "Final Fantasy VII (Disc 1).cue", 100 }, { "Final Fantasy VII (Disc 1).bin", 600 },
+        { "Final Fantasy VII (Disc 3).cue", 100 }, { "Final Fantasy VII (Disc 3).bin", 650 },
+        { "Final Fantasy VII (Disc 2).cue", 100 }, { "Final Fantasy VII (Disc 2).bin", 640 },
+        { "Crash Bandicoot.cue", 50 }, { "Crash Bandicoot.bin", 500 },
+    };
+    int i, n = 0;
+    (void)ctx;
+    if (strcmp(dir, "/dev_hdd0/PSXISO") != 0) return -1;
+    for (i = 0; i < (int)(sizeof(k) / sizeof(k[0])) && n < max; i++, n++) {
+        sf_strlcpy(out[n].name, k[i].name, FS_NAME_MAX);
+        out[n].is_dir = 0;
+        out[n].size = k[i].size;
+    }
+    return n;
+}
+
+static void test_multi_disc(void)
+{
+    char base[TITLE_MAX];
+    int d, i, ff;
+    AppHost host;
+    const Game *g;
+    printf("multi-disc games\n");
+    CHECK(title_disc_split("Final Fantasy VII (Disc 2)", base, sizeof(base), &d) && d == 2);
+    CHECK_STR(base, "Final Fantasy VII");
+    CHECK(title_disc_split("Metal Gear Solid (Disk 1 of 2)", base, sizeof(base), &d) && d == 1);
+    CHECK_STR(base, "Metal Gear Solid");
+    CHECK(title_disc_split("Grandia (CD1)", base, sizeof(base), &d) && d == 1);
+    CHECK_STR(base, "Grandia");
+    CHECK(!title_disc_split("Gran Turismo 4", base, sizeof(base), &d) && d == 0);
+    CHECK_STR(base, "Gran Turismo 4");
+    CHECK(!title_disc_split("(Disc 1)", base, sizeof(base), &d));        /* nothing left: keep as is */
+
+    /* library: three discs become one game, a lone "(Disc 1)" stays */
+    lib_clear(&g_lib);
+    lib_add(&g_lib, PLAT_PS1, "/p/FF (Disc 2).cue", "Final Fantasy VII (Disc 2).cue", 20, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS1, "/p/Crash.cue", "Crash Bandicoot.cue", 5, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS1, "/p/FF (Disc 1).cue", "Final Fantasy VII (Disc 1).cue", 10, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS1, "/p/FF (Disc 3).cue", "Final Fantasy VII (Disc 3).cue", 30, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS1, "/p/Solo (Disc 1).cue", "Solo Game (Disc 1).cue", 7, NULL, 0, 0, 0);
+    CHECK(lib_group_discs(&g_lib, PLAT_PS1) == 2);
+    CHECK(g_lib.tab[PLAT_PS1].count == 3);
+    for (i = 0, ff = -1; i < g_lib.tab[PLAT_PS1].count; i++)
+        if (strcmp(lib_title(&g_lib, &g_lib.tab[PLAT_PS1].games[i]), "Final Fantasy VII") == 0) ff = i;
+    CHECK(ff >= 0);
+    if (ff >= 0) {
+        g = &g_lib.tab[PLAT_PS1].games[ff];
+        CHECK(g->ndisc == 3 && g->size == 60);
+        CHECK_STR(lib_path(&g_lib, g), "/p/FF (Disc 1).cue");                 /* covers & settings from disc 1 */
+        CHECK(lib_game_disc(&g_lib, g, 0)->num == 1 && lib_game_disc(&g_lib, g, 2)->num == 3);
+        CHECK_STR(lib_str(&g_lib, lib_game_disc(&g_lib, g, 1)->path), "/p/FF (Disc 2).cue");
+        CHECK(lib_game_disc(&g_lib, g, 3) == NULL);
+    }
+    CHECK(idx_of(PLAT_PS1, "Solo Game (Disc 1)") >= 0);
+    CHECK(idx_of(PLAT_PS1, "Crash Bandicoot") >= 0);
+
+    /* app: ✖ on a multi-disc game opens Choose Disc; ✖ there launches that disc */
+    memset(&host, 0, sizeof(host));
+    host.fs_list = fake_discs;
+    app_init(&g_app, &g_lib, &host);
+    g_app.settings.last_tab = PLAT_PS1;
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    CHECK(g_lib.tab[PLAT_PS1].count == 2);
+    g_app.tab = PLAT_PS1;
+    app_select(&g_app, PLAT_PS1, idx_of(PLAT_PS1, "Crash Bandicoot"), 0);
+    tap(SFB_CROSS);
+    CHECK(g_app.panel == PANEL_NONE && strstr(g_app.toast, "Crash Bandicoot") != NULL);   /* single disc: launches */
+    run_frames(0, 0.3f);
+    app_select(&g_app, PLAT_PS1, idx_of(PLAT_PS1, "Final Fantasy VII"), 0);
+    tap(SFB_CROSS);
+    CHECK(g_app.panel == PANEL_DISC && g_app.nrows == 3);
+    ui_draw(&g_app);
+    tap(SFB_DOWN);
+    tap(SFB_CROSS);
+    CHECK(strstr(g_app.toast, "Final Fantasy VII (Disc 2)") != NULL);
+    run_frames(0, 0.5f);
+    CHECK(g_app.panel == PANEL_NONE);
+    tap(SFB_CROSS); tap(SFB_CIRCLE); run_frames(0, 0.5f);   /* ◯ backs out without launching */
+    CHECK(g_app.panel == PANEL_NONE && !g_app.exiting);
 }

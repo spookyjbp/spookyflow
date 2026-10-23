@@ -29,7 +29,9 @@ void settings_defaults(Settings *s)
     s->shuffle = 1;
     s->sfx_volume = 50;
     s->background = BG_ANIMATED;
-    s->ui_color = UI_COLOR_WHITE;
+    s->ui_color = UI_COLOR_BLUE;
+    s->cases = 1;
+    s->sleep_min = 5;
     s->show_info = 1;
     s->ignore_the = 0;
     s->last_tab = PLAT_PS2;
@@ -91,7 +93,9 @@ void settings_parse_line(Settings *s, const char *line_in)
     else if (strcmp(key, "sound_effects") == 0) { if (parse_int(val, 0, 1, 1) == 0) s->sfx_volume = 0; }   /* fix 13 on/off */
     else if (strcmp(key, "sfx_volume") == 0) s->sfx_volume = parse_int(val, 0, 100, 50);
     else if (strcmp(key, "background") == 0) s->background = parse_int(val, 0, 1, 0);
-    else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_WHITE);
+    else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_BLUE);
+    else if (strcmp(key, "custom_cases") == 0) s->cases = parse_int(val, 0, 1, 1);
+    else if (strcmp(key, "sleep_minutes") == 0) s->sleep_min = parse_int(val, 0, 60, 5);
     else if (strcmp(key, "show_game_info") == 0) s->show_info = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "ignore_the") == 0) s->ignore_the = parse_int(val, 0, 1, 0);
     else if (strcmp(key, "xmb_top") == 0) s->xmb_top = parse_int(val, 0, 1, 0);
@@ -133,6 +137,8 @@ int settings_save(const Settings *s, const char *path)
     fprintf(f, "sfx_volume=%d\n", s->sfx_volume);
     fprintf(f, "background=%d\n", s->background);
     fprintf(f, "ui_color=%d\n", s->ui_color);
+    fprintf(f, "custom_cases=%d\n", s->cases);
+    fprintf(f, "sleep_minutes=%d\n", s->sleep_min);
     fprintf(f, "show_game_info=%d\n", s->show_info);
     fprintf(f, "ignore_the=%d\n", s->ignore_the);
     fprintf(f, "xmb_top=%d\n", s->xmb_top);

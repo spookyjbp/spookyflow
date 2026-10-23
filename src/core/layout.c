@@ -3,9 +3,9 @@
 #include "anim.h"
 #include "util.h"
 
-/* Cases are a thin clear plastic rim around the cover (like ManaGunZ): the
- * cover window has the shape of real cover art and the rim is the same
- * thickness on every side. */
+/* With a case image (Flow Settings > Custom Cases), the cover sits in the
+ * image's cover rectangle. Without one, only the cover is shown, in the
+ * shape of real cover art. */
 static float window_shape(int plat)
 {
     switch (plat) {
@@ -16,6 +16,10 @@ static float window_shape(int plat)
 }
 
 static struct { int set; float aspect; CaseWindow win; } g_case_img[PLAT_COUNT];
+static int g_cases_on = 1;
+
+void layout_use_case_images(int on) { g_cases_on = on != 0; }
+int  layout_case_image_active(int plat) { return plat >= 0 && plat < PLAT_COUNT && g_cases_on && g_case_img[plat].set; }
 
 void layout_set_case_image(int plat, float img_w, float img_h, float cx, float cy, float cw, float ch)
 {
@@ -36,17 +40,15 @@ void layout_clear_case_images(void)
 
 float layout_case_aspect(int plat)
 {
-    if (plat >= 0 && plat < PLAT_COUNT && g_case_img[plat].set) return g_case_img[plat].aspect;
-    return window_shape(plat) * (1.0f - 2.0f * LY_CASE_RIM) + 2.0f * LY_CASE_RIM;
+    if (layout_case_image_active(plat)) return g_case_img[plat].aspect;
+    return window_shape(plat);
 }
 
 void layout_case_window(int plat, CaseWindow *w)
 {
-    float rx;
-    if (plat >= 0 && plat < PLAT_COUNT && g_case_img[plat].set) { *w = g_case_img[plat].win; return; }
-    rx = LY_CASE_RIM / layout_case_aspect(plat);
-    w->x0 = rx; w->x1 = 1.0f - rx;
-    w->y0 = LY_CASE_RIM; w->y1 = 1.0f - LY_CASE_RIM;
+    if (layout_case_image_active(plat)) { *w = g_case_img[plat].win; return; }
+    w->x0 = 0.0f; w->x1 = 1.0f;
+    w->y0 = 0.0f; w->y1 = 1.0f;
 }
 
 float layout_window_aspect(int plat)
