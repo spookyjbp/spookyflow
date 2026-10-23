@@ -144,7 +144,8 @@ static void case_window(int plat, float x, float y, float w, float h, Rect *r)
 
 /* no_cover: the game has no cover (title card); otherwise an empty dark
  * front is shown until the cover (tex, faded in by art) arrives */
-static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art, int no_cover)
+static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art, int no_cover,
+                       float outline)
 {
     float b = p->bright;
     float x = p->cx - p->w * 0.5f, y = p->cy - p->h * 0.5f, w = p->w, h = p->h;
@@ -169,9 +170,11 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
     }
     if (art > 0.0f) d_image(tex, win.x, win.y, win.w, win.h, shade(0xFFFFFFFFu, b, alpha * art));
     if (cased) d_image(g_case_tex[plat], x, y, w, h, shade(0xFFFFFFFFu, b, alpha));   /* plastic + gloss over the art */
-    /* outline in the UI color (a little inside the edge so it hugs the case) */
-    d_rrect_stroke(x, y, w, h, h * (cased ? 0.020f : 0.008f), h * 0.0045f,
-                   sf_col_alpha(sf_col_dim(accent_or(0xFFFFFFC0u, 1.0f), 0.55f + 0.45f * b), alpha));
+    /* the selected game gets an outline in the UI color (it follows the
+     * selection while scrolling: outline = 1 at the center, 0 a step away) */
+    if (outline > 0.0f)
+        d_rrect_stroke(x, y, w, h, h * (cased ? 0.020f : 0.008f), H() * 0.0045f,
+                       sf_col_alpha(accent_or(0xFFFFFFE0u, 1.0f), alpha * outline));
 }
 
 /* Draw one tab's cover row. xoff = horizontal slide (logical), alpha = fade. */
@@ -208,7 +211,8 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
                 } else if (a->host.covers && !(gl->games[idx].flags & GAME_DEMO)) {
                     no_cover = 0;     /* not queued yet: also on its way */
                 }
-                draw_cover(a, tab, &gl->games[idx], &p, alpha, tex, art, no_cover);
+                draw_cover(a, tab, &gl->games[idx], &p, alpha, tex, art, no_cover,
+                           sf_clampf(1.0f - sf_absf((float)idx - scroll) * 2.0f, 0.0f, 1.0f));
             }
         }
     }
@@ -537,7 +541,7 @@ static void draw_panel(App *a)
     g = per_game ? &a->lib->tab[a->panel_plat].games[a->panel_game] : NULL;
 
     d_rrect(px, py, pw, ph, 0.05f * H(), sf_col_alpha(TH_PANEL, e));
-    d_rrect_stroke(px, py, pw, ph, 0.05f * H(), 0.0021f * H(), sf_col_alpha(TH_PANEL_OUTLINE, e));
+    d_rrect_stroke(px, py, pw, ph, 0.05f * H(), 0.0035f * H(), sf_col_alpha(accent_or(0xFFFFFF80u, 0.95f), e));
     d_text(&g_font_main, ix + d_xu(rh * 0.3f), py + pad + th * 0.45f, 0.034f * H() * sc, sf_col_alpha(TH_TEXT, e),
            ptitle, ALIGN_LEFT);
     if (g) {
@@ -577,8 +581,8 @@ static void draw_panel(App *a)
         fa = sf_clampf(fa, 0.0f, 1.0f) * e;
         if (k == ROW_D_DISC) {
             const Disc *dd = lib_game_disc(a->lib, g, i);
-            char lab[24];
-            snprintf(lab, sizeof(lab), "Disc %d", dd ? dd->num : i + 1);
+            char lab[TITLE_MAX];
+            lib_disc_name(a->lib, dd, i, lab, sizeof(lab));
             d_text(&g_font_main, ix + d_xu(rh * 0.42f), cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), lab, ALIGN_LEFT);
             val[0] = '\0';
             if (dd && dd->size) sf_format_size(dd->size, val, sizeof(val));

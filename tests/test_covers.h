@@ -849,3 +849,50 @@ static void test_multi_disc(void)
     tap(SFB_CROSS); tap(SFB_CIRCLE); run_frames(0, 0.5f);   /* ◯ backs out without launching */
     CHECK(g_app.panel == PANEL_NONE && !g_app.exiting);
 }
+
+/* fix 7: discs named without "(Disc N)" are grouped too */
+static void test_multi_disc_names(void)
+{
+    char base[TITLE_MAX];
+    int d, i, mk = -1, gr = -1;
+    printf("multi-disc names\n");
+    CHECK(title_disc_split("Grandia CD2", base, sizeof(base), &d) && d == 2);
+    CHECK_STR(base, "Grandia");
+    CHECK(title_disc_split("Parasite Eve - Disc 1", base, sizeof(base), &d) && d == 1);
+    CHECK_STR(base, "Parasite Eve");
+    CHECK(title_disc_split("Xenogears_disc2", base, sizeof(base), &d) && d == 2);
+    CHECK(!title_disc_split("Tekken 3", base, sizeof(base), &d));
+    CHECK(!title_disc_split("Ridge Racer Type 4", base, sizeof(base), &d));
+    CHECK(!title_disc_split("ABCD2", base, sizeof(base), &d));             /* "CD" must be its own word */
+    lib_clear(&g_lib);
+    lib_add(&g_lib, PLAT_PS2, "/p/Mortal Kombat - Deception (USA).iso", "Mortal Kombat - Deception (USA).iso", 4, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS2, "/p/Mortal Kombat - Deception (USA) (Bonus Disc).iso", "Mortal Kombat - Deception (USA) (Bonus Disc).iso", 1, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS2, "/p/Mortal Kombat - Shaolin Monks (USA).iso", "Mortal Kombat - Shaolin Monks (USA).iso", 3, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS2, "/p/Grandia CD2.iso", "Grandia CD2.iso", 2, NULL, 0, 0, 0);
+    lib_add(&g_lib, PLAT_PS2, "/p/Grandia CD1.iso", "Grandia CD1.iso", 2, NULL, 0, 0, 0);
+    CHECK(lib_group_discs(&g_lib, PLAT_PS2) == 2);
+    CHECK(g_lib.tab[PLAT_PS2].count == 3);
+    for (i = 0; i < g_lib.tab[PLAT_PS2].count; i++) {
+        const char *t = lib_title(&g_lib, &g_lib.tab[PLAT_PS2].games[i]);
+        if (strcmp(t, "Mortal Kombat - Deception") == 0) mk = i;
+        if (strcmp(t, "Grandia") == 0) gr = i;
+    }
+    CHECK(mk >= 0 && gr >= 0);
+    if (mk >= 0) {
+        const Game *g = &g_lib.tab[PLAT_PS2].games[mk];
+        char n0[TITLE_MAX], n1[TITLE_MAX];
+        CHECK(g->ndisc == 2 && g->size == 5);
+        lib_disc_name(&g_lib, lib_game_disc(&g_lib, g, 0), 0, n0, sizeof(n0));
+        lib_disc_name(&g_lib, lib_game_disc(&g_lib, g, 1), 1, n1, sizeof(n1));
+        CHECK_STR(n0, "USA");
+        CHECK_STR(n1, "USA, Bonus Disc");
+    }
+    if (gr >= 0) {
+        const Game *g = &g_lib.tab[PLAT_PS2].games[gr];
+        char n0[TITLE_MAX];
+        lib_disc_name(&g_lib, lib_game_disc(&g_lib, g, 0), 0, n0, sizeof(n0));
+        CHECK(g->ndisc == 2);
+        CHECK_STR(n0, "Disc 1");
+        CHECK_STR(lib_path(&g_lib, g), "/p/Grandia CD1.iso");
+    }
+}

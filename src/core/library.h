@@ -2,6 +2,7 @@
 #ifndef SF_LIBRARY_H
 #define SF_LIBRARY_H
 
+#include <stddef.h>
 #include <stdint.h>
 #include "layout.h"   /* PLAT_* */
 
@@ -29,7 +30,8 @@ typedef struct {
 typedef struct {
     uint32_t path, id;  /* pool offsets */
     uint64_t size;
-    uint8_t num;        /* disc number from the name, 1.. */
+    uint8_t num;        /* disc number from the name, 1..; 0 = none (see label) */
+    uint32_t label;     /* pool offset: name for a disc without a number ("USA, Bonus Disc") */
 } Disc;
 
 typedef struct {
@@ -71,12 +73,16 @@ int  lib_find_key(const Library *lib, int plat, const char *key);
 int  lib_letter_prev(const GameList *gl, int sel);
 int  lib_letter_next(const GameList *gl, int sel);
 
-/* Merge "Name (Disc 1)", "Name (Disc 2)"... of a tab into one game called
- * "Name" (path/ID of its first disc, sizes added) whose discs are listed in
- * lib->disc. Call once after scanning. Returns the number of games merged away. */
+/* Merge games that share a title once disc numbers are left out --
+ * "Name (Disc 1)", "Name (Disc 2)", "Name CD3", and also "Name (USA)" with
+ * "Name (USA) (Bonus Disc)" -- into one game "Name" (path/ID of its first
+ * disc, sizes added) whose discs are listed in lib->disc. Call once after
+ * scanning. Returns the number of games merged away. */
 int  lib_group_discs(Library *lib, int plat);
 /* Disc i (0..ndisc-1, in disc order) of a multi-disc game, NULL otherwise. */
 const Disc *lib_game_disc(const Library *lib, const Game *g, int i);
+/* "Disc 2", or the disc's own label ("USA, Bonus Disc"). */
+void lib_disc_name(const Library *lib, const Disc *d, int i, char *out, size_t cap);
 
 /* Built-in demo library (demo.c). Fills a tab with demo games. */
 void demo_fill(Library *lib, int plat);

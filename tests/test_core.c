@@ -1203,6 +1203,7 @@ int main(void)
     test_cover_cache_tabs();
     test_case_images();
     test_multi_disc();
+    test_multi_disc_names();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

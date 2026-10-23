@@ -175,8 +175,19 @@ static void finish_library(App *a)
     for (t = 0; t < PLAT_COUNT; t++) {
         if (a->lib->tab[t].demo) continue;
         {
-            int merged = lib_group_discs(a->lib, t);
+            int merged = lib_group_discs(a->lib, t), i, d;
             if (merged > 0) log_printf("library: %s multi-disc games grouped (%d disc entries folded into their first disc)", k_plat_name[t], merged);
+            for (i = 0; i < a->lib->tab[t].count; i++) {
+                const Game *g = &a->lib->tab[t].games[i];
+                if (g->ndisc < 2) continue;
+                log_printf("library: %s \"%s\" has %d discs:", k_plat_name[t], lib_title(a->lib, g), g->ndisc);
+                for (d = 0; d < g->ndisc; d++) {
+                    char nm[TITLE_MAX];
+                    const Disc *dd = lib_game_disc(a->lib, g, d);
+                    lib_disc_name(a->lib, dd, d, nm, sizeof(nm));
+                    log_printf("library:   %s = %s", nm, dd ? lib_str(a->lib, dd->path) : "?");
+                }
+            }
         }
     }
     sort_all(a, 0);
@@ -484,7 +495,11 @@ static void launch_disc(App *a, int disc)
     d = lib_game_disc(a->lib, g, disc);
     path = d ? lib_str(a->lib, d->path) : lib_path(a->lib, g);
     id = d ? lib_str(a->lib, d->id) : lib_id(a->lib, g);
-    if (d) snprintf(name, sizeof(name), "%s (Disc %d)", lib_title(a->lib, g), d->num);
+    if (d) {
+        char dn[TITLE_MAX];
+        lib_disc_name(a->lib, d, disc, dn, sizeof(dn));
+        snprintf(name, sizeof(name), "%s (%s)", lib_title(a->lib, g), dn);
+    }
     else sf_strlcpy(name, lib_title(a->lib, g), sizeof(name));
     c = settings_game_get(&a->settings, lib_key(a->lib, g));   /* one set of settings for all discs */
     log_printf("LAUNCH (stub, milestone 3 launches): %s \"%s\" path=\"%s\" id=%s autoplay=%s emulator=%d offline=%d rsx=%d",

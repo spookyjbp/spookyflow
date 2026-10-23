@@ -2,6 +2,7 @@
 #include "library.h"
 #include "title.h"
 #include "util.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -147,11 +148,53 @@ const Disc *lib_game_disc(const Library *lib, const Game *g, int i)
     return &lib->disc[g->disc0 + i];
 }
 
+/* Name for a disc without a number: the bracket tags of its file name,
+ * e.g. ".../Mortal Kombat - Deception (USA) (Bonus Disc).iso" -> "USA, Bonus Disc". */
+static void disc_label(const char *path, char *out, size_t cap)
+{
+    const char *base = path, *p;
+    size_t o = 0;
+    int depth = 0;
+    for (p = path; *p; p++) if (*p == '/') base = p + 1;
+    out[0] = '\0';
+    for (p = base; *p && o + 3 < cap; p++) {
+        if (*p == '(' || *p == '[') {
+            if (depth++ == 0 && o > 0) { out[o++] = ','; out[o++] = ' '; }
+            continue;
+        }
+        if (*p == ')' || *p == ']') { if (depth > 0) depth--; continue; }
+        if (depth > 0) out[o++] = *p;
+    }
+    out[o] = '\0';
+    if (!out[0]) {                                   /* no tags: the file name */
+        sf_strlcpy(out, base, cap);
+        p = strrchr(out, '.');
+        if (p && p != out) out[p - out] = '\0';
+    }
+}
+
+void lib_disc_name(const Library *lib, const Disc *d, int i, char *out, size_t cap)
+{
+    if (d && d->num > 0) snprintf(out, cap, "Disc %d", d->num);
+    else if (d && d->label) sf_strlcpy(out, lib_str(lib, d->label), cap);
+    else snprintf(out, cap, "Disc %d", i + 1);
+}
+
+static int disc_after(const Library *lib, const Disc *x, const Disc *y)
+{
+    int kx = x->num ? x->num : 255, ky = y->num ? y->num : 255;
+    size_t lx, ly;
+    if (kx != ky) return kx > ky;
+    lx = strlen(lib_str(lib, x->path)); ly = strlen(lib_str(lib, y->path));
+    if (lx != ly) return lx > ly;
+    return strcmp(lib_str(lib, x->path), lib_str(lib, y->path)) > 0;
+}
+
 int lib_group_discs(Library *lib, int plat)
 {
     GameList *gl;
     int i, merged = 0;
-    char base[TITLE_MAX], base2[TITLE_MAX];
+    char base[TITLE_MAX], base2[TITLE_MAX], lab[TITLE_MAX];
     if (plat < 0 || plat >= PLAT_COUNT) return 0;
     gl = &lib->tab[plat];
     if (gl->count < 2) return 0;
@@ -161,15 +204,13 @@ int lib_group_discs(Library *lib, int plat)
         Disc tmp[LIB_DISCS_PER_GAME];
         uint64_t total = 0;
         uint32_t t;
-        if (!title_disc_split(lib_title(lib, &gl->games[i]), base, sizeof(base), &num)) continue;
+        title_disc_split(lib_title(lib, &gl->games[i]), base, sizeof(base), &num);
         members[0] = i;
-        /* the following games with the same base title (sorting keeps them close) */
         for (j = i + 1; j < gl->count && j <= i + 2 * LIB_DISCS_PER_GAME && n < LIB_DISCS_PER_GAME; j++) {
             int num2;
-            if (title_disc_split(lib_title(lib, &gl->games[j]), base2, sizeof(base2), &num2) && sf_stricmp(base, base2) == 0)
-                members[n++] = j;
-            else if (sf_strnicmp(lib_title(lib, &gl->games[j]), base, strlen(base)) != 0)
-                break;
+            title_disc_split(lib_title(lib, &gl->games[j]), base2, sizeof(base2), &num2);
+            if (sf_stricmp(base, base2) == 0) members[n++] = j;
+            else if (sf_strnicmp(lib_title(lib, &gl->games[j]), base, strlen(base)) != 0) break;
         }
         if (n < 2 || lib->ndiscs + n > LIB_MAX_DISCS) continue;
         for (a = 0; a < n; a++) {
@@ -177,10 +218,16 @@ int lib_group_discs(Library *lib, int plat)
             int dn;
             title_disc_split(lib_title(lib, m), base2, sizeof(base2), &dn);
             tmp[a].path = m->path; tmp[a].id = m->id; tmp[a].size = m->size; tmp[a].num = (uint8_t)dn;
+            tmp[a].label = 0;
+            if (dn == 0) { disc_label(lib_path(lib, m), lab, sizeof(lab)); tmp[a].label = pool_add(lib, lab); }
             total += m->size;
         }
-        for (a = 1; a < n; a++)                             /* disc order */
-            for (b = a; b > 0 && tmp[b - 1].num > tmp[b].num; b--) { Disc d = tmp[b]; tmp[b] = tmp[b - 1]; tmp[b - 1] = d; }
+        /* numbered discs in order, then the others (the plainest name first,
+         * so "Game (USA)" comes before "Game (USA) (Bonus Disc)") */
+        for (a = 1; a < n; a++)
+            for (b = a; b > 0 && disc_after(lib, &tmp[b - 1], &tmp[b]); b--) {
+                Disc d = tmp[b]; tmp[b] = tmp[b - 1]; tmp[b - 1] = d;
+            }
         t = pool_add(lib, base);
         if (t == 0) continue;                               /* pool full: leave them separate */
         for (a = 0; a < n; a++) lib->disc[lib->ndiscs + a] = tmp[a];

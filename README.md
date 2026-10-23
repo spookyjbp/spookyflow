@@ -216,8 +216,12 @@ shown on its own. The log says which case images were used.
 ## Multi-disc games
 
 Games named like `Final Fantasy VII (Disc 1)`, `(Disc 2)`… (also `(Disk 1 of 2)`,
-`(CD1)`, `[Disc1of2]`) show as **one** game called `Final Fantasy VII`, with
-the sizes added up. Its cover, title ID and Game Settings come from disc 1.
+`(CD1)`, `[Disc1of2]`, `Grandia CD2`, `Game - Disc 2`) show as **one** game
+called `Final Fantasy VII`, with the sizes added up. Games whose names are the
+same apart from their tags, like `Mortal Kombat - Deception (USA)` and
+`Mortal Kombat - Deception (USA) (Bonus Disc)`, are grouped the same way; their
+discs are listed by those tags ("USA", "USA, Bonus Disc"). The log lists every
+grouped game and its discs. Its cover, title ID and Game Settings come from disc 1.
 Pressing ✖ opens **Choose Disc**; pick a disc and press ✖ to launch it.
 
 ## Optional: your own tab images
@@ -281,7 +285,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 6 (0.2.6):** ManaGunZ's covers folder is no longer searched.
+15. **Fix 7 (0.2.7):** more multi-disc names grouped (see Multi-disc games);
+    only the selected case has the UI-color outline; Game Settings, Flow
+    Settings and Choose Disc have it too. **Fix 6 (0.2.6):** ManaGunZ's covers folder is no longer searched.
     **Fix 5 (0.2.5):** multi-disc games show once and ✖ asks which disc;
     case images only come from `tmp/spookyflow/cases` (ManaGunZ's folder is no
     longer read). **Fix 4 (0.2.4):** sleep dims the screen (still visible); Flow Settings →

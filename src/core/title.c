@@ -216,6 +216,30 @@ int title_disc_split(const char *title, char *base, size_t cap, int *disc)
             open = prev;
         }
     }
+    /* no bracket group: a trailing "CD2", "Disc 2", "disc2" after a separator */
+    {
+        static const char *const words[] = { "disc", "disk", "cd" };
+        size_t end = strlen(title), k = end, w;
+        int num = 0, mul = 1;
+        while (k > 0 && sf_isdigit(title[k - 1])) { num += (title[k - 1] - '0') * mul; mul *= 10; k--; if (mul > 100) break; }
+        if (k == end || num <= 0 || num > 99) return 0;
+        while (k > 0 && (title[k - 1] == ' ' || title[k - 1] == '_' || title[k - 1] == '-')) k--;
+        for (w = 0; w < SF_ARRAY_LEN(words); w++) {
+            size_t lw = strlen(words[w]);
+            if (k >= lw && sf_strnicmp(title + k - lw, words[w], lw) == 0) {
+                size_t s0 = k - lw;
+                if (s0 == 0 || !(title[s0 - 1] == ' ' || title[s0 - 1] == '_' || title[s0 - 1] == '-')) return 0;
+                n = s0;
+                while (n > 0 && (title[n - 1] == ' ' || title[n - 1] == '_' || title[n - 1] == '-')) n--;
+                if (n == 0) return 0;
+                if (n >= cap) n = cap - 1;
+                memcpy(base, title, n);
+                base[n] = '\0';
+                *disc = num;
+                return 1;
+            }
+        }
+    }
     return 0;
 }
 
