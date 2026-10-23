@@ -22,7 +22,15 @@ extern const unsigned int g_stage_shapes_png_size;
 
 enum { STAGE_FX_GLOW, STAGE_FX_LINE,
        STAGE_FX_STAR, STAGE_FX_MIST,
-       STAGE_FX_SPARKS_A, STAGE_FX_SPARKS_B, STAGE_FX_ORBS, STAGE_FX_STREAKS, STAGE_FX_COUNT };
+       STAGE_FX_DOTS, STAGE_FX_COMET, STAGE_FX_COUNT };
+/* STAGE_FX_DOTS is a 16 x 2 grid of single particles: */
+#define STAGE_DOT_COLS   16
+#define STAGE_DOT_SPARK  0    /* 8 bright sparks */
+#define STAGE_DOT_NSPARK 8
+#define STAGE_DOT_GLOW   8    /* 5 soft glow dots */
+#define STAGE_DOT_NGLOW  5
+#define STAGE_DOT_BOKEH  13   /* 4 bokeh orbs */
+#define STAGE_DOT_NBOKEH 4
 extern const int g_stage_fx_size[2];
 extern const int g_stage_fx_rect[STAGE_FX_COUNT][4];   /* x, y, w, h in the atlas */
 

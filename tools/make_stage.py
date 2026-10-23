@@ -107,22 +107,39 @@ elems = [
     ('line',     P('Lighting', 'glow_04.png')),
     ('star',     P('Lighting', 'glow_05.png')),
 ]
-# particles: from the XMB particle PNGs (third argument: their folder). Those
-# files were cut out of a 4x4 sheet off-grid, so the columns are stacked back
-# together and re-cut at the empty gaps: 5 rows x 4 columns of clean sprites.
-PROWS = [(0, 200), (200, 385), (385, 582), (582, 745), (745, 901)]
-PICK = {'sparks_a': (1, 0),    # dense fine sparkle band
-        'sparks_b': (0, 3),    # twinkling star band
-        'orbs':     (0, 1),    # floating orbs
-        'streaks':  (3, 0)}    # light streaks (heads point right)
+# particles: single sprites from the XMB particle PNGs (third argument: their
+# folder), each animated on its own by the app. Those files were cut out of a
+# 4x4 sheet off-grid, so the columns are stacked back together first.
+# DOTS = (column, y, x, w, h) in the stacked columns: 8 bright sparks, 5 soft
+# glow dots, 4 bokeh orbs -> a 16 x 2 grid of 64x64 cells ('dots').
+DOTS = [
+    (0, 830, 211, 11, 13), (0, 843, 260, 10, 11), (3, 37, 223, 10, 11), (2, 124, 163, 9, 10),
+    (0, 545, 149, 9, 8), (2, 552, 323, 9, 9), (0, 416, 305, 8, 8), (1, 424, 74, 8, 8),
+    (1, 108, 260, 14, 15), (1, 9, 264, 10, 11), (2, 179, 120, 11, 10), (2, 176, 188, 9, 10), (3, 313, 234, 9, 10),
+    (3, 802, 325, 42, 42), (2, 841, 104, 19, 19), (2, 826, 172, 14, 15), (3, 834, 23, 15, 15),
+]
+COMET = (3, 605, 274, 124, 26)          # one light streak, head to the right
 part_dir = sys.argv[3] if len(sys.argv) > 3 else None
-def particle(row, col):
+def part_cols():
     import glob
     fs = sorted(glob.glob(os.path.join(part_dir, '*.png')))
-    colimg = np.concatenate([rgba(fs[r * 4 + col]) for r in range(4)], 0)
-    cell = colimg[PROWS[row][0]:PROWS[row][1]]
-    ys, xs = np.nonzero(cell[..., 3] > 8)
-    return cell[max(0, ys.min() - 6):ys.max() + 7, max(0, xs.min() - 6):xs.max() + 7]
+    return [np.concatenate([rgba(fs[r * 4 + c]) for r in range(4)], 0) for c in range(4)]
+def dots_grid():
+    cols = part_cols()
+    out = np.zeros((128, 1024, 4), np.float32)
+    for n, (c, y, x, w, h) in enumerate(DOTS):
+        pad = max(3, (w + h) // 6)
+        crop = cols[c][max(0, y - pad):y + h + pad, max(0, x - pad):x + w + pad]
+        im = Image.fromarray(crop.astype(np.uint8), 'RGBA')
+        s = 56.0 / max(im.size)
+        im = im.resize((max(1, round(im.width * s)), max(1, round(im.height * s))), Image.LANCZOS)
+        cell = Image.new('RGBA', (64, 64), (0, 0, 0, 0))
+        cell.paste(im, ((64 - im.width) // 2, (64 - im.height) // 2))
+        out[(n // 16) * 64:(n // 16 + 1) * 64, (n % 16) * 64:(n % 16 + 1) * 64] = np.asarray(cell)
+    return out
+def comet():
+    c, y, x, w, h = COMET
+    return part_cols()[c][y - 4:y + h + 4, x - 4:x + w + 4]
 AW, AH = 1024, 1024
 atlas = np.zeros((AH, AW), np.float32)
 rects = {}
@@ -155,13 +172,13 @@ def fog(w=1024, h=256, seed=7):
     a = 255.0 * d * env
     return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
 
-srcs = [(n, rgba(p)) for n, p in elems] + [(n, particle(*rc)) for n, rc in PICK.items()] + [('mist', fog())]
+srcs = [(n, rgba(p)) for n, p in elems] + [('dots', dots_grid()), ('comet', comet()), ('mist', fog())]
 for name, px in srcs:
     v = bright(px)
     if name in ('glow', 'line', 'star'):           # no checkerboard here: keep the white cores
         v = px[..., :3].max(axis=2) * px[..., 3] / 255.0
-    if name != 'mist':                               # the fog wraps left-right: no feathered sides
-        v = feather(v, 10 if name in PICK else 4)
+    if name not in ('mist', 'dots'):                 # fog wraps left-right; dot cells are already padded
+        v = feather(v, 4)
     h, w = v.shape
     if x + w > AW: x = 0; y += rowh + 4; rowh = 0
     atlas[y:y + h, x:x + w] = v

@@ -100,7 +100,14 @@ void app_select(App *a, int tab, int index, int animate)
     const GameList *gl = &a->lib->tab[tab];
     TabView *v = &a->view[tab];
     if (gl->count <= 0) { v->sel = 0; spring_snap(&v->scroll, 0.0f); return; }
-    v->sel = sf_clampi(index, 0, gl->count - 1);
+    index = sf_clampi(index, 0, gl->count - 1);
+    if (animate) {
+        double gap = a->time - v->step_t;
+        int one = index == v->sel + 1 || index == v->sel - 1;
+        v->step_rate = (one && gap > 0.0 && gap < FLOW_STEP_WINDOW) ? (float)(1.0 / gap) : 0.0f;
+        if (one) v->step_t = a->time;
+    }
+    v->sel = index;
     if (animate) spring_set(&v->scroll, (float)v->sel);
     else spring_snap(&v->scroll, (float)v->sel);
 }
@@ -582,7 +589,13 @@ static void flow_input(App *a)
 static void animate(App *a, float dt)
 {
     int t;
-    for (t = 0; t < PLAT_COUNT; t++) spring_update(&a->view[t].scroll, dt);
+    for (t = 0; t < PLAT_COUNT; t++) {
+        TabView *v = &a->view[t];
+        /* a critically damped spring trails a steady scroll by 2 * rate / omega */
+        float rate = (a->time - v->step_t < FLOW_STEP_WINDOW) ? v->step_rate : 0.0f;
+        v->scroll.omega = sf_clampf(2.0f * rate / FLOW_MAX_LAG, SPRING_OMEGA_300MS, FLOW_OMEGA_MAX);
+        spring_update(&v->scroll, dt);
+    }
     anim_approach(&a->tab_anim, 1.0f, 1.0f / TAB_ANIM_TIME, dt);
     spring_update(&a->tab_hl, dt);
     spring_update(&a->row_hl, dt);

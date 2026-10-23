@@ -278,12 +278,13 @@ void ui_set_stage_ribbons(int tex) { g_stage_rib = tex; }
 static int g_stage_glow = -1;
 void ui_set_stage_glow(int tex) { g_stage_glow = tex; }
 
-/* one atlas element stretched over (x, y, w, h), tinted */
-static void stage_fx(int el, float x, float y, float w, float h, uint32_t tint)
+/* one atlas element stretched over (x, y, w, h), tinted; flip = mirrored left-right */
+static void stage_fx_flip(int el, float x, float y, float w, float h, int flip, uint32_t tint)
 {
     const int *r = g_stage_fx_rect[el];
     float aw = (float)g_stage_fx_size[0], ah = (float)g_stage_fx_size[1];
     float u0 = ((float)r[0] + 0.5f) / aw, u1 = ((float)(r[0] + r[2]) - 0.5f) / aw;
+    if (flip) { float tmp = u0; u0 = u1; u1 = tmp; }
     float v0 = ((float)r[1] + 0.5f) / ah, v1 = ((float)(r[1] + r[3]) - 0.5f) / ah;
     if ((tint & 255) == 0) return;
     r_quads_begin(g_stage_fx);
@@ -292,6 +293,93 @@ static void stage_fx(int el, float x, float y, float w, float h, uint32_t tint)
     r_qvtx(x + w, y + h, u1, v1, tint);
     r_qvtx(x, y + h, u0, v1, tint);
     r_quads_end();
+}
+static void stage_fx(int el, float x, float y, float w, float h, uint32_t tint) { stage_fx_flip(el, x, y, w, h, 0, tint); }
+
+/* one cell of the STAGE_FX_DOTS grid, centered on (cx, cy) */
+static void stage_dot(int cell, float cx, float cy, float sz, uint32_t tint)
+{
+    const int *r = g_stage_fx_rect[STAGE_FX_DOTS];
+    float aw = (float)g_stage_fx_size[0], ah = (float)g_stage_fx_size[1];
+    float cw = (float)r[2] / (float)STAGE_DOT_COLS, chh = (float)r[3] / 2.0f;
+    float x0 = (float)r[0] + (float)(cell % STAGE_DOT_COLS) * cw, y0 = (float)r[1] + (float)(cell / STAGE_DOT_COLS) * chh;
+    float u0 = (x0 + 0.5f) / aw, u1 = (x0 + cw - 0.5f) / aw, v0 = (y0 + 0.5f) / ah, v1 = (y0 + chh - 0.5f) / ah;
+    float h = sz * 0.5f, w = d_xu(sz) * 0.5f;
+    if ((tint & 255) == 0) return;
+    r_quads_begin(g_stage_fx);
+    r_qvtx(cx - w, cy - h, u0, v0, tint);
+    r_qvtx(cx + w, cy - h, u1, v0, tint);
+    r_qvtx(cx + w, cy + h, u1, v1, tint);
+    r_qvtx(cx - w, cy + h, u0, v1, tint);
+    r_quads_end();
+}
+
+/* 0..1 from an integer (stable per particle and per life) */
+static float stage_rand(unsigned n)
+{
+    n ^= n >> 16; n *= 0x7feb352du; n ^= n >> 15; n *= 0x846ca68bu; n ^= n >> 16;
+    return (float)(n & 0xFFFFFFu) / 16777216.0f;
+}
+
+/* Particles, each on its own: born at a random spot, it fades in, drifts and
+ * rises at a pace set by its depth (near = bigger, faster, brighter),
+ * sways and twinkles, fades out and is born again somewhere else. */
+#define STAGE_N_SPARK 80
+#define STAGE_N_GLOW  30
+#define STAGE_N_BOKEH 9
+#define STAGE_N_COMET 2
+static void stage_particles(float t, float alpha, float hy, uint32_t tint, uint32_t lite)
+{
+    int i, n = STAGE_N_SPARK + STAGE_N_GLOW + STAGE_N_BOKEH;
+    for (i = 0; i < n; i++) {
+        int kind = i < STAGE_N_BOKEH ? 2 : (i < STAGE_N_BOKEH + STAGE_N_GLOW ? 1 : 0);   /* bokeh drawn first */
+        unsigned seed = (unsigned)i * 7919u + 17u;
+        float life = (kind == 2 ? 14.0f : 7.0f) + 7.0f * stage_rand(seed);
+        float tt = t + life * stage_rand(seed + 1u) + 1000.0f;
+        float cyc = floorf(tt / life), ph = tt / life - cyc;
+        unsigned cs = seed ^ ((unsigned)cyc * 2654435761u);
+        float z = stage_rand(cs + 3u), age = ph * life;
+        float dir = stage_rand(cs + 6u) < 0.5f ? -1.0f : 1.0f;
+        float x = W() * (-0.05f + 1.10f * stage_rand(cs + 4u)) + dir * W() * (0.003f + 0.010f * z) * age
+                  + H() * 0.012f * z * sinf(t * (0.35f + 0.4f * stage_rand(cs + 7u)) + 6.28f * stage_rand(cs + 8u));
+        float y = hy * (0.04f + 0.92f * stage_rand(cs + 5u)) - H() * (0.003f + 0.010f * z) * age;
+        float env = sinf(3.14159f * ph), sz, al, tw;
+        uint32_t col = lite;
+        int cell;
+        env = env * env * (3.0f - 2.0f * env);                       /* soft in and out */
+        if (kind == 0) {                                             /* spark: tiny, sharp, twinkling */
+            tw = 0.5f + 0.5f * sinf(t * (1.5f + 3.0f * stage_rand(cs + 9u)) + 6.28f * stage_rand(cs + 10u));
+            sz = H() * (0.016f + 0.028f * z);
+            al = (0.55f + 0.45f * z) * (0.35f + 0.65f * tw * tw);
+            cell = STAGE_DOT_SPARK + (int)(stage_rand(cs + 11u) * STAGE_DOT_NSPARK);
+        } else if (kind == 1) {                                      /* glow dot: soft, breathing */
+            tw = 0.75f + 0.25f * sinf(t * (0.6f + stage_rand(cs + 9u)) + 6.28f * stage_rand(cs + 10u));
+            sz = H() * (0.024f + 0.036f * z);
+            al = (0.40f + 0.45f * z) * tw;
+            cell = STAGE_DOT_GLOW + (int)(stage_rand(cs + 11u) * STAGE_DOT_NGLOW);
+        } else {                                                     /* bokeh: big, faint, out of focus */
+            sz = H() * (0.05f + 0.07f * z);
+            al = 0.14f + 0.16f * z;
+            col = tint;
+            cell = STAGE_DOT_BOKEH + (int)(stage_rand(cs + 11u) * STAGE_DOT_NBOKEH);
+        }
+        if (cell >= STAGE_DOT_BOKEH + STAGE_DOT_NBOKEH) cell = STAGE_DOT_BOKEH + STAGE_DOT_NBOKEH - 1;
+        stage_dot(cell, x, y, sz, sf_col_alpha(col, alpha * al * env));
+    }
+    /* now and then a single comet glides across the sky, fading in and out */
+    for (i = 0; i < STAGE_N_COMET; i++) {
+        const int *r = g_stage_fx_rect[STAGE_FX_COMET];
+        float per = i ? 23.0f : 15.0f, run = 3.2f, u = fmodf(t + 7.0f * (float)i + 4.0f, per);
+        unsigned cs = (unsigned)i * 104729u ^ ((unsigned)floorf((t + 7.0f * (float)i + 4.0f) / per) * 2246822519u);
+        if (u < run) {
+            float k = u / run, cw = W() * (0.10f + 0.05f * stage_rand(cs)), ch = cw * (float)r[3] / (float)r[2] * 1.6f;
+            float dir = stage_rand(cs + 1u) < 0.5f ? -1.0f : 1.0f;
+            float x0 = W() * (0.15f + 0.7f * stage_rand(cs + 2u)), span = W() * 0.35f;
+            float x = x0 + dir * span * (k - 0.5f), y = hy * (0.15f + 0.5f * stage_rand(cs + 3u)) + H() * 0.03f * k;
+            float a = alpha * 0.85f * sinf(3.14159f * k);
+            stage_fx_flip(STAGE_FX_COMET, dir > 0.0f ? x - cw : x, y - ch * 0.5f, cw, ch, dir < 0.0f, sf_col_alpha(lite, a));
+        }
+    }
 }
 
 typedef struct { unsigned char kind, angle; float x, y, size, alpha; } StageShape;
@@ -345,30 +433,6 @@ static void bg_stage(float t, float alpha)
         }
     }
     if (g_stage_fx >= 0) {
-        /* sparkle bands drifting slowly across the sky (wrapping), each breathing */
-        for (i = 0; i < 4; i++) {
-            int el = (i & 1) ? STAGE_FX_SPARKS_A : STAGE_FX_SPARKS_B;
-            const int *r = g_stage_fx_rect[el];
-            float bw = W() * 0.46f, bh = bw * (float)r[3] / (float)r[2];
-            float sp = (i & 1) ? 7.0f : -5.0f;                     /* two layers, opposite drift */
-            float span = W() + bw;
-            float x = fmodf((float)(i / 2) * span * 0.5f + (float)(i & 1) * span * 0.25f + t * sp, span);
-            float y = H() * ((i & 1) ? 0.24f : 0.05f) + H() * 0.04f * sinf(t * 0.07f + (float)i * 1.3f);
-            float al = alpha * (0.30f + 0.22f * sinf(t * 0.6f + (float)i * 2.1f));
-            if (x < 0.0f) x += span;
-            stage_fx(el, x - bw, y, bw, bh, sf_col_alpha(lite, al * 0.85f));
-        }
-        /* floating orbs: rise slowly from the floor lights, swaying, fading in and out */
-        for (i = 0; i < 3; i++) {
-            static const float ox[3] = { 0.16f, 0.52f, 0.84f };
-            const int *r = g_stage_fx_rect[STAGE_FX_ORBS];
-            float per = 24.0f + 5.0f * (float)i, u = fmodf(t + (float)i * 9.0f, per) / per;
-            float bw = W() * 0.22f, bh = bw * (float)r[3] / (float)r[2];
-            float cx = W() * (ox[i] + 0.04f * sinf(t * 0.21f + (float)i * 2.0f));
-            float cy = H() * (LY_HORIZON_Y - 0.05f - 0.45f * u);
-            float al = alpha * 0.45f * sinf(3.14159f * u);
-            stage_fx(STAGE_FX_ORBS, cx - bw * 0.5f, cy - bh * 0.5f, bw, bh, sf_col_alpha(lite, al));
-        }
         /* horizon: a bright line breathing along it, glows pulsing at the floor
          * lights, one gliding slowly back and forth */
         {
@@ -386,17 +450,7 @@ static void bg_stage(float t, float alpha)
                 stage_fx(STAGE_FX_STAR, gx - fw * 0.5f, hy - fh * 0.5f, fw, fh, sf_col_alpha(0xFFFFFFFFu, alpha * 0.55f));
             }
         }
-        /* light streaks: now and then a burst sweeps across above the horizon */
-        for (i = 0; i < 2; i++) {
-            const int *r = g_stage_fx_rect[STAGE_FX_STREAKS];
-            float per = i ? 17.0f : 11.0f, run = 4.0f, u = fmodf(t + (float)i * 5.0f, per);
-            if (u < run) {
-                float k = u / run, bw = W() * 0.42f, bh = bw * (float)r[3] / (float)r[2];
-                float x = -bw + k * (W() + bw);
-                float y = H() * (i ? 0.40f : 0.50f) - bh * 0.5f;
-                stage_fx(STAGE_FX_STREAKS, x, y, bw, bh, sf_col_alpha(lite, alpha * 0.80f * sinf(3.14159f * k)));
-            }
-        }
+        stage_particles(t, alpha, hy, tint, lite);
         /* fog hugging the floor: three seamless layers at different depths drifting
          * at their own slow pace (near = bigger, faster), each thickening and
          * thinning over time; a far, thin veil also lies across the horizon */

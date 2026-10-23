@@ -1026,6 +1026,29 @@ static void test_app(void)
     run_frames(SFB_STICK_LEFT, 0.8f);
     CHECK(sel - g_app.view[PLAT_PS2].sel > 3);
     run_frames(0, 0.5f);
+    /* fast stick scrolling: the row keeps up, the selected game stays in the middle */
+    {
+        const GameList *gl2 = &g_lib.tab[PLAT_PS2];
+        TabView *v = &g_app.view[PLAT_PS2];
+        float worst = 0.0f;
+        int f, centered = 0, counted = 0;
+        app_select(&g_app, PLAT_PS2, 0, 0); run_frames(0, 0.5f);
+        for (f = 0; f < 150 && v->sel < gl2->count - 1; f++) {
+            app_update(&g_app, SFB_STICK_RIGHT, 1.0f / 60.0f);
+            if (f >= 60) {                                   /* repeat has sped up */
+                float lag = sf_absf(v->scroll.x - (float)v->sel);
+                if (lag > worst) worst = lag;
+                counted++;
+                if ((int)floorf(v->scroll.x + 0.5f) == v->sel) centered++;
+            }
+        }
+        CHECK(counted > 20);
+        CHECK(worst < 0.75f);                                /* was 2-3 games behind */
+        CHECK(centered * 10 >= counted * 7);                 /* the selected game is the middle one */
+        run_frames(0, 0.6f);
+        CHECK_NEAR(v->scroll.x, (float)v->sel, 1e-3);        /* settles exactly */
+        CHECK_NEAR(v->scroll.omega, SPRING_OMEGA_300MS, 1e-6);  /* single steps ease gently again */
+    }
 
     /* R1 on the last letter / L1 at the very first game: no wrap, no overlay */
     {

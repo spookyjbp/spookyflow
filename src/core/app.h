@@ -12,7 +12,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.2.20 (milestone 2, fix 20)"
+#define APP_VERSION     "0.2.22 (milestone 2, fix 22)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -60,7 +60,16 @@ typedef struct {
 typedef struct {
     Spring scroll;      /* continuous scroll position (index units) */
     int sel;            /* selected (target) index */
+    double step_t;      /* time of the last one-game step */
+    float step_rate;    /* how fast one-game steps are coming (steps/s, 0 = not scrolling) */
 } TabView;
+
+/* The row eases to a single step in ~300 ms; while steps come fast (holding the
+ * stick) it stiffens so it never trails the selection by more than about
+ * FLOW_MAX_LAG games: the selected game stays in the middle. */
+#define FLOW_STEP_WINDOW 0.25   /* steps further apart than this are "not scrolling" */
+#define FLOW_MAX_LAG     0.20f
+#define FLOW_OMEGA_MAX   400.0f
 
 typedef struct {
     AppHost host;

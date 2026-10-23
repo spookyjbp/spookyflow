@@ -198,9 +198,11 @@ covers, where each one came from (or the title ID it looked for).
 
 The default background is **Stage**: a dark stage with a reflective floor and
 lights along its horizon. Over it, the left and right sets of light ribbons
-sway, tilt and breathe on their own; bands of fine sparkles drift across the
-sky, orbs rise slowly from the floor lights, light streaks sweep past now and
-then, the horizon line and its glows pulse (one star glides along it), soft
+sway, tilt and breathe on their own; about 120 single particles (sharp sparks,
+soft glow dots and big out-of-focus bokeh orbs, cut from the particle sprites)
+each live on their own: born at a random spot, they fade in, drift and rise at
+a pace set by their depth (near = bigger, faster, brighter), sway and twinkle,
+fade out and are born again elsewhere; now and then a single comet glides past; the horizon line and its glows pulse (one star glides along it), soft
 fog drifts over the floor in three layers (a seamless generated texture, each
 layer at its own depth, pace and thickness), and glassy triangle / circle / cross / square shapes
 float beside the title. The cases stand on its floor in perspective: the
@@ -214,8 +216,9 @@ white-hot. Assets: `art/stage.jpg` (scene), `art/stage_rib.jpg` (ribbons),
 `art/stage_fx.png` (+ `.json`: glows, mist, particles), `art/stage_shapes.png`,
 embedded by `tools/gen_stage.py`. `tools/make_stage.py <asset folder> <scene>
 <particle folder> <scene with ribbons>` rebuilds them; the ribbons are the
-difference between the two scene pictures, and the particle PNGs (cut off-grid
-from their sheet) are stitched back together and re-cut. Pick other styles in Flow
+difference between the two scene pictures, and single particles are picked out of
+the particle PNGs (cut off-grid from their sheet, so stitched back together
+first; `DOTS` / `COMET` in the script list which ones). Pick other styles in Flow
 Settings → Background.
 
 ## Background picture (optional)
@@ -337,7 +340,11 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 20 (0.2.20):** Stage lights and ribbons glow; other backgrounds use
+15. **Fix 22 (0.2.22):** Stage particles move one by one (sparks, glow dots,
+    bokeh, comets) instead of as whole sprite sheets.
+    **Fix 21 (0.2.21):** fast stick scrolling keeps the selected game centered
+    (the row stiffens with scroll speed instead of trailing 2-3 games behind).
+    **Fix 20 (0.2.20):** Stage lights and ribbons glow; other backgrounds use
     the original centered case row again.
     **Fix 19 (0.2.19):** natural fog over the floor replaces the mist sprites.
     **Fix 18 (0.2.18):** plain Stage scene with crisp animated light ribbons;
