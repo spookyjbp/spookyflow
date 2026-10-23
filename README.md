@@ -295,10 +295,11 @@ spookyflow sends one request to webMAN (`http://127.0.0.1/`, built in
   On): On sets the XMB's Game Settings "Upscaler" to Full Screen
   (`/xmb.ps3$xregistry(80)=2`) or "Smoothing" to On
   (`/xmb.ps3$xregistry(81)=1`) through webMAN just before a PS1/PS2 game is
-  launched; Off leaves your console's settings alone. Each write is its own
-  request and is read back, and both of webMAN's answers go to the log
-  (`launch: /xmb.ps3$xregistry(80)=2 -> ...` and `launch: read back ...`), so
-  a test shows what changed. They are system settings (they stay as set after
+  launched; Off leaves your console's settings alone. They are written once
+  the XMB is back, just before the mount (written while spookyflow was still
+  open, the XMB put its own values back when it returned). The values were
+  checked on a console (XMB set to Full Screen / On reads 2 / 1); the log
+  shows what the registry held before each launch (`launch: before: ...`). They are system settings (they stay as set after
   the game) and need webMAN's full edition (not Lite).
 
 If webMAN's **Admin mode** is turned on (it is off by default), webMAN
@@ -387,7 +388,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.3.2:** PS1/PS2 Full Screen and Smoothing are Off / On; each registry
+15. **0.3.3:** PS1/PS2 Full Screen / Smoothing are written after the XMB is
+    back (before, the XMB overwrote them); better log for wm_config.bin.
+    **0.3.2:** PS1/PS2 Full Screen and Smoothing are Off / On; each registry
     write is sent on its own and read back into the log.
     **0.3.1:** Flow Settings → PS1/PS2 Screen and PS1/PS2 Smoothing, applied
     when a PS1/PS2 game is launched.

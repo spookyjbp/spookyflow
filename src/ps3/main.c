@@ -113,7 +113,9 @@ static void read_wm_config(WmConfig *cfg)
     size_t n = 0;
     FILE *f = fopen(WM_CONFIG_PATH, "rb");
     if (f) { n = fread(buf, 1, sizeof(buf), f); fclose(f); }
-    if (!launch_parse_wm_config(buf, n, cfg) && f) log_printf("launch: %s not understood (%u bytes)", WM_CONFIG_PATH, (unsigned)n);
+    if (!launch_parse_wm_config(buf, n, cfg) && f)
+        log_printf("launch: %s not understood (%u bytes, starts %02x %02x %02x %02x)", WM_CONFIG_PATH, (unsigned)n,
+                   n > 0 ? buf[0] : 0, n > 1 ? buf[1] : 0, n > 2 ? buf[2] : 0, n > 3 ? buf[3] : 0);
 }
 
 static void on_exit_handler(void)
