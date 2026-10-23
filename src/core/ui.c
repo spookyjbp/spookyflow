@@ -301,7 +301,7 @@ static void stage_dot(int cell, float cx, float cy, float sz, uint32_t tint)
 {
     const int *r = g_stage_fx_rect[STAGE_FX_DOTS];
     float aw = (float)g_stage_fx_size[0], ah = (float)g_stage_fx_size[1];
-    float cw = (float)r[2] / (float)STAGE_DOT_COLS, chh = (float)r[3] / 2.0f;
+    float cw = (float)r[2] / (float)STAGE_DOT_COLS, chh = (float)r[3] / (float)STAGE_DOT_ROWS;
     float x0 = (float)r[0] + (float)(cell % STAGE_DOT_COLS) * cw, y0 = (float)r[1] + (float)(cell / STAGE_DOT_COLS) * chh;
     float u0 = (x0 + 0.5f) / aw, u1 = (x0 + cw - 0.5f) / aw, v0 = (y0 + 0.5f) / ah, v1 = (y0 + chh - 0.5f) / ah;
     float h = sz * 0.5f, w = d_xu(sz) * 0.5f;
@@ -326,15 +326,13 @@ static float stage_rand(unsigned n)
  * sways and twinkles, fades out and is born again somewhere else. */
 #define STAGE_N_SPARK 80
 #define STAGE_N_GLOW  30
-#define STAGE_N_BOKEH 9
-#define STAGE_N_COMET 2
-static void stage_particles(float t, float alpha, float hy, uint32_t tint, uint32_t lite)
+static void stage_particles(float t, float alpha, float hy, uint32_t lite)
 {
-    int i, n = STAGE_N_SPARK + STAGE_N_GLOW + STAGE_N_BOKEH;
+    int i, n = STAGE_N_SPARK + STAGE_N_GLOW;
     for (i = 0; i < n; i++) {
-        int kind = i < STAGE_N_BOKEH ? 2 : (i < STAGE_N_BOKEH + STAGE_N_GLOW ? 1 : 0);   /* bokeh drawn first */
+        int kind = i < STAGE_N_GLOW ? 1 : 0;              /* glow dots drawn first */
         unsigned seed = (unsigned)i * 7919u + 17u;
-        float life = (kind == 2 ? 14.0f : 7.0f) + 7.0f * stage_rand(seed);
+        float life = 7.0f + 7.0f * stage_rand(seed);
         float tt = t + life * stage_rand(seed + 1u) + 1000.0f;
         float cyc = floorf(tt / life), ph = tt / life - cyc;
         unsigned cs = seed ^ ((unsigned)cyc * 2654435761u);
@@ -344,7 +342,6 @@ static void stage_particles(float t, float alpha, float hy, uint32_t tint, uint3
                   + H() * 0.012f * z * sinf(t * (0.35f + 0.4f * stage_rand(cs + 7u)) + 6.28f * stage_rand(cs + 8u));
         float y = hy * (0.04f + 0.92f * stage_rand(cs + 5u)) - H() * (0.003f + 0.010f * z) * age;
         float env = sinf(3.14159f * ph), sz, al, tw;
-        uint32_t col = lite;
         int cell;
         env = env * env * (3.0f - 2.0f * env);                       /* soft in and out */
         if (kind == 0) {                                             /* spark: tiny, sharp, twinkling */
@@ -352,33 +349,14 @@ static void stage_particles(float t, float alpha, float hy, uint32_t tint, uint3
             sz = H() * (0.016f + 0.028f * z);
             al = (0.55f + 0.45f * z) * (0.35f + 0.65f * tw * tw);
             cell = STAGE_DOT_SPARK + (int)(stage_rand(cs + 11u) * STAGE_DOT_NSPARK);
-        } else if (kind == 1) {                                      /* glow dot: soft, breathing */
+        } else {                                                     /* glow dot: soft, breathing */
             tw = 0.75f + 0.25f * sinf(t * (0.6f + stage_rand(cs + 9u)) + 6.28f * stage_rand(cs + 10u));
             sz = H() * (0.024f + 0.036f * z);
             al = (0.40f + 0.45f * z) * tw;
             cell = STAGE_DOT_GLOW + (int)(stage_rand(cs + 11u) * STAGE_DOT_NGLOW);
-        } else {                                                     /* bokeh: big, faint, out of focus */
-            sz = H() * (0.05f + 0.07f * z);
-            al = 0.14f + 0.16f * z;
-            col = tint;
-            cell = STAGE_DOT_BOKEH + (int)(stage_rand(cs + 11u) * STAGE_DOT_NBOKEH);
         }
-        if (cell >= STAGE_DOT_BOKEH + STAGE_DOT_NBOKEH) cell = STAGE_DOT_BOKEH + STAGE_DOT_NBOKEH - 1;
-        stage_dot(cell, x, y, sz, sf_col_alpha(col, alpha * al * env));
-    }
-    /* now and then a single comet glides across the sky, fading in and out */
-    for (i = 0; i < STAGE_N_COMET; i++) {
-        const int *r = g_stage_fx_rect[STAGE_FX_COMET];
-        float per = i ? 23.0f : 15.0f, run = 3.2f, u = fmodf(t + 7.0f * (float)i + 4.0f, per);
-        unsigned cs = (unsigned)i * 104729u ^ ((unsigned)floorf((t + 7.0f * (float)i + 4.0f) / per) * 2246822519u);
-        if (u < run) {
-            float k = u / run, cw = W() * (0.10f + 0.05f * stage_rand(cs)), ch = cw * (float)r[3] / (float)r[2] * 1.6f;
-            float dir = stage_rand(cs + 1u) < 0.5f ? -1.0f : 1.0f;
-            float x0 = W() * (0.15f + 0.7f * stage_rand(cs + 2u)), span = W() * 0.35f;
-            float x = x0 + dir * span * (k - 0.5f), y = hy * (0.15f + 0.5f * stage_rand(cs + 3u)) + H() * 0.03f * k;
-            float a = alpha * 0.85f * sinf(3.14159f * k);
-            stage_fx_flip(STAGE_FX_COMET, dir > 0.0f ? x - cw : x, y - ch * 0.5f, cw, ch, dir < 0.0f, sf_col_alpha(lite, a));
-        }
+        if (cell >= STAGE_DOT_GLOW + STAGE_DOT_NGLOW) cell = STAGE_DOT_GLOW + STAGE_DOT_NGLOW - 1;
+        stage_dot(cell, x, y, sz, sf_col_alpha(lite, alpha * al * env));
     }
 }
 
@@ -434,7 +412,7 @@ static void bg_stage(float t, float alpha)
     }
     if (g_stage_fx >= 0) {
         /* horizon: a bright line breathing along it, glows pulsing at the floor
-         * lights, one gliding slowly back and forth */
+         * lights */
         {
             static const float lx[3] = { 0.146f, 0.495f, 0.846f };
             float lw = W() * 1.05f, lh = H() * 0.05f;
@@ -445,12 +423,8 @@ static void bg_stage(float t, float alpha)
                 float fw = W() * 0.22f * p, fh = H() * 0.07f * p;
                 stage_fx(STAGE_FX_GLOW, W() * lx[i] - fw * 0.5f, hy - fh * 0.5f, fw, fh, sf_col_alpha(lite, alpha * 0.75f * p));
             }
-            {
-                float gx = W() * (0.5f + 0.42f * sinf(t * 0.045f)), fw = W() * 0.10f, fh = H() * 0.10f;
-                stage_fx(STAGE_FX_STAR, gx - fw * 0.5f, hy - fh * 0.5f, fw, fh, sf_col_alpha(0xFFFFFFFFu, alpha * 0.55f));
-            }
         }
-        stage_particles(t, alpha, hy, tint, lite);
+        stage_particles(t, alpha, hy, lite);
         /* fog hugging the floor: three seamless layers at different depths drifting
          * at their own slow pace (near = bigger, faster), each thickening and
          * thinning over time; a far, thin veil also lies across the horizon */

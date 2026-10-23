@@ -105,20 +105,17 @@ if rib_src:
 elems = [
     ('glow',     P('Lighting', 'glow_01.png')),
     ('line',     P('Lighting', 'glow_04.png')),
-    ('star',     P('Lighting', 'glow_05.png')),
 ]
 # particles: single sprites from the XMB particle PNGs (third argument: their
 # folder), each animated on its own by the app. Those files were cut out of a
 # 4x4 sheet off-grid, so the columns are stacked back together first.
-# DOTS = (column, y, x, w, h) in the stacked columns: 8 bright sparks, 5 soft
-# glow dots, 4 bokeh orbs -> a 16 x 2 grid of 64x64 cells ('dots').
+# DOTS = (column, y, x, w, h) in the stacked columns: 8 bright sparks and 5 soft
+# glow dots -> a 16 x 1 grid of 64x64 cells ('dots').
 DOTS = [
     (0, 830, 211, 11, 13), (0, 843, 260, 10, 11), (3, 37, 223, 10, 11), (2, 124, 163, 9, 10),
     (0, 545, 149, 9, 8), (2, 552, 323, 9, 9), (0, 416, 305, 8, 8), (1, 424, 74, 8, 8),
     (1, 108, 260, 14, 15), (1, 9, 264, 10, 11), (2, 179, 120, 11, 10), (2, 176, 188, 9, 10), (3, 313, 234, 9, 10),
-    (3, 802, 325, 42, 42), (2, 841, 104, 19, 19), (2, 826, 172, 14, 15), (3, 834, 23, 15, 15),
 ]
-COMET = (3, 605, 274, 124, 26)          # one light streak, head to the right
 part_dir = sys.argv[3] if len(sys.argv) > 3 else None
 def part_cols():
     import glob
@@ -126,7 +123,7 @@ def part_cols():
     return [np.concatenate([rgba(fs[r * 4 + c]) for r in range(4)], 0) for c in range(4)]
 def dots_grid():
     cols = part_cols()
-    out = np.zeros((128, 1024, 4), np.float32)
+    out = np.zeros((64, 1024, 4), np.float32)
     for n, (c, y, x, w, h) in enumerate(DOTS):
         pad = max(3, (w + h) // 6)
         crop = cols[c][max(0, y - pad):y + h + pad, max(0, x - pad):x + w + pad]
@@ -137,9 +134,6 @@ def dots_grid():
         cell.paste(im, ((64 - im.width) // 2, (64 - im.height) // 2))
         out[(n // 16) * 64:(n // 16 + 1) * 64, (n % 16) * 64:(n % 16 + 1) * 64] = np.asarray(cell)
     return out
-def comet():
-    c, y, x, w, h = COMET
-    return part_cols()[c][y - 4:y + h + 4, x - 4:x + w + 4]
 AW, AH = 1024, 1024
 atlas = np.zeros((AH, AW), np.float32)
 rects = {}
@@ -172,10 +166,10 @@ def fog(w=1024, h=256, seed=7):
     a = 255.0 * d * env
     return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
 
-srcs = [(n, rgba(p)) for n, p in elems] + [('dots', dots_grid()), ('comet', comet()), ('mist', fog())]
+srcs = [(n, rgba(p)) for n, p in elems] + [('dots', dots_grid()), ('mist', fog())]
 for name, px in srcs:
     v = bright(px)
-    if name in ('glow', 'line', 'star'):           # no checkerboard here: keep the white cores
+    if name in ('glow', 'line'):           # no checkerboard here: keep the white cores
         v = px[..., :3].max(axis=2) * px[..., 3] / 255.0
     if name not in ('mist', 'dots'):                 # fog wraps left-right; dot cells are already padded
         v = feather(v, 4)
