@@ -1,0 +1,48 @@
+/* menu.h - rows of the Game settings and Flow settings panels. */
+#ifndef SF_MENU_H
+#define SF_MENU_H
+
+#include <stddef.h>
+#include "settings.h"
+
+typedef enum {
+    /* Game settings (per game) */
+    ROW_G_AUTOPLAY, ROW_G_EMULATOR, ROW_G_OFFLINE, ROW_G_RSX, ROW_G_PS2CFG,
+    /* Flow settings (global) */
+    ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_COVERS,
+    ROW_F_IGNORE_THE, ROW_F_XMB_TOP, ROW_F_RESCAN, ROW_F_QUIT, ROW_F_POWEROFF
+} RowKind;
+
+enum { PANEL_NONE = 0, PANEL_GAME = 1, PANEL_FLOW = 2 };
+
+#define MENU_MAX_ROWS 16
+
+/* Effects a change can request from the app. */
+enum {
+    MENU_FX_NONE = 0,
+    MENU_FX_CHANGED,        /* a value changed: save settings */
+    MENU_FX_RESORT,         /* ignore-the changed: re-sort tabs */
+    MENU_FX_RESCAN,
+    MENU_FX_QUIT,
+    MENU_FX_COVERS_STUB,
+    MENU_FX_PS2CFG_STUB,
+    MENU_FX_XMB_TOP,        /* pin-to-top changed: patch our PARAM.SFO */
+    MENU_FX_POWEROFF        /* power off the console (app asks for a second press) */
+};
+
+int  menu_rows(int panel, int plat, RowKind *out, int max);
+const char *menu_label(RowKind k);
+/* Is this an action row (no value, ✖ activates)? */
+int  menu_is_action(RowKind k);
+int  menu_is_slider(RowKind k);
+/* Text of the current value. For the per-game auto-play this shows
+ * "Default (Off)" / "Default (On)" reflecting the global setting. */
+void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, char *out, size_t cap);
+/* Change a value: dir = -1 / +1 (left/right), or 0 for ✖ (cycle forward /
+ * activate). Returns a MENU_FX_* code. */
+int  menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g);
+
+/* Slider value 0..1 for drawing. */
+float menu_slider_value(RowKind k, const Settings *s);
+
+#endif
