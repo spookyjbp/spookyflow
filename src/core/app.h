@@ -6,13 +6,14 @@
 #include "cover_cache.h"
 #include "coverart.h"
 #include "input.h"
+#include "launch.h"
 #include "library.h"
 #include "menu.h"
 #include "scanner.h"
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.2.28 (milestone 2, fix 28)"
+#define APP_VERSION     "0.3.0 (milestone 3)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -54,6 +55,12 @@ typedef struct {
     int (*power_off)(void);
     /* optional: real cover art (worker thread already running). NULL = placeholders */
     CoverLoader *covers;
+    /* optional: send a launch request to webMAN MOD (launch.h); return 0 if
+     * webMAN took it (the app then exits to the XMB, where webMAN mounts and
+     * starts the game). NULL = launching not available. */
+    int (*launch)(const char *request);
+    /* optional: read webMAN's settings (wm_config.bin); leave cfg->valid 0 if unknown */
+    void (*read_wm_config)(WmConfig *cfg);
 } AppHost;
 
 typedef struct {
@@ -122,6 +129,7 @@ typedef struct {
     char letter[4];
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
     char toast[160];
+    int launched;           /* 1 = exiting because a game was launched */
     char last_launch[160];  /* name of the last game/disc launched (no pop-up is shown) */
     float toast_t;          /* seconds since shown */
 

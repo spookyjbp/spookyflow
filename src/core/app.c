@@ -492,18 +492,21 @@ static void panel_input(App *a)
 /* ------------------------------------------------------------------ */
 /* Cover flow                                                          */
 
-/* disc < 0: a single-disc game */
+/* disc < 0: a single-disc game. Sends the webMAN request (launch.h) and
+ * exits to the XMB, where webMAN mounts the game and starts it. */
 static void launch_disc(App *a, int disc)
 {
     const Game *g = app_selected_game(a, a->tab);
     const Disc *d;
     GameCfg c;
-    char msg[160], name[TITLE_MAX + 16];
-    const char *path, *id;
+    LaunchReq req;
+    WmConfig wm;
+    char name[TITLE_MAX + 16], cmd[LAUNCH_CMD_MAX];
+    const char *path;
     if (!g) return;
+    if (g->flags & GAME_DEMO) { app_show_toast(a, "Demo game: add your games to launch them"); return; }
     d = lib_game_disc(a->lib, g, disc);
     path = d ? lib_str(a->lib, d->path) : lib_path(a->lib, g);
-    id = d ? lib_str(a->lib, d->id) : lib_id(a->lib, g);
     if (d) {
         char dn[TITLE_MAX];
         lib_disc_name(a->lib, d, disc, dn, sizeof(dn));
@@ -511,12 +514,31 @@ static void launch_disc(App *a, int disc)
     }
     else sf_strlcpy(name, lib_title(a->lib, g), sizeof(name));
     c = settings_game_get(&a->settings, lib_key(a->lib, g));   /* one set of settings for all discs */
-    log_printf("LAUNCH (stub, milestone 3 launches): %s \"%s\" path=\"%s\" id=%s autoplay=%s emulator=%d offline=%d rsx=%d",
-               k_plat_name[a->tab], name, path, id[0] ? id : "-",
-               settings_autoplay_effective(&a->settings, &c) ? "on" : "off", c.emulator, settings_offline_effective(&a->settings, &c), c.rsx);
+    memset(&req, 0, sizeof(req));
+    req.plat = a->tab;
+    req.path = path;
+    req.autoplay = settings_autoplay_effective(&a->settings, &c);
+    req.offline = a->tab != PLAT_PS1 && settings_offline_effective(&a->settings, &c);
+    req.emulator = c.emulator;
+    memset(&wm, 0, sizeof(wm));
+    if (a->host.read_wm_config) a->host.read_wm_config(&wm);
+    if (launch_build(&req, &wm, cmd, sizeof(cmd)) != 0) {
+        log_printf("launch: can't build the request for \"%s\"", path);
+        app_show_toast(a, "Can't launch this game (path too long?)");
+        return;
+    }
+    log_printf("launch: %s \"%s\" autoplay=%s offline=%d emulator=%d webMAN config=%s",
+               k_plat_name[a->tab], name, req.autoplay ? "on" : "off", req.offline, req.emulator,
+               wm.valid ? (wm.autoplay ? "read (its Auto-play is on)" : "read") : "not found");
+    log_printf("launch: request %s", cmd);
+    if (!a->host.launch || a->host.launch(cmd) != 0) {
+        app_show_toast(a, "Launching needs webMAN MOD running");
+        return;
+    }
     sound_play(SND_CONFIRM);
-    (void)msg;
     sf_strlcpy(a->last_launch, name, sizeof(a->last_launch));   /* no pop-up on launch */
+    a->launched = 1;
+    app_request_exit(a, "launch");
 }
 
 static void launch(App *a)

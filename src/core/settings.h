@@ -16,14 +16,11 @@ const char *settings_background_name(int bg);
 enum { UI_COLOR_BLUE = 0, UI_COLOR_RED, UI_COLOR_GREEN, UI_COLOR_PURPLE, UI_COLOR_PINK,
        UI_COLOR_ORANGE, UI_COLOR_WHITE, UI_COLOR_COUNT };
 
-#define RSX_PRESET_COUNT 5   /* 0 = Default, then presets (meaning decided in milestone 3) */
-
 typedef struct {
     char key[SET_KEY_MAX];   /* title ID or file name */
     signed char autoplay;    /* AP_* */
     signed char emulator;    /* PS1: 0 Standard 1 Netemu; PS2: 0 Default 1 Netemu */
     signed char offline;     /* AP_DEFAULT (follow the global setting), AP_ON, AP_OFF */
-    signed char rsx;         /* 0 Default, 1..RSX_PRESET_COUNT-1 */
 } GameCfg;
 
 typedef struct {

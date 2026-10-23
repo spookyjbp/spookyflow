@@ -96,6 +96,21 @@ static int power_off_via_webman(void)
     return ps3_webman_get("/shutdown.ps3");
 }
 
+/* Launch: webMAN mounts and starts the game once spookyflow is back at the XMB */
+static int launch_via_webman(const char *request)
+{
+    return ps3_webman_send(request);
+}
+
+static void read_wm_config(WmConfig *cfg)
+{
+    unsigned char buf[1024];
+    size_t n = 0;
+    FILE *f = fopen(WM_CONFIG_PATH, "rb");
+    if (f) { n = fread(buf, 1, sizeof(buf), f); fclose(f); }
+    if (!launch_parse_wm_config(buf, n, cfg) && f) log_printf("launch: %s not understood (%u bytes)", WM_CONFIG_PATH, (unsigned)n);
+}
+
 static void on_exit_handler(void)
 {
     static int done;
@@ -202,6 +217,8 @@ int main(int argc, const char *argv[])
     host.run_async = run_async;
     host.own_sfo_path = "/dev_hdd0/game/" SF_APPID "/PARAM.SFO";
     host.power_off = power_off_via_webman;
+    host.launch = launch_via_webman;
+    host.read_wm_config = read_wm_config;
     host.covers = ps3_covers_start();
     app_init(&g_app, &g_lib, &host);
 
@@ -241,6 +258,7 @@ int main(int argc, const char *argv[])
     }
 
     if (g_app.poweroff) log_printf("main loop finished, webMAN is powering the system off");
+    if (g_app.launched) log_printf("main loop finished, webMAN starts \"%s\" at the XMB", g_app.last_launch);
     log_printf("main loop finished, returning to XMB");
     return 0;   /* atexit handler saves, closes the log and releases pads */
 }

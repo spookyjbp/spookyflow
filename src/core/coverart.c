@@ -1,6 +1,5 @@
 /* coverart.c - find, decode, fit, cache and stream cover art (coverart.h). */
 #include "coverart.h"
-#include "gamedb.h"
 #include "layout.h"
 #include "log.h"
 #include "render.h"
@@ -35,7 +34,7 @@ static const char *const k_exts[] = { ".JPG", ".PNG", ".jpg", ".png" };
 static const char *const k_plat_dir[PLAT_COUNT] = { "ps1", "ps2", "ps3" };
 
 #define CVR_HEADER 16
-#define CVR_VERSION 4     /* 4: release year in the header (fix 10) */
+#define CVR_VERSION 5     /* 4: release year in the header (fix 10); 5: more years (fix 29) */
 
 int cover_folder_count(void) { return F_COUNT; }
 const char *cover_folder(int i) { return (i >= 0 && i < F_COUNT) ? k_folders[i] : ""; }
@@ -405,7 +404,7 @@ static int read_cache(CoverLoader *L, const char *cvr, int tw, int th, int *year
     memcpy(&bom, h + 10, 2);
     if (memcmp(h, "SFCV", 4) != 0 || h[4] != CVR_VERSION || bom != 0xFEFF) return 0;
     if (((h[6] << 8) | h[7]) != tw || ((h[8] << 8) | h[9]) != th) return 0;
-    *year = (h[12] << 8) | h[13];
+    *year = 0;                     /* years in older caches are not shown */
     return L->io.read_at(L->io.ctx, cvr, CVR_HEADER, L->scratch, n) == (int)n;
 }
 
@@ -466,17 +465,20 @@ static int load_job(CoverLoader *L, const CoverJob *j, int tw, int th, char *src
         if (read_cache(L, f, tw, th, year)) { sf_strlcpy(src, "cache", src_cap); L->n_cache++; return 1; }
         snprintf(f, sizeof(f), "%s.none", stem);
         if (L->io.is_file && L->io.is_file(L->io.ctx, f)) {
-            unsigned char y[2];
-            if (L->io.read_at && L->io.read_at(L->io.ctx, f, 0, y, 2) == 2) *year = (y[0] << 8) | y[1];
-            sf_strlcpy(src, "none (cached)", src_cap);
-            return 0;
+            /* the marker keeps the year: [version, year hi, year lo]; an older marker is looked up again */
+            unsigned char y[3];
+            if (L->io.read_at && L->io.read_at(L->io.ctx, f, 0, y, 3) == 3 && y[0] == CVR_VERSION) {
+                *year = 0;
+                sf_strlcpy(src, "none (cached)", src_cap);
+                return 0;
+            }
         }
     }
     if (!L->probed) probe(L);
 
     sf_strlcpy(id, j->id, sizeof(id));
     if (!id[0]) discid_read(j->plat, j->path, j->is_dir, L->io.read_at, L->io.ctx, id, sizeof(id));
-    *year = gamedb_year(id);
+    *year = 0;                     /* no release-year source for now (the cache keeps the field) */
 
     cand = (CoverCand *)malloc(sizeof(CoverCand) * COVER_MAX_CANDS);
     if (!cand) return 0;
@@ -512,10 +514,10 @@ static int load_job(CoverLoader *L, const CoverJob *j, int tw, int th, char *src
             snprintf(f, sizeof(f), "%s.cvr", stem);
             write_cache(L, f, j->plat, tw, th, *year);
         } else {
-            unsigned char y[2];
-            y[0] = (unsigned char)(*year >> 8); y[1] = (unsigned char)*year;
+            unsigned char y[3];
+            y[0] = CVR_VERSION; y[1] = (unsigned char)(*year >> 8); y[2] = (unsigned char)*year;
             snprintf(f, sizeof(f), "%s.none", stem);
-            L->io.write_file(L->io.ctx, f, y, 2, "", 0);   /* the marker keeps the year */
+            L->io.write_file(L->io.ctx, f, y, 3, "", 0);   /* the marker keeps the year */
         }
     }
     return ok;

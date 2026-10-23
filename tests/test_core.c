@@ -382,10 +382,10 @@ static void test_settings(void)
     sf_strlcpy(a.last_key[1], "SCUS97328", SET_KEY_MAX);
     memset(&g, 0, sizeof(g));
     sf_strlcpy(g.key, "Some Game = weird (USA).iso", sizeof(g.key));
-    g.autoplay = AP_ON; g.rsx = 3; g.offline = 1;
+    g.autoplay = AP_ON; g.offline = 1;
     CHECK(settings_game_set(&a, &g) == 0);
     sf_strlcpy(g.key, "SLUS20914", sizeof(g.key));
-    g.autoplay = AP_OFF; g.rsx = 0; g.offline = 0; g.emulator = 1;
+    g.autoplay = AP_OFF; g.offline = 0; g.emulator = 1;
     CHECK(settings_game_set(&a, &g) == 0);
     CHECK(settings_save(&a, path) == 0);
     settings_defaults(&b);
@@ -394,7 +394,7 @@ static void test_settings(void)
     CHECK_STR(b.last_key[1], "SCUS97328");
     CHECK(b.game_count == 2);
     r = settings_game_get(&b, "Some Game = weird (USA).iso");
-    CHECK(r.autoplay == AP_ON && r.rsx == 3 && r.offline == 1);
+    CHECK(r.autoplay == AP_ON && r.offline == 1);
     /* offline mode: per-game Default follows the global setting */
     {
         Settings so;
@@ -477,9 +477,10 @@ static void test_menu(void)
     printf("menus\n");
     CHECK(menu_rows(PANEL_GAME, PLAT_PS1, r, MENU_MAX_ROWS) == 2);
     CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_EMULATOR);
-    CHECK(menu_rows(PANEL_GAME, PLAT_PS2, r, MENU_MAX_ROWS) == 5);
-    CHECK(r[4] == ROW_G_PS2CFG);
-    CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 3);
+    CHECK(menu_rows(PANEL_GAME, PLAT_PS2, r, MENU_MAX_ROWS) == 4);           /* RSX clock row removed */
+    CHECK(r[1] == ROW_G_EMULATOR && r[2] == ROW_G_OFFLINE && r[3] == ROW_G_PS2CFG);
+    CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 2);
+    CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_OFFLINE);
     CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 17);
     CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_SFX && r[6] == ROW_F_UI_COLOR && r[7] == ROW_F_INFO && r[8] == ROW_F_CASES && r[9] == ROW_F_REFLECT && r[10] == ROW_F_SLEEP &&
           r[13] == ROW_F_XMB_TOP && r[15] == ROW_F_QUIT && r[16] == ROW_F_POWEROFF);
@@ -1071,21 +1072,22 @@ static void test_app(void)
     run_frames(0, 1.2f);
     CHECK(g_app.letter_t >= LETTER_TIME);
 
-    /* launch: no pop-up, but the launch is recorded */
+    /* launch without webMAN (no launch service): a message, no exit */
     g_app.toast_t = TOAST_TIME;
     g_app.last_launch[0] = '\0';
     tap(SFB_CROSS);
-    CHECK(g_app.last_launch[0] != '\0' && g_app.toast_t >= TOAST_TIME);
+    CHECK(g_app.last_launch[0] == '\0' && g_app.toast_t < 0.1f && !g_app.exiting);
+    run_frames(0, TOAST_TIME + 0.1f);
 
     /* game settings panel; ◯ closes it and must NOT arm the exit hold */
     tap(SFB_TRIANGLE);
-    CHECK(g_app.panel == PANEL_GAME && g_app.nrows == 5);
+    CHECK(g_app.panel == PANEL_GAME && g_app.nrows == 4);          /* PS2: no RSX clock row (milestone 3) */
     run_frames(0, 0.3f);
-    tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN);
-    CHECK(g_app.rows[g_app.row] == ROW_G_RSX);
+    tap(SFB_DOWN); tap(SFB_DOWN);
+    CHECK(g_app.rows[g_app.row] == ROW_G_OFFLINE);
     tap(SFB_RIGHT);
-    CHECK(g_app.panel_cfg.rsx == 1);
-    CHECK(settings_game_get(&g_app.settings, g_app.panel_cfg.key).rsx == 1);
+    CHECK(g_app.panel_cfg.offline == AP_ON);
+    CHECK(settings_game_get(&g_app.settings, g_app.panel_cfg.key).offline == AP_ON);
     app_update(&g_app, SFB_CIRCLE, 1.0f / 60.0f);          /* press closes panel... */
     run_frames(SFB_CIRCLE, 2.5f);                           /* ...and keeps holding */
     CHECK(!g_app.exiting && !g_app.quit);
@@ -1244,6 +1246,8 @@ int main(void)
     test_multi_disc();
     test_multi_disc_names();
     test_release_year();
+    test_launch();
+    test_launch_app();
     test_bg_and_reflect();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;

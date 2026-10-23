@@ -3,8 +3,6 @@
 #include "util.h"
 #include <stdio.h>
 
-static const char *const k_rsx[RSX_PRESET_COUNT] = { "Default", "500 MHz", "550 MHz", "600 MHz", "650 MHz" };
-
 int menu_rows(int panel, int plat, RowKind *out, int max)
 {
     RowKind tmp[MENU_MAX_ROWS];
@@ -13,9 +11,8 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
         tmp[n++] = ROW_G_AUTOPLAY;
         if (plat == PLAT_PS1) { tmp[n++] = ROW_G_EMULATOR; }
         else if (plat == PLAT_PS2) {
-            tmp[n++] = ROW_G_EMULATOR; tmp[n++] = ROW_G_OFFLINE;
-            tmp[n++] = ROW_G_RSX; tmp[n++] = ROW_G_PS2CFG;
-        } else { tmp[n++] = ROW_G_OFFLINE; tmp[n++] = ROW_G_RSX; }
+            tmp[n++] = ROW_G_EMULATOR; tmp[n++] = ROW_G_OFFLINE; tmp[n++] = ROW_G_PS2CFG;
+        } else { tmp[n++] = ROW_G_OFFLINE; }
     } else if (panel == PANEL_FLOW) {
         tmp[n++] = ROW_F_AUTOPLAY; tmp[n++] = ROW_F_OFFLINE; tmp[n++] = ROW_F_SFX; tmp[n++] = ROW_F_VOLUME; tmp[n++] = ROW_F_SHUFFLE;
         tmp[n++] = ROW_F_BACKGROUND; tmp[n++] = ROW_F_UI_COLOR; tmp[n++] = ROW_F_INFO; tmp[n++] = ROW_F_CASES; tmp[n++] = ROW_F_REFLECT; tmp[n++] = ROW_F_SLEEP; tmp[n++] = ROW_F_COVERS; tmp[n++] = ROW_F_IGNORE_THE;
@@ -33,7 +30,6 @@ const char *menu_label(RowKind k)
     case ROW_G_AUTOPLAY: return "Auto-Play";
     case ROW_G_EMULATOR: return "Emulator";
     case ROW_G_OFFLINE: return "Offline Mode";
-    case ROW_G_RSX: return "RSX Clock";
     case ROW_G_PS2CFG: return "PS2 Config";
     case ROW_F_AUTOPLAY: return "Auto-Play";
     case ROW_F_OFFLINE: return "Offline Mode";
@@ -85,7 +81,6 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
         else if (g->offline == AP_OFF) sf_strlcpy(out, "Off", cap);
         else snprintf(out, cap, "Default (%s)", onoff(s->offline));
         break;
-    case ROW_G_RSX: sf_strlcpy(out, k_rsx[sf_clampi(g->rsx, 0, RSX_PRESET_COUNT - 1)], cap); break;
     case ROW_G_PS2CFG: sf_strlcpy(out, "Edit", cap); break;
     case ROW_F_AUTOPLAY: sf_strlcpy(out, onoff(s->autoplay), cap); break;
     case ROW_F_OFFLINE: sf_strlcpy(out, onoff(s->offline), cap); break;
@@ -127,7 +122,6 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     case ROW_G_AUTOPLAY: g->autoplay = (signed char)cycle(g->autoplay, 3, dir); return MENU_FX_CHANGED;
     case ROW_G_EMULATOR: g->emulator = (signed char)cycle(g->emulator, 2, dir); return MENU_FX_CHANGED;
     case ROW_G_OFFLINE: g->offline = (signed char)cycle(g->offline, 3, dir); return MENU_FX_CHANGED;
-    case ROW_G_RSX: g->rsx = (signed char)cycle(g->rsx, RSX_PRESET_COUNT, dir); return MENU_FX_CHANGED;
     case ROW_G_PS2CFG: return dir == 0 ? MENU_FX_PS2CFG_STUB : MENU_FX_NONE;
     case ROW_F_AUTOPLAY: s->autoplay = cycle(s->autoplay, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_OFFLINE: s->offline = cycle(s->offline, 2, dir); return MENU_FX_CHANGED;

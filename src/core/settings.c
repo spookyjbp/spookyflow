@@ -5,7 +5,8 @@
  *   music_volume=60
  *   ...
  *   last_key_ps2=SCUS97328
- *   game <autoplay> <emulator> <offline> <rsx> <key to end of line>
+ *   game <autoplay> <emulator> <offline> <unused, 0> <key to end of line>
+ *   (the 4th number was an RSX clock preset, removed in milestone 3)
  * The key is last on "game" lines so it may contain spaces, '=', etc. */
 #include "settings.h"
 #include "util.h"
@@ -76,7 +77,7 @@ void settings_parse_line(Settings *s, const char *line_in)
                  * option stored 0 = Off: that now reads as Default, which is
                  * Off unless the global option is turned on. */
                 g.offline = (signed char)sf_clampi(o, 0, 2);
-                g.rsx = (signed char)sf_clampi(r, 0, RSX_PRESET_COUNT - 1);
+                (void)r;                                /* old RSX clock preset: ignored */
                 settings_game_set(s, &g);
             }
         }
@@ -151,11 +152,11 @@ int settings_save(const Settings *s, const char *path)
     for (p = 0; p < PLAT_COUNT; p++)
         if (s->last_key[p][0] && !strchr(s->last_key[p], '\n'))
             fprintf(f, "last_key_%s=%s\n", k_plat_suffix[p], s->last_key[p]);
-    fprintf(f, "# game <autoplay 0=default 1=on 2=off> <emulator> <offline 0=default 1=on 2=off> <rsx> <key>\n");
+    fprintf(f, "# game <autoplay 0=default 1=on 2=off> <emulator> <offline 0=default 1=on 2=off> <unused> <key>\n");
     for (i = 0; i < s->game_count; i++) {
         const GameCfg *g = &s->games[i];
         if (strchr(g->key, '\n')) continue;
-        fprintf(f, "game %d %d %d %d %s\n", g->autoplay, g->emulator, g->offline, g->rsx, g->key);
+        fprintf(f, "game %d %d %d 0 %s\n", g->autoplay, g->emulator, g->offline, g->key);
     }
     fflush(f);
     fclose(f);
@@ -182,7 +183,7 @@ GameCfg settings_game_get(const Settings *s, const char *key)
 int settings_game_set(Settings *s, const GameCfg *cfg)
 {
     int i = find_game(s, cfg->key);
-    int is_default = cfg->autoplay == 0 && cfg->emulator == 0 && cfg->offline == 0 && cfg->rsx == 0;
+    int is_default = cfg->autoplay == 0 && cfg->emulator == 0 && cfg->offline == 0;
     if (!cfg->key[0]) return -1;
     if (i >= 0) {
         if (is_default) {

@@ -36,6 +36,8 @@ void ps3_load_tab_images(void);
 
 /* ps3_webman.c: send a web command to webMAN MOD (0 = it replied) */
 int ps3_webman_get(const char *command);
+/* send without waiting for the answer (launch requests); 0 = sent */
+int ps3_webman_send(const char *command);
 
 /* ps3_audio.c: UI sounds */
 void ps3_load_sounds(void);    /* optional user WAVs; call before ps3_audio_start */

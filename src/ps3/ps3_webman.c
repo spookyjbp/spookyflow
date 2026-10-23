@@ -1,6 +1,5 @@
 /* ps3_webman.c - send a web command to webMAN MOD on this console
- * (http://127.0.0.1/<command>). Used for a clean power off now and for game
- * launching later.
+ * (http://127.0.0.1/<command>): clean power off, and game launching.
  *
  * Verified against PSL1GHT ppu/include/net/net.h (netInitialize,
  * netDeinitialize, netSocket, netConnect, netSend, netRecv, netClose,
@@ -12,16 +11,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
+#include <unistd.h>
 #include "log.h"
 #include "ps3_platform.h"
 
-int ps3_webman_get(const char *command)
+/* connect to webMAN; returns the socket or -1 (network initialized on success) */
+static s32 webman_connect(void)
 {
     struct sockaddr_in addr;
     struct timeval tv;
-    char req[512], resp[64];
     s32 s;
-    int n, rc = -1;
     if (netInitialize() < 0) { log_printf("webman: network init failed"); return -1; }
     s = netSocket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s < 0) { log_printf("webman: socket failed (%d)", (int)s); netDeinitialize(); return -1; }
@@ -34,16 +33,52 @@ int ps3_webman_get(const char *command)
     addr.sin_addr.s_addr = htonl(0x7F000001);          /* 127.0.0.1 */
     if (netConnect(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         log_printf("webman: can't connect to 127.0.0.1:80 - is webMAN MOD running?");
+        netClose(s);
+        netDeinitialize();
+        return -1;
+    }
+    return s;
+}
+
+/* Send a request that webMAN answers only later (a launch: it first waits for
+ * the XMB). 0 = connected and sent. */
+int ps3_webman_send(const char *command)
+{
+    char req[2300];
+    s32 s;
+    int n, rc = -1;
+    n = snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n", command);
+    if (n <= 0 || n >= (int)sizeof(req)) { log_printf("webman: request too long"); return -1; }
+    s = webman_connect();
+    if (s < 0) return -1;
+    if (netSend(s, req, (size_t)n, 0) == n) {
+        rc = 0;
+        usleep(300 * 1000);            /* let webMAN read it before the socket closes */
+        log_printf("webman: sent %s", command);
     } else {
-        n = snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n", command);
-        if (n > 0 && n < (int)sizeof(req) && netSend(s, req, (size_t)n, 0) == n) {
-            /* any reply means webMAN took the command */
-            n = (int)netRecv(s, resp, sizeof(resp) - 1, 0);
-            if (n > 0) { resp[n] = '\0'; rc = 0; log_printf("webman: %s -> %.12s", command, resp); }
-            else log_printf("webman: %s sent, no reply", command);
-        } else {
-            log_printf("webman: send failed for %s", command);
-        }
+        log_printf("webman: send failed for %s", command);
+    }
+    netClose(s);
+    netDeinitialize();
+    return rc;
+}
+
+int ps3_webman_get(const char *command)
+{
+    char req[512], resp[64];
+    s32 s;
+    int n, rc = -1;
+    n = snprintf(req, sizeof(req), "GET %s HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n", command);
+    if (n <= 0 || n >= (int)sizeof(req)) { log_printf("webman: request too long"); return -1; }
+    s = webman_connect();
+    if (s < 0) return -1;
+    if (netSend(s, req, (size_t)n, 0) == n) {
+        /* any reply means webMAN took the command */
+        n = (int)netRecv(s, resp, sizeof(resp) - 1, 0);
+        if (n > 0) { resp[n] = '\0'; rc = 0; log_printf("webman: %s -> %.12s", command, resp); }
+        else log_printf("webman: %s sent, no reply", command);
+    } else {
+        log_printf("webman: send failed for %s", command);
     }
     netClose(s);
     netDeinitialize();

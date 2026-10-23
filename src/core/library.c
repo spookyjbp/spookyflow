@@ -1,6 +1,5 @@
 /* library.c - per-platform game lists, sorting, letter table. */
 #include "library.h"
-#include "gamedb.h"
 #include "title.h"
 #include "util.h"
 #include <stdio.h>
@@ -60,7 +59,7 @@ int lib_add(Library *lib, int plat, const char *path, const char *raw_name, uint
     g->pmax = (uint8_t)sf_clampi(pmax, 0, 255);
     g->flags = (uint8_t)flags;
     g->bucket = (uint8_t)title_bucket(title, 0);
-    g->year = (uint16_t)gamedb_year(id);    /* "" -> 0; the cover worker fills it in later */
+    g->year = 0;                            /* no release-year source for now */
     return gl->count++;
 }
 
@@ -242,7 +241,6 @@ int lib_group_discs(Library *lib, int plat)
             g->ndisc = (uint8_t)n;
             g->disc0 = (uint16_t)lib->ndiscs;
             g->bucket = (uint8_t)title_bucket(base, 0);
-            for (a = 0; a < n && !g->year; a++) g->year = (uint16_t)gamedb_year(lib_str(lib, tmp[a].id));
         }
         lib->ndiscs += n;
         /* drop the other discs' entries (all after i) */

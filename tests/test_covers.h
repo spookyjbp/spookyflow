@@ -2,7 +2,6 @@
  * cache, worker). Included by test_core.c (shares CHECK and g_app). */
 #include "coverart.h"
 #include "discid.h"
-#include "gamedb.h"
 #include "render.h"
 
 extern int g_null_cover_defined[R_COVER_SLOTS];
@@ -786,6 +785,24 @@ static int fake_discs(void *ctx, const char *dir, FsEntry *out, int max)
     return n;
 }
 
+
+/* milestone 3: launching through webMAN */
+static char g_launch_req[LAUNCH_CMD_MAX];
+static int g_launch_calls, g_launch_fail;
+static int fake_launch(const char *request)
+{
+    sf_strlcpy(g_launch_req, request, sizeof(g_launch_req));
+    g_launch_calls++;
+    return g_launch_fail ? -1 : 0;
+}
+static WmConfig g_fake_wm;
+static void fake_wm_config(WmConfig *cfg) { *cfg = g_fake_wm; }
+/* a test that launched carries on: undo the exit */
+static void relaunch_reset(void)
+{
+    g_app.exiting = 0; g_app.exit_fade = 0.0f; g_app.quit = 0; g_app.launched = 0;
+}
+
 static void test_multi_disc(void)
 {
     char base[TITLE_MAX];
@@ -829,6 +846,8 @@ static void test_multi_disc(void)
     /* app: ✖ on a multi-disc game opens Choose Disc; ✖ there launches that disc */
     memset(&host, 0, sizeof(host));
     host.fs_list = fake_discs;
+    host.launch = fake_launch;
+    g_launch_calls = 0;
     app_init(&g_app, &g_lib, &host);
     g_app.settings.last_tab = PLAT_PS1;
     run_frames(0, LOAD_MIN_TIME + 1.5f);
@@ -837,6 +856,9 @@ static void test_multi_disc(void)
     app_select(&g_app, PLAT_PS1, idx_of(PLAT_PS1, "Crash Bandicoot"), 0);
     tap(SFB_CROSS);
     CHECK(g_app.panel == PANEL_NONE && strstr(g_app.last_launch, "Crash Bandicoot") != NULL);   /* single disc: launches */
+    CHECK(g_launch_calls == 1 && strstr(g_launch_req, "/mount_ps3/dev_hdd0/PSXISO/Crash%20Bandicoot.cue?random=0&emu=ps1_emu.self") != NULL);
+    CHECK(g_app.exiting && g_app.launched);                                   /* ...and exits to the XMB */
+    relaunch_reset();
     run_frames(0, 0.3f);
     app_select(&g_app, PLAT_PS1, idx_of(PLAT_PS1, "Final Fantasy VII"), 0);
     tap(SFB_CROSS);
@@ -845,10 +867,129 @@ static void test_multi_disc(void)
     tap(SFB_DOWN);
     tap(SFB_CROSS);
     CHECK(strstr(g_app.last_launch, "Final Fantasy VII (Disc 2)") != NULL);
+    CHECK(g_launch_calls == 2 &&
+          strstr(g_launch_req, "/mount_ps3/dev_hdd0/PSXISO/Final%20Fantasy%20VII%20(Disc%202).cue?random=0") != NULL);   /* the chosen disc */
+    relaunch_reset();
     run_frames(0, 0.5f);
     CHECK(g_app.panel == PANEL_NONE);
     tap(SFB_CROSS); tap(SFB_CIRCLE); run_frames(0, 0.5f);   /* ◯ backs out without launching */
     CHECK(g_app.panel == PANEL_NONE && !g_app.exiting);
+}
+
+/* milestone 3: the webMAN launch request */
+static void test_launch(void)
+{
+    char out[LAUNCH_CMD_MAX], small[40];
+    LaunchReq r;
+    WmConfig wm;
+    unsigned char cfg[600];
+    printf("launching through webMAN\n");
+    /* URL encoding: spaces, + & ? # % ; [ ] and non-ASCII are escaped */
+    CHECK(launch_url_encode("/dev_hdd0/PS2ISO/God of War (USA).iso", out, sizeof(out)) == 0);
+    CHECK_STR(out, "/dev_hdd0/PS2ISO/God%20of%20War%20(USA).iso");
+    CHECK(launch_url_encode("/a/R&C+1 #2;x?y[z]%.iso", out, sizeof(out)) == 0);
+    CHECK_STR(out, "/a/R%26C%2B1%20%232%3Bx%3Fy%5Bz%5D%25.iso");
+    CHECK(launch_url_encode("/a/Pok\xc3\xa9.iso", out, sizeof(out)) == 0);
+    CHECK_STR(out, "/a/Pok%C3%A9.iso");
+    CHECK(launch_url_encode("/dev_hdd0/PS2ISO/a much longer name here.iso", small, sizeof(small)) == -1 && small[0] == '\0');
+    /* webMAN config: version 0x1337, ps1emu [581], autoplay [582], ps2emu [583] */
+    memset(cfg, 0, sizeof(cfg));
+    CHECK(!launch_parse_wm_config(cfg, sizeof(cfg), &wm) && !wm.valid);       /* wrong version */
+    cfg[0] = 0x13; cfg[1] = 0x37; cfg[581] = 1; cfg[582] = 0; cfg[583] = 1;
+    CHECK(launch_parse_wm_config(cfg, sizeof(cfg), &wm) && wm.valid && wm.ps1_netemu && !wm.autoplay && wm.ps2_netemu);
+    CHECK(!launch_parse_wm_config(cfg, 583, &wm));                             /* too short */
+    CHECK(!launch_parse_wm_config(NULL, 0, &wm));
+    /* PS3 ISO, Auto-play: wait for the XMB, mount, then play */
+    memset(&r, 0, sizeof(r));
+    r.plat = PLAT_PS3; r.path = "/dev_hdd0/PS3ISO/Demon's Souls.iso"; r.autoplay = 1;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_hdd0/PS3ISO/Demon's%20Souls.iso?random=0;/wait.ps3?2;/play.ps3");
+    /* Auto-play off: only mount (the disc icon waits on the XMB) */
+    r.autoplay = 0;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_hdd0/PS3ISO/Demon's%20Souls.iso?random=0");
+    /* offline comes before emu (webMAN cuts the query in front of emu=) */
+    r.plat = PLAT_PS2; r.path = "/dev_hdd0/PS2ISO/Okami.iso"; r.offline = 1; r.emulator = 1; r.autoplay = 1;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_hdd0/PS2ISO/Okami.iso?random=0&offline=1&emu=ps2_netemu.self;/wait.ps3?2;/play.ps3");
+    /* PS2 Default: no config -> webMAN decides; with config -> the user's saved emulator, named */
+    r.offline = 0; r.emulator = 0;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK(strstr(out, "emu=") == NULL);
+    memset(&wm, 0, sizeof(wm)); wm.valid = 1; wm.ps2_netemu = 0;
+    CHECK(launch_build(&r, &wm, out, sizeof(out)) == 0);
+    CHECK(strstr(out, "?random=0&emu=ps2_emu.self;") != NULL);
+    wm.ps2_netemu = 1;
+    CHECK(launch_build(&r, &wm, out, sizeof(out)) == 0);
+    CHECK(strstr(out, "?random=0&emu=ps2_netemu.self;") != NULL);
+    /* webMAN's own Auto-play starts the game itself: no second /play.ps3 */
+    wm.autoplay = 1;
+    CHECK(launch_build(&r, &wm, out, sizeof(out)) == 0);
+    CHECK(strstr(out, "/play.ps3") == NULL);
+    /* PS1: always names its emulator; offline doesn't apply */
+    memset(&r, 0, sizeof(r));
+    r.plat = PLAT_PS1; r.path = "/dev_hdd0/PSXISO/Crash.bin"; r.offline = 1;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_hdd0/PSXISO/Crash.bin?random=0&emu=ps1_emu.self");
+    r.emulator = 1;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK(strstr(out, "&emu=ps1_netemu.self") != NULL);
+    /* PS3 folder game */
+    memset(&r, 0, sizeof(r));
+    r.plat = PLAT_PS3; r.path = "/dev_hdd0/GAMES/BLES00932-[Demon]"; r.autoplay = 1;
+    CHECK(launch_build(&r, NULL, out, sizeof(out)) == 0);
+    CHECK(strstr(out, ";/mount_ps3/dev_hdd0/GAMES/BLES00932-%5BDemon%5D?random=0;") != NULL);
+    /* bad input */
+    r.path = ""; CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1 && out[0] == '\0');
+    r.path = "relative.iso"; CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1);
+    r.path = "/x.iso"; r.plat = 7; CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1);
+    r.plat = PLAT_PS3; CHECK(launch_build(&r, NULL, small, sizeof(small)) == -1 && small[0] == '\0');
+    CHECK(launch_build(NULL, NULL, out, sizeof(out)) == -1);
+    {   /* a path too long for webMAN's 2 KB request */
+        char p[2000];
+        memset(p, 'A', sizeof(p) - 1); p[0] = '/'; p[sizeof(p) - 1] = '\0';
+        r.path = p; r.plat = PLAT_PS3;
+        CHECK(launch_build(&r, NULL, out, sizeof(out)) == -1);
+    }
+}
+
+/* milestone 3: the app sends the request and exits; settings go with it */
+static void test_launch_app(void)
+{
+    AppHost host;
+    GameCfg c;
+    printf("launching: app\n");
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = fake_discs;
+    host.launch = fake_launch;
+    host.read_wm_config = fake_wm_config;
+    memset(&g_fake_wm, 0, sizeof(g_fake_wm));
+    g_fake_wm.valid = 1; g_fake_wm.ps2_netemu = 1;
+    g_launch_calls = 0; g_launch_fail = 0;
+    app_init(&g_app, &g_lib, &host);
+    g_app.settings.last_tab = PLAT_PS1;
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    g_app.tab = PLAT_PS1;
+    app_select(&g_app, PLAT_PS1, idx_of(PLAT_PS1, "Crash Bandicoot"), 0);
+    /* per-game: Netemu + Auto-play on */
+    c = settings_game_get(&g_app.settings, lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS1)));
+    c.emulator = 1; c.autoplay = AP_ON;
+    settings_game_set(&g_app.settings, &c);
+    tap(SFB_CROSS);
+    CHECK(g_launch_calls == 1);
+    CHECK(strstr(g_launch_req, "&emu=ps1_netemu.self;/wait.ps3?2;/play.ps3") != NULL);
+    CHECK(g_app.exiting && g_app.launched);
+    run_frames(0, EXIT_FADE_TIME + 0.3f);
+    CHECK(g_app.quit);                                         /* back to the XMB, where webMAN takes over */
+    relaunch_reset();
+    /* webMAN not running: a message, and spookyflow stays */
+    g_launch_fail = 1;
+    run_frames(0, 0.2f);
+    tap(SFB_CROSS);
+    CHECK(g_launch_calls == 2 && !g_app.exiting && g_app.toast_t < 0.1f);
+    g_launch_fail = 0;
+    run_frames(0, TOAST_TIME + 0.1f);
 }
 
 /* fix 7: discs named without "(Disc N)" are grouped too */
@@ -898,7 +1039,7 @@ static void test_multi_disc_names(void)
     }
 }
 
-/* fix 10: release years (GameDB) instead of genre */
+/* release years: no source for now, so every game's year stays unknown */
 static void test_release_year(void)
 {
     static CoverLoader L;
@@ -906,19 +1047,10 @@ static void test_release_year(void)
     CoverCache cc;
     uint32_t len;
     unsigned char *img;
-    int year_seen = 0;
-    printf("release years\n");
-    CHECK(gamedb_year("SLUS20914") == 2004);
-    CHECK(gamedb_year("SLUS-20914") == 2004);
-    CHECK(gamedb_year("scus_949.00") == 1996);
-    CHECK(gamedb_year("ZZZZ99999") == 0);
-    CHECK(gamedb_year("") == 0 && gamedb_year(NULL) == 0 && gamedb_year("junk") == 0);
+    printf("release years (none for now)\n");
     lib_clear(&g_lib);
-    lib_add(&g_lib, PLAT_PS2, "/p/x.iso", "Game [SLUS-20914].iso", 1, NULL, 0, 0, 0);   /* ID in the name */
-    CHECK(g_lib.tab[PLAT_PS2].games[0].year == 2004);
-    lib_add(&g_lib, PLAT_PS2, "/p/y.iso", "Other.iso", 1, NULL, 0, 0, 0);
-    CHECK(g_lib.tab[PLAT_PS2].games[1].year == 0);
-    /* the worker reads the ID from the disc, finds the year and keeps it in its cache */
+    lib_add(&g_lib, PLAT_PS2, "/p/x.iso", "Game [SLUS-20914].iso", 1, NULL, 0, 0, 0);
+    CHECK(g_lib.tab[PLAT_PS2].games[0].year == 0);
     memfs_reset();
     img = make_disc("BOOT2 = cdrom0:\\SLUS_209.14;1\r\n", NULL, 0, &len);
     memfs_put("/dev_hdd0/PS2ISO/Game.iso", img, len); free(img);
@@ -929,28 +1061,7 @@ static void test_release_year(void)
     cc.slot[0].state = CC_LOADING;
     cover_request(&L, 0, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
     cover_worker_step(&L);
-    CHECK(L.job[0].done_year == 2004);                         /* no cover, but the year is known */
-    cover_loader_stop(&L);
-    cover_loader_init(&L, &io);                                /* next start: from the .none marker */
-    cc_init(&cc, 8, NULL, NULL);
-    cc.slot[1].state = CC_LOADING;
-    cover_request(&L, 1, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
-    cover_worker_step(&L);
-    year_seen = L.job[1].done_year;
-    CHECK(year_seen == 2004);
-    /* ...and from a cached cover */
-    memfs_put("/dev_hdd0/PS2ISO/Game.png", "IMG 70 100 0 0 255 255", 22);
-    cover_wipe_cache(&L);
-    cover_worker_step(&L);
-    cc.slot[2].state = CC_LOADING;
-    cover_request(&L, 2, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
-    cover_worker_step(&L);
-    cover_loader_stop(&L);
-    cover_loader_init(&L, &io);
-    cc.slot[3].state = CC_LOADING;
-    cover_request(&L, 3, PLAT_PS2, PLAT_PS2, 0, "/dev_hdd0/PS2ISO/Game.iso", 0, len, "");
-    cover_worker_step(&L);
-    CHECK(L.n_cache == 1 && L.job[3].done_year == 2004);
+    CHECK(L.job[0].done_year == 0);
     cover_loader_stop(&L);
     memfs_reset();
 }

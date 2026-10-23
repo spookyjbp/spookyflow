@@ -1,9 +1,9 @@
-# spookyflow — milestone 2
+# spookyflow — milestone 3
 
 A cover-flow game launcher for a jailbroken/CFW/HEN PS3, written in C with
-PSL1GHT and Tiny3D. Milestone 1 was the **look and feel**; milestone 2 adds
-**real cover art** from your webMAN / multiMAN cover folders. Pressing ✖ still
-only logs the launch (real launching through webMAN is milestone 3).
+PSL1GHT and Tiny3D. Milestone 1 was the **look and feel**; milestone 2 added
+**real cover art** from your webMAN / multiMAN cover folders; milestone 3
+**launches games through webMAN MOD**, with each game's settings applied.
 
 ![PS2 tab](preview/18_covers_ps2.png)
 
@@ -114,7 +114,7 @@ install on your setup, try `spookyflow.gnpdrm.pkg` from the same artifact.
 | D-pad ↑ ↓ | — | Move between rows |
 | L1 / R1 | Previous / next tab (PS1 ↔ PS2 ↔ PS3, stops at the ends) | — |
 | L2 / R2 | Jump to previous / next letter (A–Z, # first) | — |
-| ✖ | Launch (milestone 1: shows “Launch: title” and logs it) | Change / activate |
+| ✖ | Launch (through webMAN MOD, see *Launching*) | Change / activate |
 | ▲ | Open **Game Settings** for the selected game | Close |
 | START | Open **Flow Settings** | Close |
 | ◯ | **Hold 1.5 s** to exit to the XMB (tap does nothing) | Back (tap). Holding here never exits |
@@ -130,11 +130,12 @@ the cover flow.
 (no files are ever renamed):
 
 - PS1: Auto-play, Emulator (Standard / Netemu)
-- PS2: Auto-play, Emulator (Default / Netemu), Offline mode, RSX clock, PS2 config (stub)
-- PS3: Auto-play, Offline mode, RSX clock
+- PS2: Auto-play, Emulator (Default / Netemu), Offline mode, PS2 config (stub)
+- PS3: Auto-play, Offline mode
 
 “Default (Off)” means “use the global Auto-play setting, which is Off”.
-These are stored now and will be applied when real launching arrives.
+They are applied when the game is launched (see *Launching*). The RSX clock
+row was removed in milestone 3; overclocking may come back later.
 
 **Flow Settings (START)** — Auto-play (global, default Off), Music volume,
 Shuffle music, Background (Animated / Image), Download missing covers (stub),
@@ -257,16 +258,49 @@ shown on its own. The log says which case images were used.
 
 ## Game info line
 
-Under the title: **release year · players · size · position** (e.g.
-`2004 · 7.6 GB · 25 of 73`). Players are only known for demo games so far.
+Under the title: **players · size · position** (e.g. `7.6 GB · 25 of 73`).
+Players are only known for demo games so far. Release years are planned but
+have no source yet (the info line shows a year when one is known; the cover
+cache keeps a field for it).
 
-Release years come from **GameDB** by Niema Moshiri
-(<https://github.com/niemasd/GameDB-PSX>, `-PS2`, `-PS3`, GPL-3.0; built
-from Redump, GameFAQs, PlayStation Datacenter and others). Only the title ID
-and year are kept, in `src/core/gamedb_data.c` (`tools/gen_gamedb.py`
-rebuilds it). The year is found by the game's title ID, which comes from its
-file name or from inside the disc, the first time its cover is loaded, and
-is remembered in the cover cache. Games GameDB doesn't know show no year.
+## Launching (milestone 3)
+
+✖ on a game (or on a disc in **Choose Disc**) hands it to **webMAN MOD** and
+spookyflow exits to the XMB; webMAN mounts the game there and, with
+Auto-play on, starts it. webMAN MOD must be installed and running (it is
+what mounts ISOs and folders on CFW/HEN). If it isn't, spookyflow shows
+"Launching needs webMAN MOD running" and stays open.
+
+spookyflow sends one request to webMAN (`http://127.0.0.1/`, built in
+`src/core/launch.c`):
+
+```
+/wait.ps3?xmb;/mount_ps3<path>?random=0[&offline=1][&emu=<emulator>];/wait.ps3?2;/play.ps3
+```
+
+- **Wait for the XMB**: webMAN doesn't mount while an app is running, so it
+  waits (up to 30 s) until spookyflow has closed.
+- **Mount** the game file or folder (PS3 ISO / folder, PS2 ISO, PS1
+  .cue/.bin/.iso); the path is URL-encoded.
+- **Offline mode** (PS2/PS3, per game or global): `offline=1` turns the
+  network off while the game runs; webMAN turns it back on afterwards.
+- **Emulator**: PS1 Standard / Netemu → `ps1_emu.self` / `ps1_netemu.self`;
+  PS2 Netemu → `ps2_netemu.self`, PS2 Default → the emulator saved in your
+  webMAN settings (read from `/dev_hdd0/tmp/wm_config.bin`; webMAN decides if
+  the file can't be read).
+- **Auto-play** on: `/play.ps3` starts the disc icon. Off: the game is only
+  mounted and waits on the XMB's disc icon.
+
+Notes (from webMAN MOD's source): `offline=` must come before `emu=`, and
+`emu=` also changes webMAN's default emulator until the next boot, which is
+why spookyflow always names the emulator. If **webMAN's own Auto-play**
+setting is on, webMAN starts every mounted game itself: spookyflow then
+doesn't add `/play.ps3` (no double start), and games start even when
+spookyflow's Auto-play is off.
+
+Not tested on hardware yet: the request format follows webMAN MOD's source,
+but the first launches on a real console are the test. The log
+(`/dev_hdd0/tmp/spookyflow/log.txt`) records every request.
 
 ## Multi-disc games
 
@@ -340,7 +374,15 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 28 (0.2.28):** the horizon glows and line are generated cleanly (the
+15. **Milestone 3 (0.3.0):** games launch through webMAN MOD (mount at the
+    XMB, then play), with per-game Auto-play, emulator and offline mode; the
+    RSX clock row is removed.
+    **Fix 30 (0.2.30):** the release-year sources (GameDB table, disc dates) are
+    removed for now; the info line shows no year.
+    **Fix 29 (0.2.29):** many more release years: borrowed from other regions
+    of the same title, else read from the disc image (cover cache version 5,
+    so every game is looked up once more).
+    **Fix 28 (0.2.28):** the horizon glows and line are generated cleanly (the
     old glow sprite carried a stray fragment that slid out beside the selected
     case as the glow pulsed).
     **Fix 27 (0.2.27):** no confirm sound on Power Off PS3; the Stage fog is an
@@ -420,7 +462,6 @@ contents (or attach it) in our chat.
 
 ## Not yet (on purpose)
 
-- Real launching through webMAN (milestone 3) — ✖ only logs.
 - Downloading missing covers (the Flow Settings row is still a stub).
 - Music playback (the volume/shuffle settings are stored only), background
   image (the “Image” option shows a still background for now), cover
