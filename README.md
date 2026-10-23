@@ -340,7 +340,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 26 (0.2.26):** Power Off PS3 works on one press; the loading screen
+15. **Fix 27 (0.2.27):** no confirm sound on Power Off PS3; the Stage fog is an
+    even haze (its densest spots no longer drift by as a blob).
+    **Fix 26 (0.2.26):** Power Off PS3 works on one press; the loading screen
     cross-fades smoothly into the cover flow (keeping its own background while
     it fades); the Stage ribbons never dip below the horizon.
     **Fix 25 (0.2.25):** the big bokeh orbs are removed from Stage.

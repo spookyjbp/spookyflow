@@ -396,7 +396,7 @@ static void apply_fx(App *a, RowKind k, int fx)
 {
     char val[48];
     if (fx == MENU_FX_CHANGED || fx == MENU_FX_RESORT || fx == MENU_FX_XMB_TOP) sound_play(SND_CHANGE);
-    else if (fx != MENU_FX_NONE && fx != MENU_FX_QUIT && fx != MENU_FX_RESCAN) sound_play(SND_CONFIRM);
+    else if (fx != MENU_FX_NONE && fx != MENU_FX_QUIT && fx != MENU_FX_RESCAN && fx != MENU_FX_POWEROFF) sound_play(SND_CONFIRM);
     switch (fx) {
     case MENU_FX_NONE: return;
     case MENU_FX_CHANGED:

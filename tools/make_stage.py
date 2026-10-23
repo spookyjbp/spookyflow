@@ -164,6 +164,9 @@ def fog(w=1024, h=256, seed=7):
     yy = (np.arange(h) / (h - 1))[:, None]
     env = np.exp(-((yy - 0.55) / 0.22) ** 2)         # thickest a little below the middle
     a = 255.0 * d * env
+    # even haze: soft-limit the densest spots (they read as a blob drifting by)
+    cap = 90.0
+    a = 1.4 * cap * np.tanh(a / cap)
     return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
 
 srcs = [(n, rgba(p)) for n, p in elems] + [('dots', dots_grid()), ('mist', fog())]
