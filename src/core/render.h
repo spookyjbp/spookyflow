@@ -14,8 +14,11 @@ enum {
     TEX_BLOB = 6,   /* generated: soft radial falloff (glows, background shapes) */
     TEX_DISC = 7,   /* generated: anti-aliased disc (9-slice rounded rectangles) */
     TEX_CATS = 8,   /* kitten artwork on the loading screen (cats_data.c) */
-    TEX_CASE_PS1 = 9, TEX_CASE_PS2 = 10, TEX_CASE_PS3 = 11,   /* optional case images (ManaGunZ's, or the user's) */
-    TEX_COUNT_FIXED = 12
+    TEX_CASE_PS1 = 9, TEX_CASE_PS2 = 10, TEX_CASE_PS3 = 11,   /* optional case images (the user's) */
+    TEX_BG_IMAGE = 12,   /* optional background picture (the user's) */
+    TEX_STAGE = 13, TEX_STAGE_SHAPES = 14,   /* built-in Stage background (brightness) + its floating shapes */
+    TEX_STAGE_HI = 15,                        /* Stage's white-hot cores */
+    TEX_COUNT_FIXED = 16
 };
 
 /* Cover art: R_COVER_SLOTS textures TEX_COVER0 + slot, one per cover cache

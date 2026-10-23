@@ -166,13 +166,12 @@ static s32 decode_jpeg(const char *path, int min_w, int min_h, jpgData *out)
     return ret;
 }
 
-static int io_decode(void *ctx, const char *path, int *w, int *h, uint8_t **rgba)
+static int decode_any(const char *path, int min_w, int min_h, int max_dim, int *w, int *h, uint8_t **rgba)
 {
     int is_png = sf_ends_with_i(path, ".png");
     void *bmp = NULL;
     u32 pitch = 0, bw = 0, bh = 0;
     s32 rc;
-    (void)ctx;
     *rgba = NULL;
     ps3_decode_lock();
     if (is_png) {
@@ -183,17 +182,32 @@ static int io_decode(void *ctx, const char *path, int *w, int *h, uint8_t **rgba
     } else {
         jpgData d;
         memset(&d, 0, sizeof(d));
-        rc = decode_jpeg(path, R_COVER_MAX_W, R_COVER_MAX_H, &d);
+        rc = decode_jpeg(path, min_w, min_h, &d);
         bmp = d.bmp_out; pitch = d.pitch; bw = d.width; bh = d.height;
     }
     ps3_decode_unlock();
     if (rc != 0 || !bmp || bw == 0 || bh == 0 || pitch < bw * 4u) { free(bmp); return -1; }
-    if (bw > COVER_SRC_MAX_DIM || bh > COVER_SRC_MAX_DIM) { free(bmp); *w = (int)bw; *h = (int)bh; return -1; }
+    if ((int)bw > max_dim || (int)bh > max_dim) { free(bmp); *w = (int)bw; *h = (int)bh; return -1; }
     argb_to_rgba_inplace((u8 *)bmp, pitch, bw, bh);
     *rgba = (uint8_t *)bmp;              /* malloc'd by the decoder wrapper: free() is right */
     *w = (int)bw;
     *h = (int)bh;
     return 0;
+}
+
+static int io_decode(void *ctx, const char *path, int *w, int *h, uint8_t **rgba)
+{
+    (void)ctx;
+    return decode_any(path, R_COVER_MAX_W, R_COVER_MAX_H, COVER_SRC_MAX_DIM, w, h, rgba);
+}
+
+/* For other images (the background): JPEGs are shrunk by the decoder only
+ * while they stay at least min_w x min_h. */
+int ps3_decode_image(const char *path, int min_w, int min_h, int max_dim, int *w, int *h, uint8_t **rgba)
+{
+    if (sysModuleIsLoaded(SYSMODULE_JPGDEC) != 0) sysModuleLoad(SYSMODULE_JPGDEC);
+    if (sysModuleIsLoaded(SYSMODULE_PNGDEC) != 0) sysModuleLoad(SYSMODULE_PNGDEC);
+    return decode_any(path, min_w, min_h, max_dim, w, h, rgba);
 }
 
 static int io_write(void *ctx, const char *path, const void *a, uint32_t alen, const void *b, uint32_t blen)

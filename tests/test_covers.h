@@ -954,3 +954,45 @@ static void test_release_year(void)
     cover_loader_stop(&L);
     memfs_reset();
 }
+
+/* fix 12: background picture and reflections */
+static void test_bg_and_reflect(void)
+{
+    Settings s;
+    GameCfg g;
+    char t[32];
+    int i;
+    printf("background picture, reflections\n");
+    settings_defaults(&s);
+    memset(&g, 0, sizeof(g));
+    CHECK(s.reflections == 1);
+    CHECK(menu_change(ROW_F_REFLECT, 0, 0, &s, &g) == MENU_FX_CHANGED && s.reflections == 0);
+    menu_value_text(ROW_F_REFLECT, 0, &s, &g, t, sizeof(t));
+    CHECK_STR(t, "Off");
+    /* Background cycles through every style and ends on Image */
+    CHECK(s.background == BG_STAGE);                            /* fix 13: Stage is the default */
+    for (i = 0; i < BG_COUNT - 1; i++) menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g);
+    CHECK(s.background == BG_IMAGE);
+    menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g);
+    CHECK(s.background == BG_STAGE);
+    settings_parse_line(&s, "background=0");                     /* the pre-fix-13 key is ignored... */
+    CHECK(s.background == BG_STAGE);
+    settings_parse_line(&s, "background2=3");                    /* ...the new one is used */
+    CHECK(s.background == BG_FIREFLIES);
+    ui_set_stage(TEX_STAGE, TEX_STAGE_SHAPES);
+    g_app.settings.background = BG_STAGE;
+    ui_draw(&g_app);
+    ui_set_stage(-1, -1);
+    CHECK_STR(settings_background_name(BG_FIREFLIES), "Fireflies");
+    /* every background, with and without a picture and reflections, draws */
+    for (i = 0; i < BG_COUNT; i++) { g_app.settings.background = i; ui_draw(&g_app); }
+    ui_set_background_image(TEX_BG_IMAGE);
+    g_app.settings.background = BG_IMAGE;
+    g_app.settings.reflections = 1;
+    ui_draw(&g_app);
+    g_app.settings.reflections = 0;
+    ui_draw(&g_app);
+    ui_set_background_image(-1);
+    g_app.settings.background = BG_ANIMATED;
+    g_app.settings.reflections = 1;
+}

@@ -10,6 +10,7 @@
 #define SF_DATA_DIR      "/dev_hdd0/tmp/spookyflow"
 #define SF_TABS_DIR      SF_DATA_DIR "/tabs"
 #define SF_SOUNDS_DIR    SF_DATA_DIR "/sounds"
+#define SF_BG_IMAGE      SF_DATA_DIR "/background"   /* + .jpg or .png */
 #define SF_CASES_DIR     SF_DATA_DIR "/cases"    /* optional case images */
 #define SF_COVERS_DIR    SF_DATA_DIR "/covers"   /* processed cover cache (safe to delete) */
 #define SF_LOG_PATH      SF_DATA_DIR "/log.txt"
@@ -47,5 +48,6 @@ CoverLoader *ps3_covers_start(void);   /* NULL = placeholders only */
 void ps3_covers_stop(void);
 void ps3_decode_lock(void);            /* one JPEG/PNG decode at a time */
 void ps3_decode_unlock(void);
+int  ps3_decode_image(const char *path, int min_w, int min_h, int max_dim, int *w, int *h, uint8_t **rgba);
 
 #endif

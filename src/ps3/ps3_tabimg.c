@@ -14,6 +14,8 @@
 #include "render.h"
 #include "ui.h"
 #include "imgscale.h"
+#include "stage.h"
+#include <jpgdec/jpgdec.h>
 
 #define TAB_IMG_MAX_W 1024
 #define TAB_IMG_MAX_H 256
@@ -190,6 +192,116 @@ static void load_case_images(void)
             log_printf("cases: %s not found, %s covers are shown without a case", mine[p], p == 0 ? "PS1" : p == 1 ? "PS2" : "PS3");
 }
 
+/* ---- background picture: /dev_hdd0/tmp/spookyflow/background.jpg (or
+ * .png), shown with Flow Settings > Background > Image. Cropped to the
+ * screen shape and resized to 1280x720 once. */
+#define BG_W 1280
+#define BG_H 720
+
+static void load_background(void)
+{
+    static const char *const names[] = { SF_BG_IMAGE ".jpg", SF_BG_IMAGE ".JPG", SF_BG_IMAGE ".png", SF_BG_IMAGE ".PNG", SF_BG_IMAGE ".jpeg" };
+    int i;
+    for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++) {
+        uint8_t *rgba = NULL, *crop, *out;
+        int w = 0, h = 0, cx, cy, cw, ch, y;
+        if (!ps3_fs_exists(names[i])) continue;
+        if (ps3_decode_image(names[i], BG_W, BG_H, 4096, &w, &h, &rgba) != 0 || !rgba) {
+            log_printf("background: %s could not be decoded (%dx%d, max 4096)", names[i], w, h);
+            free(rgba);
+            return;
+        }
+        /* crop to 16:9 around the center */
+        if ((float)w / (float)h > 16.0f / 9.0f) { ch = h; cw = h * 16 / 9; } else { cw = w; ch = w * 9 / 16; }
+        cx = (w - cw) / 2; cy = (h - ch) / 2;
+        crop = (uint8_t *)malloc((size_t)cw * ch * 4u);
+        out = (uint8_t *)malloc((size_t)BG_W * BG_H * 4u);
+        if (!crop || !out) { free(crop); free(out); free(rgba); return; }
+        for (y = 0; y < ch; y++) memcpy(crop + (size_t)y * cw * 4u, rgba + (((size_t)(y + cy) * w) + cx) * 4u, (size_t)cw * 4u);
+        free(rgba);
+        img_resample_rgba(crop, cw, ch, out, BG_W, BG_H);
+        free(crop);
+        for (y = 0; y < BG_W * BG_H; y++) out[y * 4 + 3] = 255;
+        if (r_texture_upload_rgba(TEX_BG_IMAGE, BG_W, BG_H, out) == 0) {
+            ui_set_background_image(TEX_BG_IMAGE);
+            log_printf("background: using %s (%dx%d)", names[i], w, h);
+        } else {
+            log_printf("background: no texture memory for %s", names[i]);
+        }
+        free(out);
+        return;
+    }
+    log_printf("background: no %s.jpg/.png (Background > Image shows a plain backdrop)", SF_BG_IMAGE);
+}
+
+/* ---- built-in Stage background (src/core/stage_data.c) ---- */
+static int upload_png_buffer(int tex, const unsigned char *buf, unsigned size, int *ow, int *oh)
+{
+    pngData png;
+    unsigned char *rgba;
+    u32 x, y;
+    int rc;
+    memset(&png, 0, sizeof(png));
+    ps3_decode_lock();
+    rc = pngLoadFromBuffer(buf, size, &png);
+    ps3_decode_unlock();
+    if (rc != 0 || !png.bmp_out) return -1;
+    rgba = (unsigned char *)malloc((size_t)png.width * png.height * 4u);
+    if (!rgba) { free(png.bmp_out); return -1; }
+    for (y = 0; y < png.height; y++) {
+        const unsigned char *row = (const unsigned char *)png.bmp_out + (size_t)y * png.pitch;
+        for (x = 0; x < png.width; x++) {
+            const unsigned char *p = row + x * 4u;
+            unsigned char *d = rgba + ((size_t)y * png.width + x) * 4u;
+            d[0] = p[1]; d[1] = p[2]; d[2] = p[3]; d[3] = p[0];
+        }
+    }
+    *ow = (int)png.width; *oh = (int)png.height;
+    free(png.bmp_out);
+    rc = r_texture_upload_rgba(tex, *ow, *oh, rgba);
+    free(rgba);
+    return rc;
+}
+
+static void load_stage(void)
+{
+    jpgData jpg;
+    int rc, w = 0, h = 0;
+    unsigned char *rgba;
+    u32 x, y;
+    if (sysModuleIsLoaded(SYSMODULE_JPGDEC) != 0) sysModuleLoad(SYSMODULE_JPGDEC);
+    memset(&jpg, 0, sizeof(jpg));
+    ps3_decode_lock();
+    rc = jpgLoadFromBuffer(g_stage_jpg, g_stage_jpg_size, &jpg);
+    ps3_decode_unlock();
+    if (rc != 0 || !jpg.bmp_out) { log_printf("stage: background could not be decoded (%d)", rc); return; }
+    /* the JPEG is brightness only: R = G = B; keep one byte per pixel */
+    rgba = (unsigned char *)malloc((size_t)jpg.width * jpg.height * 2u);
+    if (!rgba) { free(jpg.bmp_out); return; }
+    for (y = 0; y < jpg.height; y++) {
+        const unsigned char *row = (const unsigned char *)jpg.bmp_out + (size_t)y * jpg.pitch;
+        for (x = 0; x < jpg.width; x++) rgba[(size_t)y * jpg.width + x] = row[x * 4u + 1u];
+    }
+    free(jpg.bmp_out);
+    {
+        int n = (int)(jpg.width * jpg.height);
+        unsigned char *hi = rgba + n;
+        stage_highlight(rgba, n, hi);
+        rc = r_texture_upload_alpha(TEX_STAGE, (int)jpg.width, (int)jpg.height, rgba);
+        if (rc == 0 && r_texture_upload_alpha(TEX_STAGE_HI, (int)jpg.width, (int)jpg.height, hi) == 0)
+            ui_set_stage_highlight(TEX_STAGE_HI);
+    }
+    free(rgba);
+    if (rc != 0) { log_printf("stage: no texture memory"); return; }
+    if (upload_png_buffer(TEX_STAGE_SHAPES, g_stage_shapes_png, g_stage_shapes_png_size, &w, &h) != 0) {
+        log_printf("stage: shapes could not be decoded");
+        ui_set_stage(TEX_STAGE, -1);
+        return;
+    }
+    ui_set_stage(TEX_STAGE, TEX_STAGE_SHAPES);
+    log_printf("stage: background ready (shapes %dx%d)", w, h);
+}
+
 void ps3_load_tab_images(void)
 {
     static int done;
@@ -203,4 +315,6 @@ void ps3_load_tab_images(void)
     }
     for (p = 0; p < PLAT_COUNT; p++) load_one(p);
     load_case_images();
+    load_background();
+    load_stage();
 }

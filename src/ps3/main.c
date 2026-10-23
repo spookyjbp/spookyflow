@@ -28,7 +28,7 @@
 #include "ui.h"
 
 #define VERTEX_BUFFER_BYTES (4u * 1024u * 1024u)
-#define TEXTURE_POOL_BYTES  (8u * 1024u * 1024u)
+#define TEXTURE_POOL_BYTES  (24u * 1024u * 1024u)   /* UI atlases, case images, backgrounds (1280x720 each) */
 
 static Library g_lib;
 static App g_app;

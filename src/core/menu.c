@@ -18,7 +18,7 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
         } else { tmp[n++] = ROW_G_OFFLINE; tmp[n++] = ROW_G_RSX; }
     } else if (panel == PANEL_FLOW) {
         tmp[n++] = ROW_F_AUTOPLAY; tmp[n++] = ROW_F_OFFLINE; tmp[n++] = ROW_F_SFX; tmp[n++] = ROW_F_VOLUME; tmp[n++] = ROW_F_SHUFFLE;
-        tmp[n++] = ROW_F_BACKGROUND; tmp[n++] = ROW_F_UI_COLOR; tmp[n++] = ROW_F_INFO; tmp[n++] = ROW_F_CASES; tmp[n++] = ROW_F_SLEEP; tmp[n++] = ROW_F_COVERS; tmp[n++] = ROW_F_IGNORE_THE;
+        tmp[n++] = ROW_F_BACKGROUND; tmp[n++] = ROW_F_UI_COLOR; tmp[n++] = ROW_F_INFO; tmp[n++] = ROW_F_CASES; tmp[n++] = ROW_F_REFLECT; tmp[n++] = ROW_F_SLEEP; tmp[n++] = ROW_F_COVERS; tmp[n++] = ROW_F_IGNORE_THE;
         tmp[n++] = ROW_F_XMB_TOP; tmp[n++] = ROW_F_RESCAN; tmp[n++] = ROW_F_QUIT;
         tmp[n++] = ROW_F_POWEROFF;
     }
@@ -45,6 +45,7 @@ const char *menu_label(RowKind k)
     case ROW_D_DISC: return "Disc";
     case ROW_F_INFO: return "Show Game Info";
     case ROW_F_CASES: return "Custom Cases";
+    case ROW_F_REFLECT: return "Reflections";
     case ROW_F_SLEEP: return "Sleep Mode";
     case ROW_F_COVERS: return "Download Missing Covers";
     case ROW_F_IGNORE_THE: return "Ignore \"The\" When Sorting";
@@ -94,10 +95,11 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
         break;
     case ROW_F_VOLUME: snprintf(out, cap, "%d%%", s->music_volume); break;
     case ROW_F_SHUFFLE: sf_strlcpy(out, onoff(s->shuffle), cap); break;
-    case ROW_F_BACKGROUND: sf_strlcpy(out, s->background == BG_IMAGE ? "Image" : "Animated", cap); break;
+    case ROW_F_BACKGROUND: sf_strlcpy(out, settings_background_name(s->background), cap); break;
     case ROW_F_UI_COLOR: sf_strlcpy(out, settings_color_name(s->ui_color), cap); break;
     case ROW_F_INFO: sf_strlcpy(out, onoff(s->show_info), cap); break;
     case ROW_F_CASES: sf_strlcpy(out, onoff(s->cases), cap); break;
+    case ROW_F_REFLECT: sf_strlcpy(out, onoff(s->reflections), cap); break;
     case ROW_F_SLEEP:
         if (s->sleep_min <= 0) sf_strlcpy(out, "Off", cap);
         else snprintf(out, cap, "After %d min", s->sleep_min);
@@ -148,10 +150,18 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
         return MENU_FX_CHANGED;
     }
     case ROW_F_SHUFFLE: s->shuffle = cycle(s->shuffle, 2, dir); return MENU_FX_CHANGED;
-    case ROW_F_BACKGROUND: s->background = cycle(s->background, 2, dir); return MENU_FX_CHANGED;
+    case ROW_F_BACKGROUND: {
+        /* menu order: the animated styles, then the still image */
+        static const int order[BG_COUNT] = { BG_STAGE, BG_ANIMATED, BG_AURORA, BG_FIREFLIES, BG_RIBBONS, BG_HALO, BG_TWILIGHT, BG_IMAGE };
+        int i, cur = 0;
+        for (i = 0; i < BG_COUNT; i++) if (order[i] == s->background) cur = i;
+        s->background = order[cycle(cur, BG_COUNT, dir)];
+        return MENU_FX_CHANGED;
+    }
     case ROW_F_UI_COLOR: s->ui_color = cycle(s->ui_color, UI_COLOR_COUNT, dir); return MENU_FX_CHANGED;
     case ROW_F_INFO: s->show_info = cycle(s->show_info, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_CASES: s->cases = cycle(s->cases, 2, dir); return MENU_FX_CHANGED;
+    case ROW_F_REFLECT: s->reflections = cycle(s->reflections, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_SLEEP: {
         static const int steps[] = { 0, 1, 5, 10, 15, 30, 60 };
         int i, cur = 0, n = (int)(sizeof(steps) / sizeof(steps[0]));

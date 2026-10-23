@@ -12,7 +12,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.2.10 (milestone 2, fix 10)"
+#define APP_VERSION     "0.2.14 (milestone 2, fix 14)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */

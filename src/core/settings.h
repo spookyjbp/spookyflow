@@ -9,7 +9,10 @@
 
 /* Per-game tri-state for auto-play */
 enum { AP_DEFAULT = 0, AP_ON = 1, AP_OFF = 2 };
-enum { BG_ANIMATED = 0, BG_IMAGE = 1 };
+/* Background styles (values are stored in settings.ini; keep them stable) */
+enum { BG_ANIMATED = 0 /* "Drift" */, BG_IMAGE = 1, BG_AURORA = 2, BG_FIREFLIES = 3,
+       BG_RIBBONS = 4, BG_HALO = 5, BG_TWILIGHT = 6, BG_STAGE = 7, BG_COUNT = 8 };
+const char *settings_background_name(int bg);
 enum { UI_COLOR_BLUE = 0, UI_COLOR_RED, UI_COLOR_GREEN, UI_COLOR_PURPLE, UI_COLOR_PINK,
        UI_COLOR_ORANGE, UI_COLOR_WHITE, UI_COLOR_COUNT };
 
@@ -33,6 +36,7 @@ typedef struct {
     int ui_color;            /* UI_COLOR_*, default blue */
     int cases;               /* draw covers inside case images (ManaGunZ's / your own), default 1 */
     int sleep_min;           /* minutes without input before the screen dims, 0 = never, default 5 */
+    int reflections;         /* mirror image of the cases on the floor, default 1 */
     int show_info;           /* genre / players / size chips under the case, default 1 */
     int ignore_the;          /* default 0 */
     int xmb_top;             /* pin spookyflow to the top of the XMB Game column, default 0 */

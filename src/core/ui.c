@@ -109,7 +109,34 @@ static float H(void) { return d_screen()->H; }
 /* ------------------------------------------------------------------ */
 /* Background                                                          */
 
-static void draw_background(const App *a, float alpha, int animated)
+/* ---- Backgrounds (Flow Settings > Background). All procedural, tinted by
+ * the UI color, a handful of soft textured quads or thin strips each. ---- */
+
+/* the UI color as a background tint (white -> a calm silver blue) */
+static uint32_t bg_tint(void) { return accent_white() ? 0x6F86B4FFu : (accent() | 0xFFu); }
+
+static uint32_t hue_shift(uint32_t c, float amt)
+{
+    /* rotate the hue a little (blend each channel towards its neighbor) */
+    float r = (float)((c >> 24) & 255), g = (float)((c >> 16) & 255), b = (float)((c >> 8) & 255);
+    float k = amt < 0.0f ? -amt : amt;
+    if (amt >= 0.0f) { float t = r; r = sf_lerp(r, b, k); b = sf_lerp(b, g, k); g = sf_lerp(g, t, k); }
+    else { float t = g; g = sf_lerp(g, b, k); b = sf_lerp(b, r, k); r = sf_lerp(r, t, k); }
+    return sf_rgba((int)r, (int)g, (int)b, (int)(c & 255));
+}
+
+static float hash01(uint32_t i) { uint32_t h = i * 2654435761u; h ^= h >> 15; h *= 2246822519u; h ^= h >> 13; return (float)(h & 0xFFFF) / 65535.0f; }
+
+static void vignette(float alpha)
+{
+    float e = W() * 0.16f, v = H() * 0.22f;
+    d_rect_hgrad(0, 0, e, H(), sf_col_alpha(0x000000FFu, 0.55f * alpha), 0x00000000u);
+    d_rect_hgrad(W() - e, 0, e, H(), 0x00000000u, sf_col_alpha(0x000000FFu, 0.55f * alpha));
+    d_rect_grad(0, 0, W(), v, sf_col_alpha(0x000000FFu, 0.45f * alpha), 0x00000000u);
+    d_rect_grad(0, H() - v, W(), v, 0x00000000u, sf_col_alpha(0x000000FFu, 0.55f * alpha));
+}
+
+static void bg_drift(float t, float alpha)
 {
     static const float k_blob[6][6] = {
         /* x0,   y0,   r,    speedx, speedy, phase */
@@ -121,8 +148,6 @@ static void draw_background(const App *a, float alpha, int animated)
         { 0.45f, 0.15f, 0.35f, 0.047f, 0.039f, 2.4f },
     };
     int i;
-    float t = animated ? (float)a->time : 0.0f;
-    d_rect_grad(0, 0, W(), H(), sf_col_alpha(TH_BG_TOP, alpha), sf_col_alpha(TH_BG_BOTTOM, alpha));
     for (i = 0; i < 6; i++) {
         const float *b = k_blob[i];
         float cx = W() * (b[0] + 0.10f * sinf(t * b[3] * 2.0f + b[5]));
@@ -130,6 +155,191 @@ static void draw_background(const App *a, float alpha, int animated)
         float r = H() * b[2] * (1.0f + 0.06f * sinf(t * 0.11f + b[5]));
         uint32_t shape = accent_white() ? TH_BG_SHAPE : sf_col_mix(TH_BG_SHAPE, accent(), 0.35f);
         d_blob(cx, cy, r, sf_col_alpha(shape, TH_BG_SHAPE_ALPHA * alpha * (0.6f + 0.08f * (float)i)));
+    }
+}
+
+/* Aurora: wide soft curtains of light drifting across the upper sky */
+static void bg_aurora(float t, float alpha)
+{
+    uint32_t c0 = bg_tint();
+    int i;
+    for (i = 0; i < 5; i++) {
+        float ph = (float)i * 1.37f;
+        float cx = W() * (0.15f + 0.18f * (float)i + 0.08f * sinf(t * 0.045f + ph));
+        float cy = H() * (0.24f + 0.07f * sinf(t * 0.06f + ph * 1.7f) + 0.03f * (float)(i & 1));
+        float rx = W() * 0.62f * d_screen()->pa * (0.8f + 0.2f * sinf(t * 0.05f + ph));
+        float ry = H() * (0.10f + 0.04f * sinf(t * 0.07f + ph * 0.6f));
+        uint32_t c = hue_shift(c0, (float)(i - 2) * 0.22f);
+        d_blob_ellipse(cx, cy, rx, ry, sf_col_alpha(sf_col_mix(c, 0x000000FFu, 0.35f), 0.33f * alpha));
+    }
+    /* a faint second layer, lower and slower */
+    for (i = 0; i < 3; i++) {
+        float ph = 4.0f + (float)i * 2.1f;
+        d_blob_ellipse(W() * (0.25f + 0.25f * (float)i + 0.06f * sinf(t * 0.03f + ph)), H() * (0.52f + 0.04f * sinf(t * 0.05f + ph)),
+                       W() * 0.5f * d_screen()->pa, H() * 0.07f, sf_col_alpha(sf_col_mix(hue_shift(c0, 0.35f), 0x000000FFu, 0.5f), 0.20f * alpha));
+    }
+    vignette(alpha * 0.8f);
+}
+
+/* Fireflies: small glowing motes rising slowly, twinkling */
+static void bg_fireflies(float t, float alpha)
+{
+    uint32_t c = sf_col_mix(bg_tint(), 0xFFFFFFFFu, 0.35f);
+    int i;
+    d_blob(W() * 0.5f, H() * 1.05f, H() * 0.75f, sf_col_alpha(sf_col_mix(bg_tint(), 0x000000FFu, 0.55f), 0.30f * alpha));
+    for (i = 0; i < 46; i++) {
+        float sp = 0.012f + 0.020f * hash01((uint32_t)i * 7u + 1u);
+        float y = 1.08f - fmodf(hash01((uint32_t)i * 3u + 2u) + t * sp, 1.16f);
+        float x = hash01((uint32_t)i * 5u + 3u) + 0.025f * sinf(t * (0.3f + 0.4f * hash01((uint32_t)i)) + (float)i);
+        float tw = 0.55f + 0.45f * sinf(t * (0.6f + 0.9f * hash01((uint32_t)i * 11u)) + (float)i * 2.3f);
+        float r = H() * (0.004f + 0.006f * hash01((uint32_t)i * 13u + 5u));
+        float edge = sf_clampf(sf_minf(y, 1.0f - y) * 6.0f, 0.0f, 1.0f);     /* fade near top/bottom */
+        float al = alpha * tw * edge;
+        d_blob(W() * x, H() * y, r * 6.0f, sf_col_alpha(c, 0.10f * al));      /* glow */
+        d_blob(W() * x, H() * y, r * 1.6f, sf_col_alpha(0xFFFFFFFFu, 0.55f * al));   /* core */
+    }
+    vignette(alpha * 0.7f);
+}
+
+/* Ribbons: three thin glowing ribbons flowing across the lower screen */
+static void bg_ribbons(float t, float alpha)
+{
+    uint32_t c0 = bg_tint();
+    int r, i;
+    enum { SEG = 40 };
+    for (r = 0; r < 3; r++) {
+        float base = H() * (0.70f + 0.07f * (float)r), amp = H() * (0.06f + 0.02f * (float)r);
+        float k = 2.2f + 0.6f * (float)r, w = 0.18f + 0.05f * (float)r, ph = (float)r * 2.0f;
+        uint32_t c = hue_shift(c0, ((float)r - 1.0f) * 0.25f);
+        uint32_t core = sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.25f), 0.38f * alpha);
+        uint32_t clear = c & 0xFFFFFF00u;
+        r_tris_begin();
+        for (i = 0; i < SEG; i++) {
+            float u0 = (float)i / SEG, u1 = (float)(i + 1) / SEG;
+            float x0 = W() * u0, x1 = W() * u1;
+            float y0 = base + amp * sinf(u0 * k * 3.14159f + t * w + ph) + amp * 0.4f * sinf(u0 * 7.0f - t * w * 1.6f + ph);
+            float y1 = base + amp * sinf(u1 * k * 3.14159f + t * w + ph) + amp * 0.4f * sinf(u1 * 7.0f - t * w * 1.6f + ph);
+            float h0 = H() * (0.010f + 0.012f * (0.5f + 0.5f * sinf(u0 * 5.0f + t * 0.2f + ph)));
+            float h1 = H() * (0.010f + 0.012f * (0.5f + 0.5f * sinf(u1 * 5.0f + t * 0.2f + ph)));
+            /* upper half: transparent edge -> core */
+            r_vtx(x0, y0 - h0, clear); r_vtx(x1, y1 - h1, clear); r_vtx(x1, y1, core);
+            r_vtx(x0, y0 - h0, clear); r_vtx(x1, y1, core); r_vtx(x0, y0, core);
+            /* lower half: core -> transparent edge */
+            r_vtx(x0, y0, core); r_vtx(x1, y1, core); r_vtx(x1, y1 + h1, clear);
+            r_vtx(x0, y0, core); r_vtx(x1, y1 + h1, clear); r_vtx(x0, y0 + h0, clear);
+        }
+        r_tris_end();
+    }
+    d_blob_ellipse(W() * 0.5f, H() * 0.78f, W() * 0.7f * d_screen()->pa, H() * 0.22f, sf_col_alpha(sf_col_mix(c0, 0x000000FFu, 0.6f), 0.22f * alpha));
+    vignette(alpha * 0.8f);
+}
+
+/* Halo: a calm glow behind the selected game, breathing very slowly */
+static void bg_halo(float t, float alpha)
+{
+    uint32_t c = sf_col_mix(bg_tint(), 0x000000FFu, 0.35f);
+    float br = 0.85f + 0.15f * sinf(t * 0.35f);
+    d_blob(W() * 0.5f, H() * LY_FLOW_CY, H() * 0.62f * br, sf_col_alpha(c, 0.42f * alpha));
+    d_blob(W() * 0.5f, H() * LY_FLOW_CY, H() * 0.30f, sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.2f), 0.18f * alpha * br));
+    d_blob_ellipse(W() * 0.5f, H() * 1.02f, W() * 0.6f * d_screen()->pa, H() * 0.18f, sf_col_alpha(c, 0.25f * alpha));
+    vignette(alpha);
+}
+
+/* Twilight: deep sky fading to a soft glowing horizon, with slow low mist */
+static void bg_twilight(float t, float alpha)
+{
+    uint32_t c = bg_tint(), sky = sf_col_mix(c, 0x05060AFFu, 0.88f), hor = sf_col_mix(c, 0x05060AFFu, 0.62f);
+    int i;
+    d_rect_grad(0, 0, W(), H() * 0.62f, sf_col_alpha(0x05060AFFu, alpha), sf_col_alpha(sky, alpha));
+    d_rect_grad(0, H() * 0.62f, W(), H() * 0.38f, sf_col_alpha(sky, alpha), sf_col_alpha(hor, alpha));
+    d_blob_ellipse(W() * 0.5f, H() * 0.98f, W() * 0.8f * d_screen()->pa, H() * 0.20f, sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.15f), 0.22f * alpha));
+    for (i = 0; i < 4; i++) {
+        float ph = (float)i * 1.9f;
+        float x = fmodf(0.2f + 0.3f * (float)i + t * (0.004f + 0.002f * (float)i), 1.6f) - 0.3f;
+        d_blob_ellipse(W() * x, H() * (0.84f + 0.04f * sinf(t * 0.05f + ph)), W() * 0.35f * d_screen()->pa, H() * 0.06f,
+                       sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.4f), 0.07f * alpha));
+    }
+    vignette(alpha * 0.6f);
+}
+
+static int g_bg_tex = -1;
+void ui_set_background_image(int tex) { g_bg_tex = tex; }
+
+/* ---- Stage: the built-in picture with its button shapes floating ---- */
+static int g_stage_tex = -1, g_stage_shapes = -1, g_stage_hi = -1;
+void ui_set_stage(int bg_tex, int shapes_tex) { g_stage_tex = bg_tex; g_stage_shapes = shapes_tex; }
+void ui_set_stage_highlight(int tex) { g_stage_hi = tex; }
+
+/* the UI color at full brightness (its largest channel at 255); White -> silver */
+static uint32_t stage_tint(void)
+{
+    uint32_t c = accent_white() ? 0xC4CEE2FFu : (accent() | 0xFFu);
+    int r = (int)(c >> 24), g = (int)((c >> 16) & 255), b = (int)((c >> 8) & 255), m = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    if (m <= 0) return 0xFFFFFFFFu;
+    return sf_rgba(r * 255 / m, g * 255 / m, b * 255 / m, 255);
+}
+
+typedef struct { unsigned char kind; short x, y, size; unsigned char alpha; } StageShape;
+/* where the shapes sit in the 1672x941 source picture: kind (0 cross, 1
+ * circle, 2 triangle, 3 square), center, size in px, strength 0..255 */
+static const StageShape k_stage[] = {
+    { 2,   75,  40, 100, 200 }, { 1,  181, 161,  66, 220 }, { 2,  333, 236,  80, 210 }, { 0,   80, 304, 140, 255 },
+    { 3,  261, 353,  90, 240 }, { 0,  381, 405,  42, 150 }, { 1,  530, 410,  62, 190 }, { 2,  566, 350,  56, 150 },
+    { 3,  668, 376,  38, 110 }, { 0,  380,  72,  50, 100 }, { 1,  141, 392,  45, 110 }, { 0, 1469,  55,  50, 170 },
+    { 1, 1543, 173, 120, 255 }, { 2, 1289, 251, 106, 230 }, { 2, 1577, 334, 128, 255 }, { 0, 1375, 386,  54, 190 },
+    { 3, 1255, 438,  64, 200 }, { 3, 1156, 486,  34, 120 }, { 2, 1120, 325,  44, 130 }, { 1, 1105, 388,  32, 110 },
+    { 0, 1017, 327,  35, 100 },
+};
+
+static void bg_stage(float t, float alpha)
+{
+    int i;
+    /* the scene is stored as brightness: tinted with the UI color, plus its
+     * white-hot cores on top, so it follows Flow Settings > UI Color */
+    d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, alpha));
+    d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(stage_tint(), alpha));
+    if (g_stage_hi >= 0) d_image(g_stage_hi, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, 0.85f * alpha));
+    if (g_stage_shapes < 0) return;
+    for (i = 0; i < (int)(sizeof(k_stage) / sizeof(k_stage[0])); i++) {
+        const StageShape *s = &k_stage[i];
+        float p = (float)i * 1.7f, depth = (float)s->size / 140.0f;      /* big = near: moves more */
+        float x = (float)s->x / 1672.0f, y = (float)s->y / 941.0f;
+        float sz = (float)s->size / 941.0f * H() * (128.0f / 122.0f);
+        float k = 0.6f + 0.4f * depth;
+        float cx, cy, ang, sc, al;
+        /* slow floating: drift, bob, tilt and breathe, each at its own pace */
+        cx = W() * (x + 0.014f * k * sinf(t * 0.11f + p) + 0.006f * sinf(t * 0.29f + p * 2.1f));
+        cy = H() * (y + 0.020f * k * sinf(t * 0.15f + p * 1.3f));
+        ang = 0.16f * sinf(t * 0.09f + p) + 0.05f * sinf(t * 0.23f + p * 0.7f);
+        sc = 1.0f + 0.05f * sinf(t * 0.19f + p * 1.9f);
+        al = (float)s->alpha / 255.0f * (0.80f + 0.20f * sinf(t * 0.35f + p * 2.7f)) * alpha;
+        d_image_rot(g_stage_shapes, cx, cy, sz * sc, sz * sc, ang, (float)s->kind * 0.25f, (float)(s->kind + 1) * 0.25f,
+                    sf_col_alpha(sf_col_mix(stage_tint(), 0xFFFFFFFFu, 0.30f), al));
+    }
+}
+
+static void draw_background(const App *a, float alpha, int animated)
+{
+    float t = animated ? (float)a->time : 0.0f;
+    int bg = a->mode == MODE_LOADING ? BG_ANIMATED : a->settings.background;
+    d_rect_grad(0, 0, W(), H(), sf_col_alpha(TH_BG_TOP, alpha), sf_col_alpha(TH_BG_BOTTOM, alpha));
+    if (bg == BG_IMAGE) {
+        if (g_bg_tex >= 0) {
+            /* the picture fills the screen (it was cropped to 16:9 when loaded) */
+            d_image(g_bg_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha));
+            return;
+        }
+        bg_drift(0.0f, alpha);   /* no picture: a still version of Drift */
+        return;
+    }
+    if (bg == BG_STAGE && g_stage_tex >= 0) { bg_stage(t, alpha); return; }
+    switch (bg) {
+    case BG_AURORA:    bg_aurora(t, alpha); break;
+    case BG_FIREFLIES: bg_fireflies(t, alpha); break;
+    case BG_RIBBONS:   bg_ribbons(t, alpha); break;
+    case BG_HALO:      bg_halo(t, alpha); break;
+    case BG_TWILIGHT:  bg_twilight(t, alpha); break;
+    default:           bg_drift(t, alpha); break;
     }
 }
 
@@ -157,6 +367,36 @@ static void case_window(int plat, float x, float y, float w, float h, Rect *r)
     r->h = h * (cw.y1 - cw.y0);
 }
 
+/* ---- reflections: a mirror image of the bottom of each case on the floor,
+ * fading out with distance. The mirror line is the case's bottom edge. ---- */
+#define REFLECT_DEPTH 0.25f   /* how far it reaches, fraction of case height */
+#define REFLECT_ALPHA 0.32f   /* strength right under the case */
+
+/* mirror the part of rect (y..y+h) that lies within `depth` above axis A
+ * to below it, as texture rows v(y)=0..1 */
+static void reflect_tex(int tex, float x, float y, float w, float h, float A, float depth, uint32_t tint, float k)
+{
+    float top = A, bot = A + depth, o0, o1, v0, v1, a0, a1;
+    /* mirrored point m (below A) shows original row 2A - m */
+    float m0 = 2.0f * A - (y + h), m1 = 2.0f * A - y;     /* mirrored rect */
+    if (m0 < top) m0 = top;
+    if (m1 > bot) m1 = bot;
+    if (m1 <= m0 || h <= 0.0f) return;
+    o0 = 2.0f * A - m0; o1 = 2.0f * A - m1;             /* original rows (o0 > o1) */
+    v0 = (o0 - y) / h; v1 = (o1 - y) / h;
+    a0 = k * (1.0f - (m0 - A) / depth); a1 = k * (1.0f - (m1 - A) / depth);
+    d_image_v(tex, x, m0, w, m1 - m0, v0, v1, sf_col_alpha(tint, a0), sf_col_alpha(tint, a1));
+}
+
+static void reflect_rect(float x, float y, float w, float h, float A, float depth, uint32_t col, float k)
+{
+    float m0 = 2.0f * A - (y + h), m1 = 2.0f * A - y;
+    if (m0 < A) m0 = A;
+    if (m1 > A + depth) m1 = A + depth;
+    if (m1 <= m0) return;
+    d_rect_grad(x, m0, w, m1 - m0, sf_col_alpha(col, k * (1.0f - (m0 - A) / depth)), sf_col_alpha(col, k * (1.0f - (m1 - A) / depth)));
+}
+
 /* no_cover: the game has no cover (title card); otherwise an empty dark
  * front is shown until the cover (tex, faded in by art) arrives */
 static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art, int no_cover,
@@ -169,6 +409,14 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
     if (alpha <= 0.003f) return;
     if (tex < 0) art = 0.0f;
     case_window(plat, x, y, w, h, &win);
+    /* reflection first (it lies under everything) */
+    if (a->settings.reflections) {
+        float A = y + h, depth = h * REFLECT_DEPTH, k = REFLECT_ALPHA * alpha * b;
+        uint32_t white = 0xFFFFFFFFu;
+        if (art < 1.0f) reflect_rect(win.x, win.y, win.w, win.h, A, depth, 0x1E1F24FFu, k * (1.0f - art));
+        if (art > 0.0f) reflect_tex(tex, win.x, win.y, win.w, win.h, A, depth, white, k * art);
+        if (cased) reflect_tex(g_case_tex[plat], x, y, w, h, A, depth, white, k);
+    }
     if (art < 1.0f) {
         float pa = alpha * (1.0f - art);
         d_rect(win.x, win.y, win.w, win.h, shade(0x1E1F24FFu, b, pa));     /* empty front */
@@ -814,7 +1062,7 @@ void ui_draw(App *a)
 {
     UiMetrics m;
     float intro, ia;
-    int animated = a->settings.background == BG_ANIMATED || a->mode == MODE_LOADING;
+    int animated = a->settings.background != BG_IMAGE || a->mode == MODE_LOADING;
     ui_set_color(a->settings.ui_color);
     set_glow(a->time);
     layout_use_case_images(a->settings.cases);

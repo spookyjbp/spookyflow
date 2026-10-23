@@ -12,6 +12,7 @@
 #include "../../src/core/ui.h"
 #include "../../src/core/render.h"
 #include "../../src/core/util.h"
+#include "../../src/core/stage.h"
 #include <math.h>
 
 static Library g_lib;
@@ -137,6 +138,39 @@ static void step_covers(float secs)
         cover_worker_step(&g_pv_loader);
         cover_worker_step(&g_pv_loader);
     }
+}
+
+static int load_raw(const char *path, int tex, int *ow, int *oh)
+{
+    FILE *f = path ? fopen(path, "rb") : NULL;
+    int w = 0, h = 0, ok = -1;
+    if (f && fscanf(f, "%d %d", &w, &h) == 2 && fgetc(f) == '\n' && w > 0 && h > 0) {
+        unsigned char *px = (unsigned char *)malloc((size_t)w * h * 4);
+        if (px && fread(px, 1, (size_t)w * h * 4, f) == (size_t)w * h * 4 && r_texture_upload_rgba(tex, w, h, px) == 0) ok = 0;
+        free(px);
+    }
+    if (f) fclose(f);
+    if (ow) *ow = w;
+    if (oh) *oh = h;
+    return ok;
+}
+
+/* raw dump of an alpha (brightness) image: "w h\n" + w*h bytes */
+static int load_raw_alpha(const char *path, int tex, int hi_tex)
+{
+    FILE *f = path ? fopen(path, "rb") : NULL;
+    int w = 0, h = 0, ok = -1;
+    if (f && fscanf(f, "%d %d", &w, &h) == 2 && fgetc(f) == '\n' && w > 0 && h > 0) {
+        unsigned char *px = (unsigned char *)malloc((size_t)w * h * 2);
+        if (px && fread(px, 1, (size_t)w * h, f) == (size_t)w * h && r_texture_upload_alpha(tex, w, h, px) == 0) {
+            stage_highlight(px, w * h, px + (size_t)w * h);
+            if (r_texture_upload_alpha(hi_tex, w, h, px + (size_t)w * h) == 0) ui_set_stage_highlight(hi_tex);
+            ok = 0;
+        }
+        free(px);
+    }
+    if (f) fclose(f);
+    return ok;
 }
 
 static int find_title(int plat, const char *t)
@@ -337,6 +371,87 @@ int main(int argc, char **argv)
                     render(nm, 1280, 720);
                 }
                 ui_set_info_style(2);
+            }
+            {
+                static const int bgs[] = { BG_ANIMATED, BG_AURORA, BG_FIREFLIES, BG_RIBBONS, BG_HALO, BG_TWILIGHT };
+                int b, c2;
+                char nm[64];
+                double t0 = g_app.time;
+                for (b = 0; b < 6; b++) {
+                    g_app.settings.background = bgs[b];
+                    g_app.time = t0 + 7.0 + b * 3.1;
+                    snprintf(nm, sizeof(nm), "31_bg_%d_%s", b, settings_background_name(bgs[b]));
+                    render(nm, 1280, 720);
+                }
+                /* the same styles in other UI colors */
+                for (c2 = 1; c2 < 5; c2 += 3)
+                    for (b = 1; b < 6; b++) {
+                        g_app.settings.ui_color = c2;
+                        g_app.settings.background = bgs[b];
+                        snprintf(nm, sizeof(nm), "32_bg_%s_%s", settings_background_name(bgs[b]), settings_color_name(c2));
+                        render(nm, 1280, 720);
+                    }
+                g_app.settings.ui_color = UI_COLOR_BLUE;
+                g_app.settings.background = BG_ANIMATED;
+                g_app.time = t0;
+            }
+            /* the user's background picture (raw dump; only with SF_PREVIEW_BG) */
+            {
+                const char *bgf = getenv("SF_PREVIEW_BG");
+                FILE *f = bgf ? fopen(bgf, "rb") : NULL;
+                int w = 0, h = 0;
+                if (f && fscanf(f, "%d %d", &w, &h) == 2 && fgetc(f) == '\n' && w > 0 && h > 0) {
+                    unsigned char *px = (unsigned char *)malloc((size_t)w * h * 4);
+                    if (px && fread(px, 1, (size_t)w * h * 4, f) == (size_t)w * h * 4 &&
+                        r_texture_upload_rgba(TEX_BG_IMAGE, w, h, px) == 0) {
+                        ui_set_background_image(TEX_BG_IMAGE);
+                        g_app.settings.background = BG_IMAGE;
+                        render("33_bg_image_ps2", 1280, 720);
+                        render("33_bg_image_ps2_1080p", 1920, 1080);
+                        press(SFB_R1); step_covers(0.8f);
+                        render("33_bg_image_ps3", 1280, 720);
+                        press(SFB_L1); press(SFB_L1); step_covers(0.8f);
+                        render("33_bg_image_ps1", 1280, 720);
+                        press(SFB_R1); step_covers(0.6f);
+                        g_app.settings.background = BG_ANIMATED;
+                    }
+                    free(px);
+                }
+                if (f) fclose(f);
+            }
+            /* the built-in Stage background (raw dumps of art/stage.*; SF_PREVIEW_STAGE dir) */
+            {
+                const char *sdir = getenv("SF_PREVIEW_STAGE");
+                char a1[512], a2[512];
+                if (sdir) {
+                    snprintf(a1, sizeof(a1), "%s/stage.rgba", sdir);
+                    snprintf(a2, sizeof(a2), "%s/shapes.rgba", sdir);
+                    if (load_raw_alpha(a1, TEX_STAGE, TEX_STAGE_HI) == 0 && load_raw(a2, TEX_STAGE_SHAPES, NULL, NULL) == 0) {
+                        int f;
+                        char nm[64];
+                        double t0 = g_app.time;
+                        ui_set_stage(TEX_STAGE, TEX_STAGE_SHAPES);
+                        g_app.settings.background = BG_STAGE;
+                        render("34_stage_ps2", 1280, 720);
+                        render("34_stage_ps2_1080p", 1920, 1080);
+                        {
+                            int uc;
+                            for (uc = 0; uc < UI_COLOR_COUNT; uc++) {
+                                g_app.settings.ui_color = uc;
+                                snprintf(nm, sizeof(nm), "35_stage_%d_%s", uc, settings_color_name(uc));
+                                render(nm, 1280, 720);
+                            }
+                            g_app.settings.ui_color = UI_COLOR_BLUE;
+                        }
+                        for (f = 0; f < 48; f++) {           /* 24 s of motion, played back fast in a GIF */
+                            g_app.time = t0 + f * 0.5;
+                            snprintf(nm, sizeof(nm), "anim/stage_%02d", f);
+                            render(nm, 640, 360);
+                        }
+                        g_app.time = t0;
+                        g_app.settings.background = BG_ANIMATED;
+                    }
+                }
             }
             g_app.sleep_t = 1.0f;
             render("28_sleep_dimmed", 1280, 720);

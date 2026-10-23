@@ -194,6 +194,32 @@ game folders. Nothing is renamed.
 The log lists the cover folders that were found and, for the first 400
 covers, where each one came from (or the title ID it looked for).
 
+## Stage background (default)
+
+The default background is **Stage**: a dark blue scene with light streaks and a
+reflective floor, with glassy cross / circle / triangle / square shapes slowly
+floating, tilting and glowing over it. It takes the UI color (Flow Settings →
+UI Color): the scene is stored as brightness and tinted on the GPU, with its
+brightest streaks staying white-hot. It's built in (`art/stage.jpg`,
+`art/stage_shapes.png`, embedded by `tools/gen_stage.py`; `tools/make_stage.py`
+rebuilds them from the source picture). Pick other styles in Flow Settings →
+Background.
+
+## Background picture (optional)
+
+Put a picture here and choose **Flow Settings → Background → Image**:
+
+```
+/dev_hdd0/tmp/spookyflow/background.jpg   (or background.png)
+```
+
+Any size up to 4096 px; it's cropped to 16:9 around the center and resized
+to 1280×720 once at startup. spookyflow ships no background pictures. Without
+the file, Image shows a still version of Drift. The log says whether it was found.
+
+**Reflections** (Flow Settings, On by default) mirror the bottom of each case
+on the floor below it, fading out.
+
 ## Case images (optional)
 
 spookyflow ships no case artwork. To show covers inside cases, put PNGs here
@@ -298,7 +324,13 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 10 (0.2.10):** the title floats without a pill with a thin glowing
+15. **Fix 14 (0.2.14):** the Stage background follows the UI color.
+    **Fix 13 (0.2.13):** the Stage background is built in and is the default,
+    with its shapes floating; existing installs switch to it once.
+    **Fix 12 (0.2.12):** your own background picture (Background → Image);
+    case reflections (Flow Settings → Reflections). **Fix 11 (0.2.11):** Flow Settings → Background has six animated styles
+    (Drift, Aurora, Fireflies, Ribbons, Halo, Twilight) plus Image; all follow
+    the UI color. **Fix 10 (0.2.10):** the title floats without a pill with a thin glowing
     line under it; the info is one line (year · players · size · position);
     release years from GameDB replace the genre. **Fix 9 (0.2.9):** the selected case has a soft glowing line under it
     instead of an outline; launching shows no pop-up (the log still records it).

@@ -22,6 +22,11 @@ void ui_set_case_image(int plat, int tex);
 void ui_clear_case_images(void);
 /* Title/info look: 0 pills, 1 minimal, 2 accent, 3 card. */
 void ui_set_info_style(int s);
+/* Background > Image uses this texture (a full-screen picture). */
+void ui_set_background_image(int tex);
+/* The built-in Stage background (picture + shape atlas textures). */
+void ui_set_stage(int bg_tex, int shapes_tex);
+void ui_set_stage_highlight(int tex);
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */
 void ui_set_color(int idx);

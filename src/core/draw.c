@@ -231,6 +231,18 @@ void d_blob(float cx, float cy, float r, uint32_t col)
     r_quads_end();
 }
 
+void d_blob_ellipse(float cx, float cy, float rx, float ry, uint32_t col)
+{
+    if ((col & 255) == 0 || rx <= 0 || ry <= 0) return;
+    rx /= g_scr.pa;
+    r_quads_begin(TEX_BLOB);
+    r_qvtx(cx - rx, cy - ry, 0.0f, 0.0f, col);
+    r_qvtx(cx + rx, cy - ry, 1.0f, 0.0f, col);
+    r_qvtx(cx + rx, cy + ry, 1.0f, 1.0f, col);
+    r_qvtx(cx - rx, cy + ry, 0.0f, 1.0f, col);
+    r_quads_end();
+}
+
 void d_arc(float cx, float cy, float r, float thick, float a0, float a1, uint32_t col)
 {
     Path p;
@@ -422,6 +434,32 @@ void d_badge(int icon, float cx, float cy, float size, uint32_t tint)
     r_qvtx(cx + hw, cy - hh, u1, 0.0f, tint);
     r_qvtx(cx + hw, cy + hh, u1, 1.0f, tint);
     r_qvtx(cx - hw, cy + hh, u0, 1.0f, tint);
+    r_quads_end();
+}
+
+void d_image_rot(int tex, float cx, float cy, float w, float h, float angle, float u0, float u1, uint32_t tint)
+{
+    static const float cxs[4] = { -1, 1, 1, -1 }, cys[4] = { -1, -1, 1, 1 };
+    float c = cosf(angle), s = sinf(angle);
+    int i;
+    if ((tint & 255) == 0 || w <= 0 || h <= 0) return;
+    r_quads_begin(tex);
+    for (i = 0; i < 4; i++) {
+        float dx = cxs[i] * w * 0.5f, dy = cys[i] * h * 0.5f;
+        float rx = dx * c - dy * s, ry = dx * s + dy * c;
+        r_qvtx(cx + rx / g_scr.pa, cy + ry, i == 0 || i == 3 ? u0 : u1, i < 2 ? 0.0f : 1.0f, tint);
+    }
+    r_quads_end();
+}
+
+void d_image_v(int tex, float x, float y, float w, float h, float v0, float v1, uint32_t top, uint32_t bot)
+{
+    if (((top & 255) == 0 && (bot & 255) == 0) || w <= 0 || h <= 0) return;
+    r_quads_begin(tex);
+    r_qvtx(x, y, 0.0f, v0, top);
+    r_qvtx(x + w, y, 1.0f, v0, top);
+    r_qvtx(x + w, y + h, 1.0f, v1, bot);
+    r_qvtx(x, y + h, 0.0f, v1, bot);
     r_quads_end();
 }
 

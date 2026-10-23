@@ -28,9 +28,10 @@ void settings_defaults(Settings *s)
     s->music_volume = 50;
     s->shuffle = 1;
     s->sfx_volume = 50;
-    s->background = BG_ANIMATED;
+    s->background = BG_STAGE;
     s->ui_color = UI_COLOR_BLUE;
     s->cases = 1;
+    s->reflections = 1;
     s->sleep_min = 5;
     s->show_info = 1;
     s->ignore_the = 0;
@@ -92,8 +93,11 @@ void settings_parse_line(Settings *s, const char *line_in)
     else if (strcmp(key, "shuffle") == 0) s->shuffle = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "sound_effects") == 0) { if (parse_int(val, 0, 1, 1) == 0) s->sfx_volume = 0; }   /* fix 13 on/off */
     else if (strcmp(key, "sfx_volume") == 0) s->sfx_volume = parse_int(val, 0, 100, 50);
-    else if (strcmp(key, "background") == 0) s->background = parse_int(val, 0, 1, 0);
+    /* "background2" since fix 13 (Stage became the default; the old
+     * "background" key is ignored so everyone gets it once) */
+    else if (strcmp(key, "background2") == 0) s->background = parse_int(val, 0, BG_COUNT - 1, BG_STAGE);
     else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_BLUE);
+    else if (strcmp(key, "reflections") == 0) s->reflections = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "custom_cases") == 0) s->cases = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "sleep_minutes") == 0) s->sleep_min = parse_int(val, 0, 60, 5);
     else if (strcmp(key, "show_game_info") == 0) s->show_info = parse_int(val, 0, 1, 1);
@@ -135,9 +139,10 @@ int settings_save(const Settings *s, const char *path)
     fprintf(f, "music_volume=%d\n", s->music_volume);
     fprintf(f, "shuffle=%d\n", s->shuffle);
     fprintf(f, "sfx_volume=%d\n", s->sfx_volume);
-    fprintf(f, "background=%d\n", s->background);
+    fprintf(f, "background2=%d\n", s->background);
     fprintf(f, "ui_color=%d\n", s->ui_color);
     fprintf(f, "custom_cases=%d\n", s->cases);
+    fprintf(f, "reflections=%d\n", s->reflections);
     fprintf(f, "sleep_minutes=%d\n", s->sleep_min);
     fprintf(f, "show_game_info=%d\n", s->show_info);
     fprintf(f, "ignore_the=%d\n", s->ignore_the);
@@ -204,4 +209,10 @@ int settings_autoplay_effective(const Settings *s, const GameCfg *cfg)
     if (cfg->autoplay == AP_ON) return 1;
     if (cfg->autoplay == AP_OFF) return 0;
     return s->autoplay ? 1 : 0;
+}
+
+const char *settings_background_name(int bg)
+{
+    static const char *const names[BG_COUNT] = { "Drift", "Image", "Aurora", "Fireflies", "Ribbons", "Halo", "Twilight", "Stage" };
+    return (bg >= 0 && bg < BG_COUNT) ? names[bg] : "Stage";
 }

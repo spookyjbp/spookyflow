@@ -35,6 +35,8 @@ void d_rrect_glow(float x, float y, float w, float h, float r, float spread, uin
 void d_disc(float cx, float cy, float r, uint32_t col);
 /* Soft radial blob: col in the middle fading to transparent at r. */
 void d_blob(float cx, float cy, float r, uint32_t col);
+/* Soft ellipse: rx is a physical (not logical) radius like r in d_blob. */
+void d_blob_ellipse(float cx, float cy, float rx, float ry, uint32_t col);
 /* Arc stroke from angle a0 to a1 (radians, 0 = up, clockwise). */
 void d_arc(float cx, float cy, float r, float thick, float a0, float a1, uint32_t col);
 void d_line(float x0, float y0, float x1, float y1, float thick, uint32_t col);
@@ -54,6 +56,12 @@ void d_badge(int icon, float cx, float cy, float size, uint32_t tint);
 
 /* Whole-texture quad. */
 void d_image(int tex, float x, float y, float w, float h, uint32_t tint);
+/* Part of a texture (v0..v1 down the quad; v0 > v1 flips it) with a
+ * top-to-bottom tint gradient. */
+/* Rotated sub-image: cell u0..u1 of the texture, centered at (cx, cy), size
+ * w x h physical units (h vertical), angle in radians. */
+void d_image_rot(int tex, float cx, float cy, float w, float h, float angle, float u0, float u1, uint32_t tint);
+void d_image_v(int tex, float x, float y, float w, float h, float v0, float v1, uint32_t top, uint32_t bot);
 
 /* Fill TEX_BLOB / TEX_DISC alpha data (size x size) into buf. */
 #define D_SHAPE_TEX 128
