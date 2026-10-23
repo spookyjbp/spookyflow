@@ -10,7 +10,7 @@
  *   5. /dev_hdd0/tmp/wmtmp/covers/<ID>.*
  *   6. the game's own folder: <folder>/<ID>.*
  *
- * A found cover is cropped to the case's art area, resized smoothly to the
+ * A found cover is fitted to the case's art area (never cropped), resized smoothly to the
  * slot texture size, dithered to 16-bit and saved as a small cache file
  * (<cache>/<ps1|ps2|ps3>/<key>.cvr) so the next time it is one file read.
  * Games without a cover get a "<key>.none" marker so the folders are only
@@ -31,6 +31,7 @@
 #define COVER_PATH_MAX   512
 #define COVER_MAX_CANDS  24
 #define COVER_SRC_MAX_DIM 2048     /* larger (decoded) images are skipped: memory stays bounded */
+#define COVER_STRETCH_MAX 1.20f  /* shape difference stretched to fill; more is letterboxed */
 #define COVER_LOG_LINES  400       /* per-cover log lines (then only a summary) */
 
 typedef struct {

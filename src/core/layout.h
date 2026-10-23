@@ -12,6 +12,7 @@ enum { PLAT_PS1 = 0, PLAT_PS2 = 1, PLAT_PS3 = 2, PLAT_COUNT = 3 };
 #define LY_SEL_H      0.53f    /* selected case height */
 #define LY_NB_H       0.34f    /* neighbor case height (~0.64x selected) */
 #define LY_FLOW_CY    0.485f   /* vertical center of the row */
+#define LY_CASE_RIM   0.024f   /* clear plastic rim around the cover, fraction of case height */
 #define LY_GAP_NB     0.12f    /* gap between neighbors, fraction of neighbor width */
 #define LY_GAP_SEL    0.30f    /* gap selected<->first neighbor, fraction of neighbor width */
 #define LY_MAX_DRAW   7        /* draw items with |d| <= 7  (15 covers) */

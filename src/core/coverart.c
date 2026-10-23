@@ -34,7 +34,7 @@ static const char *const k_exts[] = { ".JPG", ".PNG", ".jpg", ".png" };
 static const char *const k_plat_dir[PLAT_COUNT] = { "ps1", "ps2", "ps3" };
 
 #define CVR_HEADER 16
-#define CVR_VERSION 2     /* 2: cropped to the case window (fix 1 of milestone 2) */
+#define CVR_VERSION 3     /* 3: whole cover, stretched to the case window (fix 2) */
 
 int cover_folder_count(void) { return F_COUNT; }
 const char *cover_folder(int i) { return (i >= 0 && i < F_COUNT) ? k_folders[i] : ""; }
@@ -182,11 +182,13 @@ void cover_process(const uint8_t *rgba, int w, int h, float aspect, uint16_t *ds
     if (!rgba || w <= 0 || h <= 0 || tw <= 0 || th <= 0) return;
     src_aspect = (float)w / (float)h;
     ratio = src_aspect > aspect ? src_aspect / aspect : aspect / src_aspect;
-    /* a cover close to the case shape is cropped to fill it; something very
-     * different (a wide banner) is shown whole on the dark backdrop */
-    fit = ratio > 1.30f;
-    if ((src_aspect > aspect) != fit) { ch = (float)h; cw = ch * aspect; }
-    else { cw = (float)w; ch = cw / aspect; }
+    /* never cut anything off: a cover close to the case shape is stretched
+     * slightly to fill it (as ManaGunZ does); something very different (a
+     * wide banner) is shown whole on the dark backdrop */
+    fit = ratio > COVER_STRETCH_MAX;
+    if (!fit) { cw = (float)w; ch = (float)h; }
+    else if (src_aspect > aspect) { cw = (float)w; ch = cw / aspect; }
+    else { ch = (float)h; cw = ch * aspect; }
     cx = ((float)w - cw) * 0.5f;
     cy = ((float)h - ch) * 0.5f;
     sx = cw / (float)tw;

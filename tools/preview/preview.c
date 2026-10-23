@@ -70,8 +70,18 @@ static int pv_decode(void *ctx, const char *path, int *w, int *h, uint8_t **rgba
     float hue = (float)(hs & 0xFFFF) / 65535.0f, hue2 = hue + 0.18f + (float)((hs >> 16) & 255) / 900.0f;
     int x, y, W = 520, H = 740;
     (void)ctx;
-    if (g_app.tab == PLAT_PS1) { W = 600; H = 600; }          /* jewel case front */
-    else if (g_app.tab == PLAT_PS3) { W = 520; H = 605; }     /* Blu-ray case front */
+    {
+        /* shape like real covers of the game's platform */
+        int t, i, plat = PLAT_PS2;
+        size_t n = strlen(path) - 4;   /* without ".JPG" */
+        for (t = 0; t < PLAT_COUNT; t++)
+            for (i = 0; i < g_lib.tab[t].count; i++) {
+                const char *gp = lib_path(&g_lib, &g_lib.tab[t].games[i]);
+                if (strncmp(gp, path, n) == 0) plat = t;
+            }
+        if (plat == PLAT_PS1) { W = 600; H = 600; }
+        else if (plat == PLAT_PS3) { W = 520; H = 605; }
+    }
     *rgba = (uint8_t *)malloc((size_t)W * H * 4);
     if (!*rgba) return -1;
     for (y = 0; y < H; y++)

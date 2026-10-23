@@ -39,7 +39,7 @@ int ps3_render_init(u32 pool_bytes)
 
 /* Cover textures: one block for all slots, allocated separately from the UI
  * pool so a failure here only costs the covers. 16-bit A1R5G5B5 (alpha bit
- * set = opaque) halves the memory of A8R8G8B8: 32 x 336 KB = 10.5 MB. */
+ * set = opaque) halves the memory of A8R8G8B8: 64 x 336 KB = 21 MB. */
 int ps3_render_init_covers(void)
 {
     u8 *mem = (u8 *)tiny3d_AllocTexture((u32)R_COVER_SLOTS * (u32)R_COVER_SLOT_BYTES);

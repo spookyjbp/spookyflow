@@ -21,7 +21,7 @@ enum {
  * slot, each R_COVER_SLOT_BYTES of A1R5G5B5 pixels (16-bit, top bit = opaque,
  * native byte order) allocated once by the backend. The cover worker thread
  * writes a slot's pixels only while that slot is not being drawn. */
-#define R_COVER_SLOTS       32
+#define R_COVER_SLOTS       64
 #define R_COVER_MAX_W       384
 #define R_COVER_MAX_H       448
 #define R_COVER_SLOT_BYTES  (R_COVER_MAX_W * R_COVER_MAX_H * 2)

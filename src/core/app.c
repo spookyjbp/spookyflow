@@ -548,6 +548,10 @@ static void animate(App *a, float dt)
         cover_set_focus(a->host.covers, a->tab, a->view[a->tab].sel);
         cover_poll(a->host.covers, &a->covers);
     }
+    {
+        int pt;
+        for (pt = 0; pt < PLAT_COUNT; pt++) cc_set_side(&a->covers, pt, a->view[pt].sel, a->lib->tab[pt].count);
+    }
     cc_update(&a->covers, a->tab, a->view[a->tab].sel, a->lib->tab[a->tab].count);
 }
 

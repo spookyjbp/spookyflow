@@ -14,8 +14,12 @@
 
 #include <stdint.h>
 
-#define CC_MAX_SLOTS        32
-#define CC_DEFAULT_BUDGET   30
+#define CC_MAX_SLOTS        64
+#define CC_DEFAULT_BUDGET   64     /* slots in use */
+#define CC_MAIN_WINDOW      30     /* games kept around the selection of the shown tab */
+#define CC_SIDE_WINDOW      15     /* ...and around the selection of each other tab, so a
+                                      tab switch shows covers at once */
+#define CC_TABS             3
 #define CC_LOADS_PER_FRAME  4
 #define CC_GPU_FRAMES       3
 
@@ -38,7 +42,10 @@ typedef int (*CcLoadFn)(void *user, int tab, int index, int slot_id, CcSlot *slo
 
 typedef struct {
     CcSlot slot[CC_MAX_SLOTS];
-    int budget;
+    int budget;              /* slots used (<= CC_MAX_SLOTS) */
+    int window;              /* main window size = min(budget, CC_MAIN_WINDOW) */
+    int side_center[CC_TABS], side_count[CC_TABS];   /* other tabs' selections (0 = none) */
+    int lo[CC_TABS], hi[CC_TABS];                    /* wanted ranges this frame (lo > hi = none) */
     uint32_t frame;
     CcLoadFn load;
     void *user;
@@ -54,6 +61,9 @@ void cc_update(CoverCache *cc, int tab, int center, int count);
 /* Slot holding (tab, index) or -1. Touches it. */
 int  cc_lookup(CoverCache *cc, int tab, int index);
 int  cc_resident_count(const CoverCache *cc);
+/* Remember another tab's selection: its visible covers stay (or get) loaded
+ * once the shown tab's window is resident. count 0 = forget. */
+void cc_set_side(CoverCache *cc, int tab, int center, int count);
 /* Async load finished for slot: tex >= 0 = READY with that texture, else FAILED. */
 void cc_mark(CoverCache *cc, int slot, int tex);
 /* Frames since the slot became READY (0 when not ready). */

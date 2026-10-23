@@ -119,29 +119,23 @@ static void draw_background(const App *a, float alpha, int animated)
 
 #define COVER_FADE_FRAMES 14.0f   /* ~0.23 s at 60 fps */
 
-/* ---- 3D-looking cases (front view, like ManaGunZ): a plastic body with a
- * rounded spine/hinge on the left, the cover sitting in a window, a soft
- * shadow where the cover tucks under the hinge and a thin raised rim. All
- * drawn with plain shapes: no logos, no images. ---- */
+/* ---- Cases like ManaGunZ: the cover fills the front and a thin clear
+ * plastic rim (lighter at the top, like light on plastic) frames it with
+ * rounded corners. Nothing is drawn over the cover art. ---- */
 
 typedef struct { float x, y, w, h; } Rect;
 
 static uint32_t shade(uint32_t c, float b, float al) { return sf_col_alpha(sf_col_dim(c, b), al); }
 
-typedef struct {
-    uint32_t top, bot;          /* body gradient */
-    uint32_t sp_dark, sp_light; /* spine cylinder */
-    float radius;               /* corner radius, fraction of case height */
-    uint32_t rim;               /* raised rim highlight */
-} CaseStyle;
+typedef struct { uint32_t top, bot, edge, inner; } CaseStyle;
 
 static const CaseStyle k_case[PLAT_COUNT] = {
-    /* PS1 jewel case: dark tray under clear plastic, bright clear edges */
-    { 0x2C2E34FFu, 0x1A1B1FFFu, 0x131418FFu, 0x41444DFFu, 0.010f, 0xFFFFFF4Cu },
-    /* PS2 DVD keep case: black plastic */
-    { 0x232326FFu, 0x0F0F11FFu, 0x0A0A0CFFu, 0x3C3C44FFu, 0.022f, 0xFFFFFF26u },
-    /* PS3 Blu-ray case: dark smoked plastic */
-    { 0x282C33FFu, 0x131519FFu, 0x0E1014FFu, 0x474D5AFFu, 0.028f, 0xFFFFFF2Eu },
+    /* PS1 jewel case: clear plastic */
+    { 0xD5D9E0B0u, 0x8C9099A0u, 0xFFFFFF70u, 0x00000070u },
+    /* PS2 DVD case: black plastic */
+    { 0x3A3B40F0u, 0x141417F0u, 0xFFFFFF30u, 0x000000A0u },
+    /* PS3 Blu-ray case: clear plastic */
+    { 0xC9CDD5B0u, 0x7E838C9Cu, 0xFFFFFF70u, 0x00000070u },
 };
 
 static void case_window(int plat, float x, float y, float w, float h, Rect *r)
@@ -154,74 +148,38 @@ static void case_window(int plat, float x, float y, float w, float h, Rect *r)
     r->h = h * (cw.y1 - cw.y0);
 }
 
-/* rounded spine: dark edge -> light middle -> dark edge */
-static void cylinder(float x, float y, float w, float h, uint32_t dark, uint32_t light, float b, float al)
-{
-    d_rect_hgrad(x, y, w * 0.45f, h, shade(dark, b, al), shade(light, b, al));
-    d_rect_hgrad(x + w * 0.45f, y, w * 0.55f, h, shade(light, b, al), shade(dark, b, al));
-}
-
-static void draw_case_back(int plat, float x, float y, float w, float h, float b, float al, const Rect *win)
+/* state: 0 = cover still loading (empty case), 1 = no cover (title card),
+ * art > 0 = real cover in tex, faded in */
+static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art, int no_cover)
 {
     const CaseStyle *cs = &k_case[plat];
-    float sx = x + d_xu(h * 0.010f), sw = win->x - sx - d_xu(h * 0.006f);
-    d_rrect_grad(x, y, w, h, h * cs->radius, shade(cs->top, b, al), shade(cs->bot, b, al));
-    if (plat == PLAT_PS1) {
-        /* jewel case: flat tray edge with two hinge knuckles */
-        d_rect(sx, y + h * 0.02f, sw, h * 0.96f, shade(cs->sp_dark, b, al));
-        cylinder(sx, y + h * 0.05f, sw, h * 0.11f, cs->sp_dark, cs->sp_light, b, al);
-        cylinder(sx, y + h * 0.84f, sw, h * 0.11f, cs->sp_dark, cs->sp_light, b, al);
-    } else {
-        float gy = y + h * 0.03f, gh = h * 0.94f, lw = d_xu(h * 0.0035f);
-        cylinder(sx, gy, sw, gh, cs->sp_dark, cs->sp_light, b, al);
-        /* moulded ribs along the spine */
-        d_rect(sx + sw * 0.30f, gy, lw, gh, shade(0x0000005Au, 1.0f, al));
-        if (plat == PLAT_PS2) d_rect(sx + sw * 0.66f, gy, lw, gh, shade(0x0000005Au, 1.0f, al));
-    }
-}
-
-static void draw_case_front(int plat, float x, float y, float w, float h, float b, float al, const Rect *win)
-{
-    const CaseStyle *cs = &k_case[plat];
-    float lw = h * 0.0035f;
-    /* the cover tucks under the hinge and the rim: soft shadows on two edges */
-    d_rect_hgrad(win->x, win->y, d_xu(h * 0.030f), win->h, shade(0x00000088u, 1.0f, al), 0x00000000u);
-    d_rect_grad(win->x, win->y, win->w, h * 0.014f, shade(0x00000060u, 1.0f, al), 0x00000000u);
-    /* clear sleeve / lid edge catching the light */
-    d_rect(win->x, win->y, win->w, lw * 0.8f, shade(0xFFFFFF22u, b, al));
-    d_rect(win->x + win->w - d_xu(lw * 0.8f), win->y, d_xu(lw * 0.8f), win->h, shade(0xFFFFFF14u, b, al));
-    if (plat == PLAT_PS1)   /* the clear lid's outline */
-        d_rrect_stroke(win->x - d_xu(lw), win->y - lw, win->w + d_xu(2.0f * lw), win->h + 2.0f * lw, h * 0.006f, lw,
-                       shade(0xFFFFFF26u, b, al));
-    /* raised rim */
-    d_rrect_stroke(x, y, w, h, h * cs->radius, lw * (plat == PLAT_PS1 ? 1.3f : 1.0f), shade(cs->rim, b, al));
-}
-
-/* tex >= 0: real cover art in that texture, faded in by `art` (0..1). */
-static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art)
-{
-    const char *title = lib_title(a->lib, g);
-    uint32_t h32 = sf_hash(title);
-    float hue = (float)(h32 & 0xFFFF) / 65535.0f;
     float b = p->bright;
     float x = p->cx - p->w * 0.5f, y = p->cy - p->h * 0.5f, w = p->w, h = p->h;
+    float r = h * 0.030f, lw = h * 0.0030f;
     Rect win;
     if (alpha <= 0.003f) return;
     if (tex < 0) art = 0.0f;
     case_window(plat, x, y, w, h, &win);
-    draw_case_back(plat, x, y, w, h, b, alpha, &win);
+    /* plastic rim */
+    d_rrect_grad(x, y, w, h, r, shade(cs->top, b, alpha), shade(cs->bot, b, alpha));
     if (art < 1.0f) {
-        /* placeholder: flat hashed color, platform name and title */
         float pa = alpha * (1.0f - art);
-        d_rect(win.x, win.y, win.w, win.h, shade(sf_hsv(hue, 0.42f, 0.58f, 255), b, pa));
-        d_rect(win.x, win.y, win.w, win.h * 0.085f, shade(TH_CASE_HEADER, b, pa * 0.85f));
-        d_text_fit(&g_font_main, win.x + d_xu(win.h * 0.025f), win.y + win.h * 0.045f, win.h * 0.050f,
-                   shade(0xFFFFFFD0u, b, pa), k_plat_case[plat], ALIGN_LEFT, win.w * 0.9f);
-        d_text_box(&g_font_main, win.x + win.w * 0.5f, win.y + win.h * 0.40f, win.w * 0.84f, h * 0.068f, 4,
-                   shade(0xFFFFFFF0u, b, pa), title);
+        d_rect(win.x, win.y, win.w, win.h, shade(0x1E1F24FFu, b, pa));     /* empty case */
+        if (no_cover) {
+            const char *title = lib_title(a->lib, g);
+            float hue = (float)(sf_hash(title) & 0xFFFF) / 65535.0f;
+            d_rect(win.x, win.y, win.w, win.h, shade(sf_hsv(hue, 0.42f, 0.58f, 255), b, pa));
+            d_rect(win.x, win.y, win.w, win.h * 0.085f, shade(TH_CASE_HEADER, b, pa * 0.85f));
+            d_text_fit(&g_font_main, win.x + d_xu(win.h * 0.025f), win.y + win.h * 0.045f, win.h * 0.050f,
+                       shade(0xFFFFFFD0u, b, pa), k_plat_case[plat], ALIGN_LEFT, win.w * 0.9f);
+            d_text_box(&g_font_main, win.x + win.w * 0.5f, win.y + win.h * 0.40f, win.w * 0.84f, h * 0.068f, 4,
+                       shade(0xFFFFFFF0u, b, pa), title);
+        }
     }
     if (art > 0.0f) d_image(tex, win.x, win.y, win.w, win.h, shade(0xFFFFFFFFu, b, alpha * art));
-    draw_case_front(plat, x, y, w, h, b, alpha, &win);
+    /* thin dark seam where the cover meets the plastic, and a light outer edge */
+    d_rrect_stroke(win.x, win.y, win.w, win.h, h * 0.004f, lw * 0.8f, shade(cs->inner, 1.0f, alpha));
+    d_rrect_stroke(x, y, w, h, r, lw, shade(cs->edge, b, alpha));
 }
 
 /* Draw one tab's cover row. xoff = horizontal slide (logical), alpha = fade. */
@@ -245,13 +203,20 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
             p.cx += xoff;
             if (p.cx + p.w * 0.5f < 0.0f || p.cx - p.w * 0.5f > W()) continue;
             {
-                int slot = cc_lookup(&a->covers, tab, idx), tex = -1;
+                int slot = cc_lookup(&a->covers, tab, idx), tex = -1, no_cover = 1;
                 float art = 0.0f;
-                if (slot >= 0 && a->covers.slot[slot].state == CC_READY && a->covers.slot[slot].tex >= 0) {
-                    tex = a->covers.slot[slot].tex;
-                    art = sf_clampf((float)cc_ready_age(&a->covers, slot) / COVER_FADE_FRAMES, 0.0f, 1.0f);
+                if (slot >= 0) {
+                    const CcSlot *cs = &a->covers.slot[slot];
+                    if (cs->state == CC_READY && cs->tex >= 0) {
+                        tex = cs->tex;
+                        art = sf_clampf((float)cc_ready_age(&a->covers, slot) / COVER_FADE_FRAMES, 0.0f, 1.0f);
+                    }
+                    /* while the cover is on its way, show an empty case, not a title card */
+                    if (cs->state == CC_LOADING || cs->tex >= 0) no_cover = 0;
+                } else if (a->host.covers && !(gl->games[idx].flags & GAME_DEMO)) {
+                    no_cover = 0;     /* not queued yet: also on its way */
                 }
-                draw_cover(a, tab, &gl->games[idx], &p, alpha, tex, art);
+                draw_cover(a, tab, &gl->games[idx], &p, alpha, tex, art, no_cover);
             }
         }
     }

@@ -3,24 +3,28 @@
 #include "anim.h"
 #include "util.h"
 
+/* Cases are a thin clear plastic rim around the cover (like ManaGunZ): the
+ * cover window has the shape of real cover art and the rim is the same
+ * thickness on every side. */
+static float window_shape(int plat)
+{
+    switch (plat) {
+    case PLAT_PS1: return 1.00f;   /* PS1 fronts are square */
+    case PLAT_PS2: return 0.70f;   /* PS2 DVD covers */
+    default:       return 0.86f;   /* PS3 covers (webMAN COV packs) */
+    }
+}
+
 float layout_case_aspect(int plat)
 {
-    /* chosen so the cover window (layout_case_window) matches real cover art:
-     * PS1 fronts are square, PS2 ~0.70, PS3 (webMAN COV packs) ~0.86 */
-    switch (plat) {
-    case PLAT_PS1: return 1.0857f;   /* jewel case: hinge on the left */
-    case PLAT_PS2: return 0.7600f;   /* DVD keep case: spine on the left */
-    default:       return 0.8985f;   /* Blu-ray case */
-    }
+    return window_shape(plat) * (1.0f - 2.0f * LY_CASE_RIM) + 2.0f * LY_CASE_RIM;
 }
 
 void layout_case_window(int plat, CaseWindow *w)
 {
-    switch (plat) {
-    case PLAT_PS1: w->x0 = 0.100f; w->x1 = 0.975f; w->y0 = 0.025f; w->y1 = 0.975f; break;
-    case PLAT_PS2: w->x0 = 0.095f; w->x1 = 0.975f; w->y0 = 0.022f; w->y1 = 0.978f; break;
-    default:       w->x0 = 0.065f; w->x1 = 0.980f; w->y0 = 0.022f; w->y1 = 0.978f; break;
-    }
+    float rx = LY_CASE_RIM / layout_case_aspect(plat);
+    w->x0 = rx; w->x1 = 1.0f - rx;
+    w->y0 = LY_CASE_RIM; w->y1 = 1.0f - LY_CASE_RIM;
 }
 
 float layout_window_aspect(int plat)

@@ -562,7 +562,7 @@ static void test_cover_cache(void)
     cc_init(&cc, CC_DEFAULT_BUDGET, NULL, NULL);
     for (f = 0; f < 40; f++) cc_update(&cc, 0, center, 500);
     CHECK(cc_resident_count(&cc) <= CC_DEFAULT_BUDGET);
-    CHECK(cc_resident_count(&cc) >= CC_DEFAULT_BUDGET - 1);
+    CHECK(cc_resident_count(&cc) >= CC_MAIN_WINDOW - 1);   /* one tab: its window */
     for (i = center - 7; i <= center + 7; i++) CHECK(cc_lookup(&cc, 0, i) >= 0);   /* drawn covers resident */
     /* moving far evicts old ones and never exceeds budget */
     for (center = 100; center < 300; center += 3)
@@ -1199,6 +1199,7 @@ int main(void)
     test_cover_cache_gpu();
     test_app_covers();
     test_sleep_and_info();
+    test_cover_cache_tabs();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

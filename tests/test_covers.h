@@ -362,7 +362,8 @@ static void test_cover_process(void)
         CHECK(tw <= R_COVER_MAX_W && th <= R_COVER_MAX_H && (tw * 2) % 64 == 0);   /* RSX pitch */
     }
     CHECK_NEAR(cover_art_aspect(PLAT_PS1), 1.0, 0.001);
-    CHECK(cover_art_aspect(PLAT_PS2) < 0.70f && cover_art_aspect(PLAT_PS2) > 0.68f);
+    CHECK_NEAR(cover_art_aspect(PLAT_PS2), 0.70, 0.002);
+    CHECK_NEAR(cover_art_aspect(PLAT_PS3), 0.86, 0.002);
 
     /* solid colors survive exactly (white -> 31, black -> 0) */
     img = (uint8_t *)malloc(500 * 700 * 4);
@@ -385,16 +386,18 @@ static void test_cover_process(void)
     CHECK(m[0] < 4.0 && m[2] < 4.0 && (px[0] & 0x8000));
     free(img);
 
-    /* a slightly wide cover is cropped at the sides: the center stays */
+    /* nothing is ever cut off: a slightly different shape is stretched */
     img = (uint8_t *)malloc(100 * 100 * 4);
     for (i = 0; i < 100 * 100; i++) {
         int x = i % 100;
         img[i * 4] = (uint8_t)(x < 10 || x >= 90 ? 255 : 0); img[i * 4 + 1] = 0; img[i * 4 + 2] = (uint8_t)(x < 10 || x >= 90 ? 0 : 255); img[i * 4 + 3] = 255;
     }
-    cover_process(img, 100, 100, 0.84f, px, 384, 448);     /* 1.0 -> 0.84: crop 8 px a side */
-    CHECK(((px[0] >> 10) & 31) > 10);                      /* still a bit of the red border */
-    cover_process(img, 100, 100, 0.78f, px, 320, 448);     /* 1.0 -> 0.78: crop 11 px a side */
-    CHECK(((px[0] >> 10) & 31) == 0 && (px[0] & 31) == 31);   /* border gone, blue */
+    cover_process(img, 100, 100, 0.84f, px, 384, 448);     /* 1.0 -> 0.84: stretched */
+    CHECK(((px[0] >> 10) & 31) == 31 && (px[0] & 31) == 0);             /* left border kept */
+    CHECK(((px[383] >> 10) & 31) == 31 && (px[383] & 31) == 0);         /* right border kept */
+    cover_process(img, 100, 100, 0.78f, px, 320, 448);     /* 1.0 -> 0.78: too different, letterboxed */
+    CHECK(((px[0] >> 10) & 31) < 5);                                    /* backdrop above */
+    CHECK(((px[224 * 320 + 2] >> 10) & 31) == 31);                      /* border still there */
     free(img);
     /* a very wide banner is shown whole: backdrop above and below */
     img = (uint8_t *)malloc(400 * 100 * 4);
@@ -599,7 +602,7 @@ static void test_app_covers(void)
     run_frames(0, LOAD_MIN_TIME + 1.0f);
     CHECK(g_app.mode == MODE_FLOW);
     for (i = 0; i < g_app.covers.budget; i++) if (g_app.covers.slot[i].state == CC_LOADING) loading++;
-    CHECK(loading == g_lib.tab[g_app.tab].count);              /* every real game queued */
+    CHECK(loading == g_lib.tab[0].count + g_lib.tab[1].count + g_lib.tab[2].count);   /* every tab's games queued */
     while (cover_worker_step(&L)) { }
     run_frames(0, 0.1f);
     for (i = 0, loading = 0; i < g_app.covers.budget; i++) {
@@ -675,4 +678,31 @@ static void test_sleep_and_info(void)
     }
     g_app.settings.show_info = 0;
     ui_draw(&g_app);
+}
+
+/* fix 2: the other tabs' visible covers stay loaded, so switching tabs
+ * shows covers at once */
+static void test_cover_cache_tabs(void)
+{
+    CoverCache cc;
+    int f, i, ok = 1;
+    printf("cover cache keeps other tabs\n");
+    cc_init(&cc, CC_DEFAULT_BUDGET, NULL, NULL);
+    cc_set_side(&cc, 0, 40, 300);
+    cc_set_side(&cc, 2, 0, 5);
+    for (f = 0; f < 60; f++) cc_update(&cc, 1, 100, 500);
+    for (i = 100 - 7; i <= 100 + 7; i++) if (cc_lookup(&cc, 1, i) < 0) ok = 0;
+    for (i = 40 - 7; i <= 40 + 7; i++) if (cc_lookup(&cc, 0, i) < 0) ok = 0;
+    for (i = 0; i < 5; i++) if (cc_lookup(&cc, 2, i) < 0) ok = 0;
+    CHECK(ok);
+    CHECK(cc_resident_count(&cc) <= CC_DEFAULT_BUDGET);
+    /* switching to tab 0 (the app always reports every tab): nothing new needs loading */
+    cc_set_side(&cc, 1, 100, 500);
+    for (f = 0; f < 4; f++) cc_update(&cc, 0, 40, 300);
+    for (i = 40 - 7, ok = 1; i <= 40 + 7; i++) if (cc_lookup(&cc, 0, i) < 0) ok = 0;
+    CHECK(ok);
+    /* scrolling far on one tab never steals the others' visible covers */
+    for (f = 0; f < 200; f++) cc_update(&cc, 0, 40 + f, 300);
+    for (i = 100 - 7, ok = 1; i <= 100 + 7; i++) if (cc_lookup(&cc, 1, i) < 0) ok = 0;
+    CHECK(ok);
 }

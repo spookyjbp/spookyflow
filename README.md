@@ -177,11 +177,12 @@ game folders. Nothing is renamed.
 
 **How it stays fast with 1000+ games.**
 
-- Only the ~30 games around the selection are kept in video memory (32
-  fixed texture slots, 10.5 MB in total). Nothing grows with library size.
+- Only the 30 games around the selection (plus the 15 visible on each other
+  tab, so switching tabs shows covers at once) are kept in video memory: 64
+  fixed texture slots, 21 MB in total. Nothing grows with library size.
 - Loading happens on a background thread, nearest cover first. A cover fades
   in over the placeholder when it's ready, and the UI never waits for it.
-- Each cover is cropped to the case, resized smoothly and saved once as a
+- Each cover is fitted to the case (never cropped), resized smoothly and saved once as a
   small cache file: `/dev_hdd0/tmp/spookyflow/covers/`. That takes
   about 290–340 KB per game, so roughly 300 MB for 1000 games. After that,
   showing it is a single file read.
@@ -254,8 +255,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Fix 1 (0.2.1):** cases look like real plastic cases (spine/hinge on the
-    left, cover in the front); no highlight behind the selected case; the
+15. **Fix 2 (0.2.2):** cases are a thin clear plastic rim around the whole
+    cover (ManaGunZ style; PS2 cases are black); covers are never cut at the
+    edges; switching tabs shows covers at once and never flashes titles. **Fix 1 (0.2.1):** no highlight behind the selected case; the
     active tab is an outline in your UI color; the A–Z letter uses the UI
     color; the title sits centered between the tabs and the case, the info
     chips between the case and the controls; Flow Settings → Show Game Info
