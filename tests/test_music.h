@@ -1179,10 +1179,7 @@ static void test_ps2_config(void)
     CHECK(g_app.ps2cfg_ok && g_app.ps2cfg_avail == (1u | (1u << PS2CFG_NET) | (1u << PS2CFG_GX)));
     app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
     CHECK_STR(v, "Auto (NET)");
-    tap(SFB_RIGHT);
-    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
-    CHECK_STR(v, "NET");
-    tap(SFB_RIGHT);
+    tap(SFB_RIGHT);                                         /* 0.8.1: NET is what Auto gives: not listed again */
     app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
     CHECK_STR(v, "GX");
     tap(SFB_RIGHT);                                         /* wraps to Auto */

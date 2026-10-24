@@ -474,7 +474,20 @@ Next: Download Missing Covers, sizes of folder games, release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Milestone 6 (0.8.0): new settings panels.**
+15. **0.8.1:** ■ display mode dims the console tabs like the other cases;
+    Game Settings / Choose Disc hide them. Flow Settings is now a whole card
+    sliding in (its glowing outline all round), each page's name with a full
+    glowing line under it (the small "Flow Settings" above the group pages
+    is gone); long names (Ignore "The" When Sorting, Download Missing
+    Covers) are no longer cut off; the thumbnail ring no longer glides in
+    from the left when Appearance opens. Game Settings: no game name, the
+    title a little lower with a full glowing line under it. Background
+    thumbnails start with Stage (the order ←/→ go). Quit to XMB / Power
+    Off: the settings stay on screen while the picture fades. PS2 Config:
+    the config Auto already picks isn't listed a second time. Loading
+    screen of the other backgrounds: it starts 2 s in, since many TVs are
+    still black right after the PS3 switches video mode.
+    **Milestone 6 (0.8.0): new settings panels.**
     - **Flow Settings** is a drawer that slides in from the right; the
       cover flow (with its title and info) slides left and dims, so your
       game stays in view. Breathing outline like the controls bar; the

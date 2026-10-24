@@ -151,7 +151,7 @@ void app_request_exit(App *a, const char *why)
     a->exit_fade = 0.0f;
     log_printf("exit requested (%s)", why);
     app_save(a);
-    if (a->panel != PANEL_NONE) a->panel_open = 0;
+    /* 0.8.1: a panel stays on screen while the picture fades (Quit / Power Off rows) */
 }
 
 /* ------------------------------------------------------------------ */
@@ -712,6 +712,8 @@ static void ps2cfg_cycle(App *a, int dir)
     }
     for (i = 0; i < PS2CFG_COUNT; i++) {
         cur = ((cur + d) % PS2CFG_COUNT + PS2CFG_COUNT) % PS2CFG_COUNT;
+        /* 0.8.1: the config Auto already picks isn't listed a second time */
+        if (cur > 0 && cur == a->ps2cfg_auto && cur != a->panel_cfg.ps2cfg) continue;
         if (a->ps2cfg_avail & (1u << cur)) break;
     }
     if (cur == a->panel_cfg.ps2cfg) return;

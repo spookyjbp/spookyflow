@@ -226,6 +226,21 @@ int main(int argc, char **argv)
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
     step(0, 0.5f);
     render("03_flow_ps2", 1280, 720);
+    if (getenv("SF_PREVIEW_GROUPS")) {    /* 0.8.1: entering / leaving a group, every frame */
+        int fr = 0, k, gi;
+        char nm[64];
+        g_app.music_card_t = g_app.music_card_len;
+        press(SFB_START); step(0, 0.8f);
+        for (gi = 0; gi < 2; gi++) {
+            press(SFB_CROSS);
+            for (k = 0; k < 24; k++) { snprintf(nm, sizeof(nm), "anim_grp_%03d", fr++); render(nm, 1280, 720); step(0, 1.0f / 60.0f); }
+            step(0, 0.4f);
+            press(SFB_CIRCLE);
+            for (k = 0; k < 24; k++) { snprintf(nm, sizeof(nm), "anim_grp_%03d", fr++); render(nm, 1280, 720); step(0, 1.0f / 60.0f); }
+            press(SFB_DOWN); press(SFB_DOWN); step(0, 0.3f);
+        }
+        press(SFB_CIRCLE); step(0, 0.5f);
+    }
     if (getenv("SF_PREVIEW_PANELS")) {    /* 0.8.0: the new panels, frame by frame */
         int fr = 0, k;
         char nm[64];
@@ -403,6 +418,14 @@ int main(int argc, char **argv)
     press(SFB_DOWN); step(0, 0.1f);
     press(SFB_CROSS); step(0, 0.7f);                 /* Music & Sound */
     render("11b_flow_settings_sound", 1280, 720);
+    press(SFB_CIRCLE); step(0, 0.2f);
+    press(SFB_DOWN); step(0, 0.1f);
+    press(SFB_CROSS); step(0, 0.7f);                 /* Games & Library (0.8.1: no cut-off names) */
+    press(SFB_DOWN); press(SFB_DOWN); step(0, 0.3f);
+    render("11c_flow_settings_games", 1280, 720);
+    press(SFB_CIRCLE); step(0, 0.2f);
+    press(SFB_UP); step(0, 0.1f);
+    press(SFB_CROSS); step(0, 0.7f);
     press(SFB_CIRCLE); step(0, 0.2f);
     press(SFB_CIRCLE); step(0, 0.4f);
 

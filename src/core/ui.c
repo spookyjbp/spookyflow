@@ -1397,7 +1397,8 @@ static void draw_value(float xr, float cy, float em, const char *val, int select
  * thumbnails, sliders. Rows cascade in when a page appears. */
 typedef struct {
     float x, w;            /* the rows' left edge and width (x units) */
-    float title_y, crumb_y, sub_y, line_y, list_y, bottom;
+    float card_x, card_y, card_w, card_h;   /* the drawer card */
+    float title_y, line_y, list_y, bottom;
     float rh, rg, em, alpha, slide;   /* slide: x offset of the whole panel while it opens */
     int vis, drawer;
 } PanelGeo;
@@ -1411,21 +1412,24 @@ static void panel_geo(const App *a, PanelGeo *g)
     g->vis = app_panel_visible_rows(a);
     g->alpha = clamp01(a->panel_anim * 1.6f);
     if (a->panel == PANEL_FLOW) {
-        float dw = sf_minf(d_xu(0.645f * H()), W() * 0.56f), pad = d_xu(0.047f * H());   /* 0.36 W at 16:9, wider share at 4:3 */
-        float x0 = W() - dw * e;
+        /* 0.8.1: a whole card that slides in, its glowing outline all round */
+        float dw = sf_minf(d_xu(0.645f * H()), W() * 0.56f), pad = d_xu(0.040f * H());   /* 0.36 W at 16:9, wider share at 4:3 */
+        float mx = d_xu(0.032f * H());
+        float x0 = W() - mx - dw + (1.0f - e) * (dw + 2.0f * mx);
         g->drawer = 1;
+        g->card_x = x0; g->card_w = dw; g->card_y = 0.032f * H(); g->card_h = 0.866f * H() - g->card_y;
         g->x = x0 + pad; g->w = dw - 2.0f * pad;
-        g->crumb_y = 0.072f * H(); g->title_y = a->flow_group >= 0 ? 0.112f * H() : 0.088f * H();
-        g->line_y = g->title_y + 0.042f * H();
-        g->list_y = g->line_y + 0.040f * H();
-        g->bottom = 0.885f * H();
+        g->title_y = g->card_y + 0.070f * H();
+        g->line_y = g->title_y + 0.040f * H();
+        g->list_y = g->line_y + 0.034f * H();
+        g->bottom = g->card_y + g->card_h - 0.02f * H();
         g->rh = 0.072f * H(); g->rg = 0.014f * H(); g->em = 0.0275f * H();
     } else {
         g->x = W() * 0.535f; g->w = W() * 0.435f;
         g->slide = (1.0f - e) * W() * 0.06f;
         g->x += g->slide;
-        g->title_y = 0.170f * H(); g->sub_y = 0.218f * H(); g->line_y = 0.250f * H();
-        g->list_y = 0.292f * H();
+        g->title_y = 0.250f * H(); g->line_y = 0.292f * H();
+        g->list_y = 0.330f * H();
         g->bottom = 0.880f * H();
         g->rh = 0.078f * H(); g->rg = 0.019f * H(); g->em = 0.029f * H();
     }
@@ -1503,14 +1507,14 @@ static void draw_color_dots(float xr, float cy, float ring, float al)
     d_arc(x0 + step * ring, cy, r * 1.62f, 0.0028f * H(), 0.0f, 2.0f * PI_F, sf_col_alpha(0xFFFFFFE6u, al));
 }
 
-/* the background choices, in Flow Settings order; Picture only with pictures */
+/* the background choices in the order <-/-> go through them: Stage first,
+ * the user's pictures (one thumbnail) last */
 static int bg_choices(const App *a, int *out)
 {
-    int n = 0, b;
-    for (b = 0; b < BG_COUNT; b++) {
-        if (b == BG_CUSTOM && a->nbg_files <= 0) continue;
-        out[n++] = b;
-    }
+    static const int order[] = { BG_STAGE, BG_ANIMATED, BG_AURORA, BG_FIREFLIES, BG_RIBBONS, BG_HALO, BG_TWILIGHT };
+    int n = 0, i;
+    for (i = 0; i < (int)(sizeof(order) / sizeof(order[0])); i++) out[n++] = order[i];
+    if (a->nbg_files > 0) out[n++] = BG_CUSTOM;
     return n;
 }
 
@@ -1547,6 +1551,43 @@ static void draw_bg_thumbs(const App *a, float x, float y, float w, float ring, 
     }
 }
 
+/* what a row's animation heads for (switch 0/1, the chosen choice, the
+ * colour, the background, the slider); 0 = the row has none */
+static int row_anim_target(const App *a, RowKind k, float *t)
+{
+    const char *const *names = NULL;
+    int cur = 0;
+    if (k == ROW_F_BACKGROUND) {
+        int ch[BG_COUNT], n = bg_choices(a, ch), j;
+        for (j = 0; j < n; j++) if (ch[j] == a->settings.background) cur = j;
+        *t = (float)cur;
+        return 1;
+    }
+    if (k == ROW_F_UI_COLOR) { *t = (float)a->settings.ui_color; return 1; }
+    if (menu_toggle(k, &a->settings) >= 0) { *t = (float)menu_toggle(k, &a->settings); return 1; }
+    if (menu_is_slider(k)) { *t = menu_slider_value(k, &a->settings); return 1; }
+    if ((a->panel == PANEL_GAME) && menu_segments(k, a->panel_plat, &a->panel_cfg, &names, &cur) > 0) { *t = (float)cur; return 1; }
+    return 0;
+}
+
+/* how wide a row's value is drawn (so its name can take the rest) */
+static float row_value_w(const App *a, RowKind k, const char *val, float em, int sel)
+{
+    const char *const *names = NULL;
+    int cur = 0, n, i;
+    float w = 0.0f, arrows = 2.0f * (d_text_width(&g_font_main, em, "\xE2\x80\xBA") + d_xu(em * 0.45f));
+    if (menu_is_group(k)) return d_text_width(&g_font_main, em * 1.25f, "\xE2\x80\xBA");
+    if (k == ROW_F_UI_COLOR) return d_xu(0.040f * H()) * (float)(UI_COLOR_COUNT - 1) + d_xu(0.0125f * H() * 3.3f);
+    if (menu_toggle(k, &a->settings) >= 0) return d_xu(0.064f * H());
+    if (menu_is_slider(k)) return d_xu(0.15f * H()) + d_xu(em * 0.6f) + d_text_width(&g_font_main, em, val);
+    if (a->panel == PANEL_GAME && (n = menu_segments(k, a->panel_plat, &a->panel_cfg, &names, &cur)) > 0) {
+        for (i = 0; i < n; i++) w += d_text_width(&g_font_main, em * 0.82f, names[i]) + 2.0f * d_xu(em * 0.85f);
+        return w;
+    }
+    if (!val[0]) return 0.0f;
+    return d_text_width(&g_font_main, em, val) + (sel && !menu_is_action(k) ? arrows : 0.0f);
+}
+
 static void draw_panel(App *a)
 {
     PanelGeo g;
@@ -1556,7 +1597,6 @@ static void draw_panel(App *a)
     uint32_t hot = accent_white() ? 0xFFFFFFFFu : (accent() | 0xFFu);
     char gtitle[64];
     const char *ptitle = a->panel == PANEL_GAME ? "Game Settings" : a->panel == PANEL_DISC ? "Choose Disc" : "Flow Settings";
-    const char *crumb = NULL;
     int page_key = a->panel * 64 + a->flow_group + 1, snap;
     if (a->panel_anim <= 0.0f) return;
     if (per_game) {
@@ -1566,7 +1606,6 @@ static void draw_panel(App *a)
     if (a->panel == PANEL_FLOW && a->flow_group >= 0) {
         sf_strlcpy(gtitle, menu_label((RowKind)a->flow_group), sizeof(gtitle));
         ptitle = gtitle;
-        crumb = "Flow Settings";
     }
     panel_geo(a, &g);
     /* per-row animations: snap on a new page */
@@ -1577,12 +1616,13 @@ static void draw_panel(App *a)
     g_row_anim_page = page_key;
 
     if (g.drawer) {
-        /* the drawer: shadow, body (running off the top and the right), breathing outline */
-        float x0 = g.x - d_xu(0.047f * H()), sh = d_xu(0.06f * H());
-        d_rect_hgrad(x0 - sh, 0.0f, sh, g.bottom, 0x00000000u, sf_col_alpha(0x000000FFu, 0.45f * g.alpha));
-        d_rrect(x0, -0.06f * H(), W() - x0 + d_xu(0.06f * H()), g.bottom + 0.06f * H(), 0.045f * H(), sf_col_alpha(TH_PANEL | 0xFFu, 0.985f * g.alpha));
-        d_rrect_stroke(x0, -0.06f * H(), W() - x0 + d_xu(0.06f * H()), g.bottom + 0.06f * H(), 0.045f * H(), 0.0035f * H(),
-                       sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), g.alpha));
+        /* the drawer: a whole card with a soft shadow and the breathing outline all round */
+        float r = 0.040f * H();
+        d_rrect_glow(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.040f * H(), sf_col_alpha(0x000000FFu, 0.55f * g.alpha));
+        d_rrect(g.card_x, g.card_y, g.card_w, g.card_h, r, sf_col_alpha(TH_PANEL | 0xFFu, 0.985f * g.alpha));
+        d_rrect_glow(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.014f * H(),
+                     sf_col_alpha(hot, 0.22f * g.alpha * (0.6f + 0.4f * g_glow)));
+        d_rrect_stroke(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), g.alpha));
     } else {
         /* beside the big case: darken the right side a little so the rows read */
         d_rect_hgrad(W() * 0.42f, 0.0f, W() * 0.58f, H(), 0x00000000u, sf_col_alpha(0x000000FFu, 0.50f * g.alpha));
@@ -1592,14 +1632,17 @@ static void draw_panel(App *a)
     {
         float rt = clamp01((a->page_t - 0.02f) / 0.24f), re = ease_out_cubic(rt);
         float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.05f * H()), al = g.alpha * re;
-        float tem = g.drawer ? 0.040f * H() : 0.043f * H();
-        if (crumb) d_text(&g_font_main, g.x + ox, g.crumb_y, 0.021f * H(), sf_col_alpha(TH_TEXT_DIM, al), crumb, ALIGN_LEFT);
+        float tem = g.drawer ? 0.040f * H() : 0.045f * H();
         d_text_fit(&g_font_main, g.x + ox, g.title_y, tem, sf_col_alpha(TH_TEXT, al), ptitle, ALIGN_LEFT, g.w);
-        if (game) d_text_fit(&g_font_main, g.x + ox, g.sub_y, 0.026f * H(), sf_col_alpha(TH_TEXT_DIM, al), lib_title(a->lib, game), ALIGN_LEFT, g.w);
-        {
-            float lw = d_xu(0.055f * H()), lt = 0.0042f * H();
-            d_rrect(g.x + ox, g.line_y - lt * 0.5f, lw, lt, lt * 0.5f, sf_col_alpha(hot, al));
-            d_blob_ellipse(g.x + ox + lw * 0.5f, g.line_y, lw * 0.9f, 0.012f * H(), sf_col_alpha(hot, 0.25f * al * (0.6f + 0.4f * g_glow)));
+        {   /* 0.8.1: a full glowing line under the title, bright in the middle, fading at both ends
+             * (like the line under the selected case) */
+            uint32_t col = glow(hot), clear = col & 0xFFFFFF00u;
+            float lx = g.x + ox, lw = g.w, th = 0.0036f * H(), gh = 0.016f * H();
+            uint32_t core = sf_col_alpha(col, al), haze = sf_col_alpha(col, al * 0.24f);
+            d_rect_hgrad(lx, g.line_y - gh * 0.5f, lw * 0.5f, gh, clear, haze);
+            d_rect_hgrad(lx + lw * 0.5f, g.line_y - gh * 0.5f, lw * 0.5f, gh, haze, clear);
+            d_rect_hgrad(lx, g.line_y - th * 0.5f, lw * 0.5f, th, clear, core);
+            d_rect_hgrad(lx + lw * 0.5f, g.line_y - th * 0.5f, lw * 0.5f, th, core, clear);
         }
     }
 
@@ -1620,6 +1663,10 @@ static void draw_panel(App *a)
             d_rrect(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f,
                     sf_col_alpha(accent_white() ? 0x5A5E6CFFu : sf_col_mix(accent() | 0xFFu, 0x101420FFu, 0.42f), al));
         }
+    }
+    for (i = 0; i < a->nrows; i++) {        /* 0.8.1: every row's animation, drawn or not */
+        float tgt;
+        if (row_anim_target(a, a->rows[i], &tgt)) approach_now(&g_row_anim[i], tgt, 15.0f, dt, snap);
     }
     for (i = 0; i < a->nrows; i++) {
         RowKind k = a->rows[i];
@@ -1648,28 +1695,30 @@ static void draw_panel(App *a)
             if (val[0]) d_text(&g_font_main, xr, cy, g.em * 0.9f, sf_col_alpha(TH_TEXT_DIM, fa), val, ALIGN_RIGHT);
             continue;
         }
-        d_text_fit(&g_font_main, xl, cy, g.em, sf_col_alpha(tc, fa), menu_label(k), ALIGN_LEFT, (xr - xl) * 0.55f);
         app_row_value(a, k, val, sizeof(val));
+        /* 0.8.1: the name gets all the room its value leaves */
+        d_text_fit(&g_font_main, xl, cy, g.em, sf_col_alpha(tc, fa), menu_label(k), ALIGN_LEFT,
+                   sf_maxf(xr - xl - row_value_w(a, k, val, g.em, sel) - d_xu(g.em * 0.9f), (xr - xl) * 0.30f));
         if (menu_is_group(k)) {
             d_text(&g_font_main, xr, cy, g.em * 1.25f, sf_col_alpha(tc, fa), "\xE2\x80\xBA", ALIGN_RIGHT);
         } else if (k == ROW_F_BACKGROUND) {
             int ch[BG_COUNT], n = bg_choices(a, ch), j, cur = 0;
             for (j = 0; j < n; j++) if (ch[j] == a->settings.background) cur = j;
+            (void)cur;
             draw_value(xr, cy, g.em, val, sel, sel, fa);
-            approach_now(&g_row_anim[i], (float)cur, 14.0f, dt, snap);
             draw_bg_thumbs(a, xl, ry + g.rh * 0.86f, xr - xl, g_row_anim[i], fa);
         } else if (k == ROW_F_UI_COLOR) {
-            draw_color_dots(xr, cy, approach_now(&g_row_anim[i], (float)a->settings.ui_color, 14.0f, dt, snap), fa);
+            draw_color_dots(xr, cy, g_row_anim[i], fa);
         } else if (menu_toggle(k, &a->settings) >= 0) {
-            draw_switch(xr, cy, approach_now(&g_row_anim[i], (float)menu_toggle(k, &a->settings), 16.0f, dt, snap), sel, fa);
+            draw_switch(xr, cy, g_row_anim[i], sel, fa);
         } else if (per_game && k != ROW_G_PS2CFG) {
             const char *const *names = NULL;
             int cur = 0, n = menu_segments(k, a->panel_plat, &a->panel_cfg, &names, &cur);
-            if (n > 0) draw_segments(xr, cy, g.em, names, n, approach_now(&g_row_anim[i], (float)cur, 14.0f, dt, snap), sel, fa);
+            if (n > 0) draw_segments(xr, cy, g.em, names, n, g_row_anim[i], sel, fa);
             else if (val[0]) draw_value(xr, cy, g.em, val, sel, sel, fa);
         } else if (menu_is_slider(k)) {
             float tw = d_xu(0.15f * H()), th2 = 0.0075f * H(), tx = xr - tw;
-            float v = approach_now(&g_row_anim[i], menu_slider_value(k, &a->settings), 16.0f, dt, snap);
+            float v = g_row_anim[i];
             d_rrect(tx, cy - th2 * 0.5f, tw, th2, th2 * 0.5f, sf_col_alpha(0x464A58FFu, fa));
             d_rrect(tx, cy - th2 * 0.5f, tw * v, th2, th2 * 0.5f, sf_col_alpha(hot, fa));
             d_disc(tx + tw * v, cy, 0.0125f * H(), sf_col_alpha(0xFAFAFCFFu, fa));
@@ -1957,6 +2006,7 @@ static void draw_loading_stage(const App *a, float alpha, float rt)
  * drop in one by one from above with a little bounce, and the name settles
  * into its ghostly glow. Same spot as the Stage screen: the kittens' feet on
  * the selected case's bottom edge, the name above them. */
+#define ENTRANCE_START 2.0f /* seconds into loading the animation begins */
 #define FALL_KIT0  0.35f    /* the kittens fade in */
 #define FALL_KITD  1.00f
 #define FALL_N0    0.85f    /* the first letter starts falling */
@@ -2060,7 +2110,10 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
     float flow_dx = a->panel == PANEL_FLOW ? -W() * 0.15f * ease_in_out(a->panel_anim) : 0.0f;
     float pgame = (a->panel == PANEL_GAME || a->panel == PANEL_DISC) ? ease_in_out(a->panel_anim) : 0.0f;
     /* tabs */
-    draw_tabs(a, ia, -(1.0f - intro) * 0.05f * H());
+    {   /* 0.8.1: display mode dims the console tabs like the other cases; Game Settings hides them */
+        float ta = ia * sf_lerp(1.0f, DISPLAY_DIM, ease_in_out(a->display_t)) * (1.0f - pgame);
+        if (ta > 0.003f) draw_tabs(a, ta, -(1.0f - intro) * 0.05f * H());
+    }
     /* cover rows (tab switch: old slides out, new slides in) */
     if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
         float e = ease_out_cubic(a->tab_anim), dist = W() * 0.45f;
@@ -2127,7 +2180,9 @@ void ui_draw(App *a)
         } else if (style == 2) {
             float rt, fade;
             int bg = a->settings.background == BG_STAGE ? BG_ANIMATED : a->settings.background;
-            if (a->reveal_start <= -999.0f) a->reveal_start = a->rescan ? -100.0f : sf_maxf(a->load_t, 0.4f);
+            /* 0.8.1: many TVs stay black for 2-3 s after the PS3 switches video
+             * mode, so the animation starts at ENTRANCE_START (it ends well within LOAD_MIN_TIME) */
+            if (a->reveal_start <= -999.0f) a->reveal_start = a->rescan ? -100.0f : sf_maxf(a->load_t, ENTRANCE_START);
             rt = a->load_t - a->reveal_start;
             draw_background_as(a, 1.0f, animated, bg);
             fade = 1.0f - ease_in_out(clamp01(rt / 1.2f));      /* the background fades in from black */
