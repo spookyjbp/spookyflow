@@ -1430,10 +1430,11 @@ typedef struct {
 
 static void panel_geo(const App *a, PanelGeo *g)
 {
-    float e = ease_out_cubic(a->panel_anim);
+    /* 0.8.4: the drawer slides away while the About card shows */
+    float e = ease_out_cubic(a->panel_anim * (1.0f - ease_in_out(a->about_t)));
     memset(g, 0, sizeof(*g));
     g->vis = app_panel_visible_rows(a);
-    g->alpha = clamp01(a->panel_anim * 1.6f);
+    g->alpha = clamp01(a->panel_anim * (1.0f - ease_in_out(a->about_t)) * 1.6f);
     if (a->panel == PANEL_FLOW) {
         /* 0.8.1: a whole card that slides in, its glowing outline all round */
         float dw = sf_minf(d_xu(0.645f * H()), W() * 0.56f), pad = d_xu(0.040f * H());   /* 0.36 W at 16:9, wider share at 4:3 */
@@ -1498,12 +1499,14 @@ static void draw_switch(float xr, float cy, float on_t, int sel, float al)
 
 static void draw_segments(float xr, float cy, float em, const char *const *names, int n, float pos, int sel, float al)
 {
-    float ws[4], total = 0.0f, h = 0.040f * H(), x, pad = d_xu(em * 0.85f);
+    /* 0.8.4: every choice as wide as the widest, the chosen one a pill inset in the track */
+    float ws[4], total = 0.0f, h = 0.042f * H(), x, pad = d_xu(em * 0.80f), wmax = 0.0f, in = 0.0045f * H();
     int i;
     float hx, hw;
-    for (i = 0; i < n && i < 4; i++) { ws[i] = d_text_width(&g_font_main, em * 0.82f, names[i]) + 2.0f * pad; total += ws[i]; }
+    for (i = 0; i < n && i < 4; i++) wmax = sf_maxf(wmax, d_text_width(&g_font_main, em * 0.82f, names[i]));
+    for (i = 0; i < n && i < 4; i++) { ws[i] = wmax + 2.0f * pad; total += ws[i]; }
     x = xr - total;
-    d_rrect(x, cy - h * 0.5f, total, h, h * 0.5f, sf_col_alpha(0x0C0E14C0u, al));
+    d_rrect(x, cy - h * 0.5f, total, h, h * 0.5f, sf_col_alpha(0x00000059u, al));
     /* the chosen one: a pill that glides between the choices */
     {
         int i0 = sf_clampi((int)floorf(pos), 0, n - 1), i1 = i0 + 1 < n ? i0 + 1 : i0;
@@ -1512,8 +1515,9 @@ static void draw_segments(float xr, float cy, float em, const char *const *names
         hx = x0 + f * ws[i0];
         hw = sf_lerp(ws[i0], ws[i1], f);
     }
-    d_rrect(hx, cy - h * 0.5f, hw, h, h * 0.5f,
-            sf_col_alpha(sel ? 0x6A7084FFu : 0x505668FFu, al));     /* 0.8.3: gray: the row's glow is the colour */
+    (void)sel;
+    d_rrect(hx + d_xu(in), cy - h * 0.5f + in, hw - 2.0f * d_xu(in), h - 2.0f * in, (h - 2.0f * in) * 0.5f,
+            sf_col_alpha(0xFFFFFF38u, al));     /* gray: the row's glow is the colour */
     for (i = 0; i < n && i < 4; i++) {
         float d = sf_absf(pos - (float)i), on = 1.0f - sf_minf(1.0f, d);
         uint32_t c = sf_col_mix(TH_TEXT_DIM, TH_TEXT, on);
@@ -1604,8 +1608,10 @@ static float row_value_w(const App *a, RowKind k, const char *val, float em, int
     if (menu_toggle(k, &a->settings) >= 0) return d_xu(0.064f * H());
     if (menu_is_slider(k)) return d_xu(0.15f * H()) + d_xu(em * 0.6f) + d_text_width(&g_font_main, em, val);
     if (a->panel == PANEL_GAME && (n = menu_segments(k, a->panel_plat, &a->panel_cfg, &names, &cur)) > 0) {
-        for (i = 0; i < n; i++) w += d_text_width(&g_font_main, em * 0.82f, names[i]) + 2.0f * d_xu(em * 0.85f);
-        return w;
+        float wmax = 0.0f;
+        for (i = 0; i < n; i++) wmax = sf_maxf(wmax, d_text_width(&g_font_main, em * 0.82f, names[i]));
+        (void)w;
+        return (float)n * (wmax + 2.0f * d_xu(em * 0.80f));
     }
     if (!val[0]) return 0.0f;
     (void)sel;      /* the arrows' room is kept when not selected too: nothing moves when the highlight comes */
@@ -1642,7 +1648,9 @@ static void draw_panel(App *a)
         /* the drawer: a whole card with a soft shadow and the breathing outline all round */
         float r = 0.040f * H();
         d_rrect_glow(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.040f * H(), sf_col_alpha(0x000000FFu, 0.55f * g.alpha));
-        d_rrect(g.card_x, g.card_y, g.card_w, g.card_h, r, sf_col_alpha(TH_PANEL | 0xFFu, 0.985f * g.alpha));
+        /* 0.8.4: see-through like the console tabs; a dark tint under it keeps the cover flow behind from showing through busily */
+        d_rrect(g.card_x, g.card_y, g.card_w, g.card_h, r, sf_col_alpha(0x05060AFFu, 0.62f * g.alpha));
+        d_rrect(g.card_x, g.card_y, g.card_w, g.card_h, r, sf_col_alpha(TH_TAB_INACTIVE, g.alpha));
         d_rrect_glow(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.014f * H(),
                      sf_col_alpha(hot, 0.22f * g.alpha * (0.6f + 0.4f * g_glow)));
         d_rrect_stroke(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), g.alpha));
@@ -1682,7 +1690,7 @@ static void draw_panel(App *a)
         if (ry + rh < clip_top || ry > clip_bot) continue;
         if (ry < g.list_y - 0.002f * H()) fa *= clamp01(1.0f - (g.list_y - ry) / (g.rh * 0.6f));
         if (ry + rh > clip_bot - g.rh * 0.6f) fa *= clamp01((clip_bot - ry - rh) / (g.rh * 0.6f) + 1.0f);
-        if (fa > 0.003f) d_rrect(g.x + ox, ry, g.w, rh, g.rh * 0.5f, sf_col_alpha(g.drawer ? 0x22252EFFu : 0x161922D8u, fa));
+        if (fa > 0.003f) d_rrect(g.x + ox, ry, g.w, rh, g.rh * 0.5f, sf_col_alpha(TH_TAB_INACTIVE, fa));   /* the console tabs' colour */
     }
     /* the gliding highlight: a lighter pill; only its glow and outline are in the UI colour */
     {
@@ -1696,8 +1704,7 @@ static void draw_panel(App *a)
         if (hy + hh > clip_top && hy < clip_bot && al > 0.0f) {
             d_rrect_glow(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.022f * H(),
                          sf_col_alpha(hot, 0.30f * al * (0.75f + 0.25f * g_glow)));
-            d_rrect(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f,
-                    sf_col_alpha(0x343844FFu, al));
+            /* 0.8.4: like the selected console tab: no fill of its own, just the glowing outline */
             /* 0.8.2: the glowing outline the selected console tab has */
             d_rrect_stroke(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.0040f * H(),
                            sf_col_alpha(glow(accent_or(TH_TAB_ACTIVE, 1.0f)), al));
@@ -1723,8 +1730,8 @@ static void draw_panel(App *a)
         if (fa <= 0.003f) continue;
         xl = g.x + ox + d_xu(g.rh * 0.36f);
         xr = g.x + ox + g.w - d_xu(g.rh * 0.34f) - (a->nrows > g.vis ? d_xu(0.016f * H()) : 0.0f);
-        /* the name brightens as the highlight arrives, instead of all at once */
-        tc = sf_col_mix(TH_TEXT_DIM, TH_TEXT, clamp01(1.0f - sf_absf(a->row_hl.x - (float)i)));
+        /* 0.8.4: every name in the same colour: moving changes nothing but where the outline is */
+        tc = TH_TEXT;
         if (k == ROW_D_DISC) {
             const Disc *dd = lib_game_disc(a->lib, game, i);
             char lab[TITLE_MAX];
@@ -1798,7 +1805,7 @@ static const char *const k_about_features[] = {
     "Background music, eight backgrounds and your own pictures",
 };
 static const char *const k_about_tools[] = {
-    "Created by spooky",
+    "Made with",
     "PSL1GHT SDK  \xC2\xB7  Tiny3D  \xC2\xB7  webMAN MOD",
     "minimp3 by lieff  \xC2\xB7  DejaVu fonts",
     "Written with Claude by Anthropic",
@@ -1815,6 +1822,8 @@ static void title_line(float lx, float lw, float y, uint32_t hot, float al)
     d_rect_hgrad(lx + lw * 0.5f, y - th * 0.5f, lw * 0.5f, th, core, clear);
 }
 
+static void wordmark_text(float cx, float wy, float em, float alpha);
+
 static void draw_about(const App *a)
 {
     float e = ease_out_cubic(a->about_t), al = ease_in_out(a->about_t), sc = 0.94f + 0.06f * e;
@@ -1825,13 +1834,14 @@ static void draw_about(const App *a)
     char ver[64];
     int i;
     if (al <= 0.003f) return;
-    d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.55f * al));
+    d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.62f * al));
     d_rrect_glow(x, y, w, h, r, 0.040f * H(), sf_col_alpha(0x000000FFu, 0.6f * al));
-    d_rrect(x, y, w, h, r, sf_col_alpha(TH_PANEL | 0xFFu, 0.985f * al));
+    d_rrect(x, y, w, h, r, sf_col_alpha(0x05060AFFu, 0.62f * al));
+    d_rrect(x, y, w, h, r, sf_col_alpha(TH_TAB_INACTIVE, al));
     d_rrect_glow(x, y, w, h, r, 0.014f * H(), sf_col_alpha(hot, 0.22f * al * (0.6f + 0.4f * g_glow)));
     d_rrect_stroke(x, y, w, h, r, 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), al));
     yy = y + 0.075f * h / 0.80f;
-    d_text(&g_font_big, cx, yy, 0.068f * H() * sc, sf_col_alpha(TH_WORDMARK, al), APP_NAME, ALIGN_CENTER);
+    wordmark_text(cx, yy, 0.068f * H() * sc, al);
     snprintf(ver, sizeof(ver), "Version %s", APP_VERSION);
     yy += 0.058f * H() * sc;
     d_text(&g_font_main, cx, yy, 0.022f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), ver, ALIGN_CENTER);
@@ -1849,10 +1859,10 @@ static void draw_about(const App *a)
         yy += 0.037f * H() * sc;
     }
     yy += 0.022f * H() * sc;
-    d_text(&g_font_main, cx, yy, 0.027f * H() * sc, sf_col_alpha(sf_col_mix(hot, 0xFFFFFFFFu, 0.45f), al), "Made with", ALIGN_CENTER);
+    d_text(&g_font_main, cx, yy, 0.027f * H() * sc, sf_col_alpha(sf_col_mix(hot, 0xFFFFFFFFu, 0.45f), al), "Created by spooky", ALIGN_CENTER);
     yy += 0.044f * H() * sc;
     for (i = 0; i < (int)(sizeof(k_about_tools) / sizeof(k_about_tools[0])); i++) {
-        /* 0.8.3: "Created by spooky" first, a little brighter */
+        /* "Made with" first, a little brighter (0.8.4: swapped with "Created by spooky") */
         d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(i == 0 ? TH_TEXT : TH_TEXT_DIM, al), k_about_tools[i], ALIGN_CENTER, iw);
         yy += 0.037f * H() * sc;
     }
@@ -2009,11 +2019,23 @@ static void draw_toast(const App *a)
 
 
 /* the "spookyflow" wordmark with its ghostly glow */
-/* the name on the loading screens (0.8.2: plain, no glow) */
+/* 0.8.4: the name with a slight glow (loading screens, About): a faint halo
+ * and a soft ring of faint copies right around the letters */
+static void wordmark_text(float cx, float wy, float em, float alpha)
+{
+    int i;
+    d_blob(cx, wy, em * 2.4f, sf_col_alpha(TH_WORDMARK_GLOW, 0.05f * alpha));
+    for (i = 0; i < 8; i++) {
+        float ang = (float)i * PI_F * 0.25f, r = em * 0.045f;
+        d_text(&g_font_big, cx + d_xu(cosf(ang) * r), wy + sinf(ang) * r, em, sf_col_alpha(TH_WORDMARK_GLOW, 0.035f * alpha), APP_NAME, ALIGN_CENTER);
+    }
+    d_text(&g_font_big, cx, wy, em, sf_col_alpha(TH_WORDMARK, alpha), APP_NAME, ALIGN_CENTER);
+}
+
 static void draw_wordmark(const App *a, float wy, float em, float alpha)
 {
     (void)a;
-    d_text(&g_font_big, W() * 0.5f, wy, em, sf_col_alpha(TH_WORDMARK, alpha), APP_NAME, ALIGN_CENTER);
+    wordmark_text(W() * 0.5f, wy, em, alpha);
 }
 
 /* ---- Stage reveal (0.6.9): the opening when the background is Stage -----
@@ -2216,7 +2238,7 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
 {
     UiMetrics m = *mm;
     /* 0.8.0: the Flow Settings drawer pushes the cover flow to the left */
-    float flow_dx = a->panel == PANEL_FLOW ? -W() * 0.15f * ease_in_out(a->panel_anim) : 0.0f;
+    float flow_dx = a->panel == PANEL_FLOW ? -W() * 0.15f * ease_in_out(a->panel_anim * (1.0f - ease_in_out(a->about_t))) : 0.0f;
     float pgame = (a->panel == PANEL_GAME || a->panel == PANEL_DISC) ? ease_in_out(a->panel_anim) : 0.0f;
     /* tabs */
     {   /* 0.8.1: display mode dims the console tabs like the other cases; Game Settings hides them */
@@ -2240,7 +2262,7 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
     }
     if (a->panel != PANEL_NONE) {
         if (a->panel == PANEL_FLOW)        /* the cover flow dims under the drawer */
-            d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.40f * ease_in_out(a->panel_anim)));
+            d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.40f * ease_in_out(a->panel_anim) * (1.0f - ease_in_out(a->about_t))));
         draw_panel(a);
         if (a->about_t > 0.0f) draw_about(a);
     }

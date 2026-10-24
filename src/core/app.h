@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.8.3"
+#define APP_VERSION     "0.8.4"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -99,6 +99,9 @@ typedef struct {
     int sel;            /* selected (target) index */
     double step_t;      /* time of the last one-game step */
     float step_rate;    /* how fast one-game steps are coming (steps/s, 0 = not scrolling) */
+    int glide;          /* 0.8.4: -1 / +1 while the left stick scrolls continuously, else 0 */
+    float glide_pos;    /* the row's position while gliding (index units) */
+    float glide_hold;   /* how long the stick has been held */
 } TabView;
 
 /* The row eases to a single step in ~300 ms; while steps come fast (holding the
@@ -149,6 +152,7 @@ typedef struct {
     int panel_open;         /* target state */
     float panel_anim;       /* 0..1 */
     float page_t;           /* 0.8.0: seconds since this page of rows appeared (they cascade in) */
+    float input_dt;         /* this frame's time step (the stick glide) */
     int   about;            /* 0.8.2: the About spookyflow card is up (over Flow Settings) */
     float about_t;          /* 0..1, follows about */
     int   page_dir;         /* +1: the page comes in from the right (opened / a group entered), -1: from the left (back) */

@@ -1805,3 +1805,66 @@ static void test_panels_082(void)
     tap(SFB_CIRCLE); run_frames(0, 0.5f);
     CHECK(g_app.panel == PANEL_NONE);
 }
+
+/* 0.8.4: the left stick scrolls the row continuously (no stepping), and the
+ * row coasts to a stop on a game without bouncing back */
+extern const unsigned char *const g_tab_png[PLAT_COUNT];
+extern const unsigned int g_tab_png_size[PLAT_COUNT];
+
+static void test_stick_glide(void)
+{
+    AppHost host;
+    TabView *v;
+    int f, stalls = 0, jumps = 0, back = 0;
+    float prev, maxd = 0.0f;
+    printf("stick glide, built-in tabs\n");
+    {   /* 0.8.4: spooky's console tab images are built in (PNG files, decoded on the PS3) */
+        int p;
+        for (p = 0; p < PLAT_COUNT; p++)
+            CHECK(g_tab_png_size[p] > 100 && memcmp(g_tab_png[p], "\x89PNG\r\n\x1a\n", 8) == 0);
+    }
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    app_init(&g_app, &g_lib, &host);           /* the demo library (73 games on PS2) */
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    g_app.tab = PLAT_PS2;
+    app_select(&g_app, PLAT_PS2, 0, 0);
+    v = &g_app.view[PLAT_PS2];
+    CHECK(g_lib.tab[PLAT_PS2].count > 40);
+    for (f = 0; f < 24; f++) app_update(&g_app, SFB_STICK_RIGHT, 1.0f / 60.0f);   /* push + REPEAT_DELAY */
+    prev = v->scroll.x;
+    for (f = 0; f < 72; f++) {                 /* 1.2 s of gliding, speeding up */
+        float d;
+        app_update(&g_app, SFB_STICK_RIGHT, 1.0f / 60.0f);
+        d = v->scroll.x - prev;
+        if (d <= 0.0005f) stalls++;
+        if (d > maxd) maxd = d;
+        if (f > 0 && d > 0.0f && maxd > 0.0f && d < maxd * 0.5f && f > 40) jumps++;   /* sudden slow-downs */
+        prev = v->scroll.x;
+    }
+    CHECK(v->glide == 1 && stalls == 0 && jumps == 0);
+    CHECK(maxd < 0.6f);                         /* never more than ~half a game in one frame */
+    CHECK(v->sel == (int)floorf(v->scroll.x + 0.5f));   /* the selection is the game in the middle */
+    /* let go: forward only, onto a whole game */
+    for (f = 0; f < 90; f++) {
+        float x0 = v->scroll.x;
+        app_update(&g_app, 0, 1.0f / 60.0f);
+        if (v->scroll.x < x0 - 0.0005f) back++;
+    }
+    CHECK(v->glide == 0 && back == 0);
+    CHECK(fabsf(v->scroll.x - (float)v->sel) < 0.001f);
+    /* the D-pad still moves one game per press */
+    {
+        int s0 = v->sel;
+        app_update(&g_app, SFB_LEFT, 1.0f / 60.0f);
+        for (f = 0; f < 60; f++) app_update(&g_app, SFB_LEFT, 1.0f / 60.0f);
+        app_update(&g_app, 0, 1.0f / 60.0f);
+        CHECK(v->sel == s0 - 1);
+    }
+    /* holding into the end stops there */
+    app_select(&g_app, PLAT_PS2, g_lib.tab[PLAT_PS2].count - 3, 0);
+    for (f = 0; f < 120; f++) app_update(&g_app, SFB_STICK_RIGHT, 1.0f / 60.0f);
+    CHECK(v->sel == g_lib.tab[PLAT_PS2].count - 1);
+    for (f = 0; f < 60; f++) app_update(&g_app, 0, 1.0f / 60.0f);
+    CHECK(v->sel == g_lib.tab[PLAT_PS2].count - 1 && fabsf(v->scroll.x - (float)v->sel) < 0.001f);
+}

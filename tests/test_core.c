@@ -1330,6 +1330,7 @@ int main(void)
     test_kitten_entrance();
     test_panels_m6();
     test_panels_082();
+    test_stick_glide();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

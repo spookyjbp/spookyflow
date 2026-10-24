@@ -238,7 +238,7 @@ breathe around them, and the ribbons' halos move with them. Everything is stored
 the UI color on the GPU (Flow Settings → UI Color); the brightest parts stay
 white-hot. Assets: `art/stage.jpg` (scene), `art/stage_rib.jpg` (ribbons),
 `art/stage_fx.png` (+ `.json`: glows, mist, particles), `art/stage_shapes.png`,
-embedded by `tools/gen_stage.py`. `tools/make_stage.py <asset folder> <scene>
+embedded by `tools/make_stage.py --embed`. `tools/make_stage.py <asset folder> <scene>
 <particle folder> <scene with ribbons>` rebuilds them; the ribbons are the
 difference between the two scene pictures, and single particles are picked out of
 the particle PNGs (cut off-grid from their sheet, so stitched back together
@@ -412,8 +412,8 @@ Pressing ✖ opens **Choose Disc**; pick a disc and press ✖ to launch it.
 
 ## Optional: your own tab images
 
-You can replace the “PS1 / PS2 / PS3” tab text with your own pictures
-(spookyflow does not include any logos). Put PNG files here:
+spookyflow comes with spooky's tab pictures built in (0.8.4). To use your
+own instead, put PNG files here (each one replaces its built-in picture):
 
 ```
 /dev_hdd0/tmp/spookyflow/tabs/ps1.png
@@ -475,7 +475,21 @@ Next: Download Missing Covers, sizes of folder games, release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.8.3:** moving through the settings rows (Choose Disc too) is
+15. **0.8.4:** the left stick scrolls the cover flow **continuously** when
+    held (it used to move in steps landing 2 or 3 frames apart, which looked
+    choppy at full speed): the row glides, speeding up as before, the game
+    in the middle is the selected one, and letting go coasts onto a game
+    without bouncing back. The D-pad still moves one game per press. The
+    name has a slight glow wherever it shows (loading screens, About).
+    About now replaces Flow Settings on screen (it slides away; ◯ brings it
+    back). The settings use the console tabs' see-through colour, the
+    selected row is outlined like the selected console tab, and moving no
+    longer changes any colours. The Default / On / Off choices are equal
+    widths with the chosen one inset. About: "Created by spooky" and "Made
+    with" swapped. **spooky's console tab images are built in** (a file in
+    the tabs folder still replaces one; `tools/gen_icons.py --tabs <folder>`
+    rebuilds src/core/tabs_data.c).
+    **0.8.3:** moving through the settings rows (Choose Disc too) is
     smooth: the rows' backgrounds are drawn first and the highlight glides
     over them (before, the row being left was drawn over it and cut it).
     The highlight is a gray pill: its glow and outline are the only parts
@@ -742,6 +756,8 @@ make pkg                        # PS3 build (needs PSL1GHT + Tiny3D, $PSL1GHT se
 python3 tools/gen_font.py       # regenerate font atlases (src/core/font_data.c)
 python3 tools/gen_icons.py      # regenerate button badges + background thumbnails (src/core/icons_data.c)
 python3 tools/gen_sounds.py DIR # built-in UI sounds from DIR/move.wav ... confirm.wav (src/core/sounds_data.c)
+python3 tools/gen_icons.py --tabs DIR   # built-in console tab images from DIR/ps1.png ps2.png ps3.png (src/core/tabs_data.c)
+python3 tools/make_stage.py --embed     # art/stage* -> src/core/stage_data.c
 # new background thumbnails (art/bg_thumbs.png), from renders of each background alone:
 #   SF_PREVIEW_THUMBS=1 SF_PREVIEW_STAGE=<stage dumps> ./build-host/preview preview
 #   python3 tools/gen_icons.py --thumbs preview

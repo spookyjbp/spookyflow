@@ -8,6 +8,7 @@
 #include "log.h"
 #include "title.h"
 #include "util.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1039,6 +1040,52 @@ static void show_letter(App *a, int idx)
     if (!still) a->letter_in = 0.0f;
 }
 
+/* 0.8.4: holding the left stick scrolls the row continuously instead of in
+ * steps (steps at ~28/s landed 2 or 3 frames apart and looked choppy). The
+ * first push is one game; after REPEAT_DELAY the row glides, speeding up
+ * from 1/REPEAT_SLOW to 1/REPEAT_FAST games a second over REPEAT_ACCEL;
+ * the selection is the game in the middle; on release the row eases onto
+ * the nearest game, keeping its speed for a smooth stop. */
+static void stick_glide(App *a, TabView *v, const GameList *gl, const Input *in)
+{
+    int dir = (in->held & SFB_STICK_RIGHT) ? 1 : (in->held & SFB_STICK_LEFT) ? -1 : 0;
+    float dt = a->input_dt, speed, k;
+    if (dir == 0 || (v->glide && dir != v->glide) || a->display) {
+        if (v->glide) {
+            /* let go: coast to a stop on a game. A critically damped spring
+             * started at speed v0 doesn't overshoot when its target is at
+             * least v0 / omega ahead: stop on the first game past that. */
+            float spd = v->scroll.v, ahead = v->glide_pos + spd / SPRING_OMEGA_300MS;
+            int stop = sf_clampi(spd >= 0.0f ? (int)ceilf(ahead - 0.001f) : (int)floorf(ahead + 0.001f), 0, gl->count - 1);
+            v->glide = 0;
+            if (stop != v->sel) { v->sel = stop; sound_play(SND_MOVE); }
+            v->step_rate = 0.0f;
+            v->step_t = 0.0;
+            spring_set(&v->scroll, (float)v->sel);
+            v->scroll.omega = SPRING_OMEGA_300MS;
+            v->scroll.v = spd;
+        }
+        v->glide_hold = 0.0f;
+        if (dir == 0) return;
+    }
+    if (in->pressed & (SFB_STICK_LEFT | SFB_STICK_RIGHT)) { v->glide_hold = 0.0f; return; }   /* the first push: one game */
+    v->glide_hold += dt;
+    if (v->glide_hold < REPEAT_DELAY) return;
+    k = sf_clampf((v->glide_hold - REPEAT_DELAY) / REPEAT_ACCEL, 0.0f, 1.0f);
+    speed = 1.0f / (REPEAT_SLOW + (REPEAT_FAST - REPEAT_SLOW) * k);
+    if (!v->glide) { v->glide = dir; v->glide_pos = v->scroll.x; }
+    v->glide_pos = sf_clampf(v->glide_pos + (float)dir * speed * dt, 0.0f, (float)(gl->count - 1));
+    {
+        int now = sf_clampi((int)floorf(v->glide_pos + 0.5f), 0, gl->count - 1);
+        if (now != v->sel) { v->sel = now; sound_play(SND_MOVE); }
+    }
+    /* the row is at the glide position, moving at its speed */
+    v->scroll.x = v->scroll.target = v->glide_pos;
+    v->scroll.v = (v->glide_pos > 0.0f && v->glide_pos < (float)(gl->count - 1)) ? (float)dir * speed : 0.0f;
+    v->step_t = a->time;
+    v->step_rate = speed;
+}
+
 static void flow_input(App *a)
 {
     const Input *in = &a->input;
@@ -1060,11 +1107,12 @@ static void flow_input(App *a)
          * Left stick: holding scrolls with accelerating repeat (as before).
          * Menus repeat for both. */
         {
-            uint32_t go_l = (in->pressed & SFB_LEFT) | (in->fired & SFB_STICK_LEFT);
-            uint32_t go_r = (in->pressed & SFB_RIGHT) | (in->fired & SFB_STICK_RIGHT);
+            uint32_t go_l = (in->pressed & SFB_LEFT) | (in->pressed & SFB_STICK_LEFT);
+            uint32_t go_r = (in->pressed & SFB_RIGHT) | (in->pressed & SFB_STICK_RIGHT);
             if (go_l && v->sel > 0) { app_select(a, a->tab, v->sel - 1, 1); sound_play(SND_MOVE); }
             if (go_r && v->sel < gl->count - 1) { app_select(a, a->tab, v->sel + 1, 1); sound_play(SND_MOVE); }
         }
+        stick_glide(a, v, gl, in);
         if (in->pressed & SFB_L2) {
             int to = lib_letter_prev(gl, v->sel);
             if (to != v->sel) { app_select(a, a->tab, to, 1); show_letter(a, v->sel); sound_play(SND_TAB); }
@@ -1087,6 +1135,7 @@ static void animate(App *a, float dt)
         TabView *v = &a->view[t];
         /* a critically damped spring trails a steady scroll by 2 * rate / omega */
         float rate = (a->time - v->step_t < FLOW_STEP_WINDOW) ? v->step_rate : 0.0f;
+        if (v->glide) continue;          /* the stick moves the row itself (stick_glide) */
         v->scroll.omega = sf_clampf(2.0f * rate / FLOW_MAX_LAG, SPRING_OMEGA_300MS, FLOW_OMEGA_MAX);
         spring_update(&v->scroll, dt);
     }
@@ -1155,6 +1204,7 @@ void app_update(App *a, uint32_t held, float dt)
     anim_approach(&a->sleep_t, a->asleep ? 1.0f : 0.0f, 1.0f / (a->asleep ? SLEEP_FADE_TIME : WAKE_FADE_TIME), dt);
 
     input_update(&a->input, held, dt);
+    a->input_dt = dt;
     music_tick(a);
 
     if (a->exiting) {

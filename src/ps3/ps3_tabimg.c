@@ -13,6 +13,10 @@
 #include "ps3_platform.h"
 #include "render.h"
 #include "ui.h"
+
+/* spooky's tab images, built in (src/core/tabs_data.c, tools/gen_icons.py --tabs) */
+extern const unsigned char *const g_tab_png[PLAT_COUNT];
+extern const unsigned int g_tab_png_size[PLAT_COUNT];
 #include "imgscale.h"
 #include "stage.h"
 #include <jpgdec/jpgdec.h>
@@ -31,15 +35,27 @@ static void load_one(int plat)
     unsigned char ref[3] = { 0, 0, 0 };
 
     snprintf(path, sizeof(path), "%s/%s", SF_TABS_DIR, names[plat]);
-    if (!ps3_fs_exists(path)) { log_printf("tabs: %s not found, using text tab", path); return; }
     memset(&png, 0, sizeof(png));
-    ps3_decode_lock();
-    if (pngLoadFromFile(path, &png) != 0 || !png.bmp_out) {
+    if (ps3_fs_exists(path)) {
+        ps3_decode_lock();
+        if (pngLoadFromFile(path, &png) != 0 || !png.bmp_out) {
+            ps3_decode_unlock();
+            log_printf("tabs: %s could not be decoded", path);
+            return;
+        }
         ps3_decode_unlock();
-        log_printf("tabs: %s could not be decoded", path);
-        return;
+    } else {
+        /* 0.8.4: spooky's tab images are built in (tabs_data.c); a file in the tabs folder replaces one */
+        if (!g_tab_png_size[plat]) { log_printf("tabs: %s not found, using text tab", path); return; }
+        snprintf(path, sizeof(path), "built-in %s", names[plat]);
+        ps3_decode_lock();
+        if (pngLoadFromBuffer(g_tab_png[plat], g_tab_png_size[plat], &png) != 0 || !png.bmp_out) {
+            ps3_decode_unlock();
+            log_printf("tabs: %s could not be decoded", path);
+            return;
+        }
+        ps3_decode_unlock();
     }
-    ps3_decode_unlock();
     w = png.width; h = png.height;
     if (w == 0 || h == 0 || w > TAB_IMG_MAX_W || h > TAB_IMG_MAX_H) {
         log_printf("tabs: %s is %ux%u, must be at most %dx%d", path, (unsigned)w, (unsigned)h, TAB_IMG_MAX_W, TAB_IMG_MAX_H);
