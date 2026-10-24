@@ -252,10 +252,11 @@ was removed in 0.6.0; if it was selected, Stage is used.)
 **Reflections** (Flow Settings, On by default) mirror the bottom of each case
 on the floor below it, fading out.
 
-## Case images (optional)
+## Case images
 
-spookyflow ships no case artwork. To show covers inside cases, put PNGs here
-(Flow Settings → Custom Cases turns them on or off):
+spookyflow comes with spooky's case images built in (0.8.5); Flow Settings →
+Custom Cases turns them on or off. To use your own instead, put PNGs here
+(each one replaces its built-in case):
 
 ```
 /dev_hdd0/tmp/spookyflow/cases/ps1.png
@@ -475,7 +476,26 @@ Next: Download Missing Covers, sizes of folder games, release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.8.4:** the left stick scrolls the cover flow **continuously** when
+15. **0.8.5:** the selected row's outline sits right on the row (no gap).
+    Holding the stick through hundreds of games looks calm now: at speed
+    the cases all go to one size at an even spacing (nothing pulses through
+    the middle), the title and info fade until you slow down, and the top
+    speed stays below where the motion breaks up (24 games a second); they
+    come back as it coasts to a stop. The Flow Settings and About cards are
+    **frosted**: a blurred copy of the background (Stage, or your picture)
+    under them, so what's behind can't be read (the soft drawn backgrounds
+    get their own colour). **Background** and **UI Color** changes
+    crossfade (on Stage the old and new colours fade into each other once
+    the new one is made, a fraction of a second; if there is no texture
+    memory for the second copy, the log says so and colours change at once).
+    Music Volume 0% reads Off. The Default / On / Off track uses the
+    settings' see-through colour. Holding ◯: no white glow on the button,
+    the ring glows like the controls bar's outline. About: the description
+    and "Made with" in the features' colour; the Now Playing card goes under
+    the About card. **spooky's case images are built in** (files in the
+    cases folder still replace them; `tools/gen_icons.py --images <tabs>
+    <cases>` rebuilds src/core/images_data.c with the tab and case images).
+    **0.8.4:** the left stick scrolls the cover flow **continuously** when
     held (it used to move in steps landing 2 or 3 frames apart, which looked
     choppy at full speed): the row glides, speeding up as before, the game
     in the middle is the selected one, and letting go coasts onto a game
@@ -487,8 +507,8 @@ Next: Download Missing Covers, sizes of folder games, release years.
     longer changes any colours. The Default / On / Off choices are equal
     widths with the chosen one inset. About: "Created by spooky" and "Made
     with" swapped. **spooky's console tab images are built in** (a file in
-    the tabs folder still replaces one; `tools/gen_icons.py --tabs <folder>`
-    rebuilds src/core/tabs_data.c).
+    the tabs folder still replaces one; now `tools/gen_icons.py --images`,
+    see 0.8.5).
     **0.8.3:** moving through the settings rows (Choose Disc too) is
     smooth: the rows' backgrounds are drawn first and the highlight glides
     over them (before, the row being left was drawn over it and cut it).
@@ -756,7 +776,7 @@ make pkg                        # PS3 build (needs PSL1GHT + Tiny3D, $PSL1GHT se
 python3 tools/gen_font.py       # regenerate font atlases (src/core/font_data.c)
 python3 tools/gen_icons.py      # regenerate button badges + background thumbnails (src/core/icons_data.c)
 python3 tools/gen_sounds.py DIR # built-in UI sounds from DIR/move.wav ... confirm.wav (src/core/sounds_data.c)
-python3 tools/gen_icons.py --tabs DIR   # built-in console tab images from DIR/ps1.png ps2.png ps3.png (src/core/tabs_data.c)
+python3 tools/gen_icons.py --images TABS CASES   # built-in tab + case images from TABS/ and CASES/ ps1.png ps2.png ps3.png (src/core/images_data.c)
 python3 tools/make_stage.py --embed     # art/stage* -> src/core/stage_data.c
 # new background thumbnails (art/bg_thumbs.png), from renders of each background alone:
 #   SF_PREVIEW_THUMBS=1 SF_PREVIEW_STAGE=<stage dumps> ./build-host/preview preview

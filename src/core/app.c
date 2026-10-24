@@ -1072,7 +1072,7 @@ static void stick_glide(App *a, TabView *v, const GameList *gl, const Input *in)
     v->glide_hold += dt;
     if (v->glide_hold < REPEAT_DELAY) return;
     k = sf_clampf((v->glide_hold - REPEAT_DELAY) / REPEAT_ACCEL, 0.0f, 1.0f);
-    speed = 1.0f / (REPEAT_SLOW + (REPEAT_FAST - REPEAT_SLOW) * k);
+    speed = sf_minf(1.0f / (REPEAT_SLOW + (REPEAT_FAST - REPEAT_SLOW) * k), GLIDE_MAX_SPEED);
     if (!v->glide) { v->glide = dir; v->glide_pos = v->scroll.x; }
     v->glide_pos = sf_clampf(v->glide_pos + (float)dir * speed * dt, 0.0f, (float)(gl->count - 1));
     {
@@ -1135,6 +1135,10 @@ static void animate(App *a, float dt)
         TabView *v = &a->view[t];
         /* a critically damped spring trails a steady scroll by 2 * rate / omega */
         float rate = (a->time - v->step_t < FLOW_STEP_WINDOW) ? v->step_rate : 0.0f;
+        {   /* fast gliding: the row goes flat (every case one size); it comes back as it slows */
+            float want = v->glide ? sf_clampf((v->step_rate - GLIDE_FLAT_FROM) / (GLIDE_FLAT_FULL - GLIDE_FLAT_FROM), 0.0f, 1.0f) : 0.0f;
+            anim_approach(&v->flat, want, want > v->flat ? 2.5f : 2.0f, dt);
+        }
         if (v->glide) continue;          /* the stick moves the row itself (stick_glide) */
         v->scroll.omega = sf_clampf(2.0f * rate / FLOW_MAX_LAG, SPRING_OMEGA_300MS, FLOW_OMEGA_MAX);
         spring_update(&v->scroll, dt);

@@ -226,6 +226,21 @@ int main(int argc, char **argv)
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
     step(0, 0.5f);
     render("03_flow_ps2", 1280, 720);
+    if (getenv("SF_PREVIEW_GLIDE")) {     /* 0.8.4: holding the left stick, then letting go */
+        int fr = 0, k;
+        char nm[64];
+        g_app.music_card_t = g_app.music_card_len;
+        app_select(&g_app, g_app.tab, 0, 0); step(0, 0.5f);
+        for (k = 0; k < 150; k++) {               /* 2.5 s: up to full speed */
+            app_update(&g_app, SFB_STICK_RIGHT, DT); ui_update_targets(&g_app);
+            if (k >= 18 && (k & 1)) { snprintf(nm, sizeof(nm), "anim_glide_%03d", fr++); render(nm, 640, 360); }
+        }
+        for (k = 0; k < 60; k++) {
+            app_update(&g_app, 0, DT); ui_update_targets(&g_app);
+            if (k & 1) { snprintf(nm, sizeof(nm), "anim_glide_%03d", fr++); render(nm, 640, 360); }
+        }
+        step(0, 0.5f);
+    }
     if (getenv("SF_PREVIEW_SCROLL")) {    /* 0.8.3: moving through the rows, every frame */
         int fr = 0, k, j;
         char nm[64];
@@ -653,6 +668,20 @@ int main(int argc, char **argv)
                         }
                         render("34_stage_ps2", 1280, 720);
                         render("34_stage_ps2_1080p", 1920, 1080);
+                        if (getenv("SF_PREVIEW_FADE")) {   /* 0.8.5: a new UI colour, then a new background, crossfading */
+                            int fr = 0, k;
+                            char nm2[64];
+                            float keepc = g_app.music_card_t;
+                            g_app.music_card_t = g_app.music_card_len;
+                            g_app.settings.ui_color = UI_COLOR_RED;
+                            for (k = 0; k < 30; k++) { snprintf(nm2, sizeof(nm2), "anim_fade_%03d", fr++); render(nm2, 640, 360); step(0, 1.0f / 30.0f); }
+                            g_app.settings.background = BG_AURORA;
+                            for (k = 0; k < 26; k++) { snprintf(nm2, sizeof(nm2), "anim_fade_%03d", fr++); render(nm2, 640, 360); step(0, 1.0f / 30.0f); }
+                            g_app.settings.background = BG_STAGE;
+                            g_app.settings.ui_color = UI_COLOR_BLUE;
+                            for (k = 0; k < 30; k++) { snprintf(nm2, sizeof(nm2), "anim_fade_%03d", fr++); render(nm2, 640, 360); step(0, 1.0f / 30.0f); }
+                            g_app.music_card_t = keepc;
+                        }
                         {   /* 0.8.0: the panels on the Stage, with case images */
                             press(SFB_TRIANGLE); step(0, 0.8f);
                             render("34c_stage_game_settings", 1280, 720);

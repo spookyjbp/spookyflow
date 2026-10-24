@@ -7,7 +7,14 @@ long g_null_vertices, g_null_batches;
 void r_tris_begin(void) { g_null_batches++; }
 void r_vtx(float x, float y, uint32_t rgba) { (void)x; (void)y; (void)rgba; g_null_vertices++; }
 void r_tris_end(void) { }
-void r_quads_begin(int tex) { (void)tex; g_null_batches++; }
+static int g_null_stage_mask;   /* which Stage composites were drawn (bit 0: TEX_STAGE, bit 1: TEX_STAGE_B) */
+void r_quads_begin(int tex)
+{
+    g_null_batches++;
+    if (tex == TEX_STAGE) g_null_stage_mask |= 1;
+    if (tex == TEX_STAGE_B) g_null_stage_mask |= 2;
+}
+int g_null_bound_mask_stage(void) { int m = g_null_stage_mask; g_null_stage_mask = 0; return m; }
 void r_qvtx(float x, float y, float u, float v, uint32_t rgba) { (void)x; (void)y; (void)u; (void)v; (void)rgba; g_null_vertices++; }
 void r_quads_end(void) { }
 int r_texture_upload_alpha(int tex, int w, int h, const unsigned char *alpha) { (void)tex; (void)w; (void)h; (void)alpha; return 0; }

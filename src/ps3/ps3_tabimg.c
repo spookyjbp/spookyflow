@@ -14,9 +14,11 @@
 #include "render.h"
 #include "ui.h"
 
-/* spooky's tab images, built in (src/core/tabs_data.c, tools/gen_icons.py --tabs) */
+/* spooky's tab and case images, built in (src/core/images_data.c, tools/gen_icons.py --images) */
 extern const unsigned char *const g_tab_png[PLAT_COUNT];
 extern const unsigned int g_tab_png_size[PLAT_COUNT];
+extern const unsigned char *const g_case_png[PLAT_COUNT];
+extern const unsigned int g_case_png_size[PLAT_COUNT];
 #include "imgscale.h"
 #include "stage.h"
 #include <jpgdec/jpgdec.h>
@@ -45,7 +47,7 @@ static void load_one(int plat)
         }
         ps3_decode_unlock();
     } else {
-        /* 0.8.4: spooky's tab images are built in (tabs_data.c); a file in the tabs folder replaces one */
+        /* 0.8.4: spooky's tab images are built in (images_data.c); a file in the tabs folder replaces one */
         if (!g_tab_png_size[plat]) { log_printf("tabs: %s not found, using text tab", path); return; }
         snprintf(path, sizeof(path), "built-in %s", names[plat]);
         ps3_decode_lock();
@@ -160,15 +162,27 @@ static int load_case(int plat, const char *path)
     unsigned char *rgba;
     u32 x, y, w, h;
     const float *g = k_case_geo[plat];
-    if (!ps3_fs_exists(path)) return 0;
     memset(&png, 0, sizeof(png));
-    ps3_decode_lock();
-    if (pngLoadFromFile(path, &png) != 0 || !png.bmp_out) {
+    if (ps3_fs_exists(path)) {
+        ps3_decode_lock();
+        if (pngLoadFromFile(path, &png) != 0 || !png.bmp_out) {
+            ps3_decode_unlock();
+            log_printf("cases: %s could not be decoded", path);
+            return 0;
+        }
         ps3_decode_unlock();
-        log_printf("cases: %s could not be decoded", path);
-        return 0;
+    } else {
+        /* 0.8.5: spooky's case images are built in; a file in the cases folder replaces one */
+        if (!g_case_png_size[plat]) return 0;
+        ps3_decode_lock();
+        if (pngLoadFromBuffer(g_case_png[plat], g_case_png_size[plat], &png) != 0 || !png.bmp_out) {
+            ps3_decode_unlock();
+            log_printf("cases: the built-in %s case could not be decoded", plat == 0 ? "PS1" : plat == 1 ? "PS2" : "PS3");
+            return 0;
+        }
+        ps3_decode_unlock();
+        path = plat == 0 ? "built-in ps1.png" : plat == 1 ? "built-in ps2.png" : "built-in ps3.png";
     }
-    ps3_decode_unlock();
     w = png.width; h = png.height;
     if (w == 0 || h == 0 || w > CASE_IMG_MAX || h > CASE_IMG_MAX) {
         log_printf("cases: %s is %ux%u, must be at most %d px", path, (unsigned)w, (unsigned)h, CASE_IMG_MAX);
@@ -380,6 +394,8 @@ int ps3_load_bg_image(const char *path)
         free(out);
         return -1;
     }
+    /* 0.8.5: a small blurred copy for the frosted settings cards */
+    if (ui_make_blur(out, BG_W, BG_H, TEX_BG_BLUR) == 0) ui_set_background_blur(TEX_BG_BLUR);
     free(out);
     ui_set_background_image(TEX_BG_IMAGE);
     log_printf("backgrounds: %s (%dx%d) ready", path, w, h);

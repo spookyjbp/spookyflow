@@ -1436,7 +1436,21 @@ static void test_stage_bake(void)
         CHECK(f >= 3 && f < 30);                    /* ...over a few frames, the old one shown meanwhile */
     }
     CHECK(g_null_updates == u0 + 4);                /* then both textures at once */
-    CHECK(g_null_update_tex == TEX_STAGE_RIB);
+    CHECK(g_null_update_tex == TEX_STAGE_RIB_B);    /* 0.8.5: into the second pair, which crossfades in */
+    {   /* the crossfade: while it runs both pairs are drawn, then only the new one */
+        extern int g_null_bound_mask_stage(void);
+        int both0 = 0, both1 = 0, f;
+        run_frames(0, 0.15f);                       /* a moment into the crossfade */
+        g_null_bound_mask_stage();
+        ui_draw(&g_app);
+        both0 = g_null_bound_mask_stage();
+        run_frames(0, 1.0f);
+        ui_draw(&g_app);
+        g_null_bound_mask_stage();
+        for (f = 0; f < 3; f++) ui_draw(&g_app);
+        both1 = g_null_bound_mask_stage();
+        CHECK(both0 == 3 && both1 == 2);            /* bit 0: TEX_STAGE drawn, bit 1: TEX_STAGE_B */
+    }
     /* switching colours again mid-way restarts in the newest colour only */
     g_app.settings.ui_color = UI_COLOR_GREEN;
     ui_draw(&g_app); ui_draw(&g_app);
@@ -1449,8 +1463,11 @@ static void test_stage_bake(void)
     ui_draw(&g_app); ui_draw(&g_app);
     CHECK(g_null_updates == u0 + 6);                /* purple is done: nothing more */
     /* on another background, Stage is made ready in steps (no stall when chosen) */
-    ui_set_stage_sources(base, 64, 36, rib, 32, 40, glow, 16, 16);
     g_app.settings.background = BG_ANIMATED;
+    ui_draw(&g_app);
+    run_frames(0, 1.0f);                            /* 0.8.5: the background crossfade (Stage out) is over */
+    ui_draw(&g_app);
+    ui_set_stage_sources(base, 64, 36, rib, 32, 40, glow, 16, 16);
     {
         int f;
         for (f = 0; f < 80 && !ui_stage_baked(); f++) ui_draw(&g_app);
@@ -1810,6 +1827,8 @@ static void test_panels_082(void)
  * row coasts to a stop on a game without bouncing back */
 extern const unsigned char *const g_tab_png[PLAT_COUNT];
 extern const unsigned int g_tab_png_size[PLAT_COUNT];
+extern const unsigned char *const g_case_png[PLAT_COUNT];
+extern const unsigned int g_case_png_size[PLAT_COUNT];
 
 static void test_stick_glide(void)
 {
@@ -1821,7 +1840,8 @@ static void test_stick_glide(void)
     {   /* 0.8.4: spooky's console tab images are built in (PNG files, decoded on the PS3) */
         int p;
         for (p = 0; p < PLAT_COUNT; p++)
-            CHECK(g_tab_png_size[p] > 100 && memcmp(g_tab_png[p], "\x89PNG\r\n\x1a\n", 8) == 0);
+            CHECK(g_tab_png_size[p] > 100 && memcmp(g_tab_png[p], "\x89PNG\r\n\x1a\n", 8) == 0 &&
+                  g_case_png_size[p] > 100 && memcmp(g_case_png[p], "\x89PNG\r\n\x1a\n", 8) == 0);   /* 0.8.5: cases too */
     }
     lib_clear(&g_lib);
     memset(&host, 0, sizeof(host));
@@ -1843,7 +1863,8 @@ static void test_stick_glide(void)
         prev = v->scroll.x;
     }
     CHECK(v->glide == 1 && stalls == 0 && jumps == 0);
-    CHECK(maxd < 0.6f);                         /* never more than ~half a game in one frame */
+    CHECK(maxd < 0.45f);                        /* 0.8.5: below the speed where the motion breaks up */
+    CHECK(v->flat > 0.9f);                      /* fast: the row has gone flat */
     CHECK(v->sel == (int)floorf(v->scroll.x + 0.5f));   /* the selection is the game in the middle */
     /* let go: forward only, onto a whole game */
     for (f = 0; f < 90; f++) {

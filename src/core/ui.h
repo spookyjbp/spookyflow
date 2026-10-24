@@ -38,6 +38,10 @@ void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsig
 int  ui_stage_baked(void);
 /* the user's background picture (BG_CUSTOM): texture id, -1 = none */
 void ui_set_background_image(int tex);
+/* 0.8.5: frosted panels. A small blurred copy of a w x h RGBA picture into
+ * texture tex (0 = done); ui_set_background_blur names the picture's copy. */
+int  ui_make_blur(const unsigned char *rgba, int w, int h, int tex);
+void ui_set_background_blur(int tex);
 /* the kittens' entrance frames (cats.h atlas) as a texture; -1 = none (a plain fade instead) */
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */

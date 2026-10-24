@@ -2,6 +2,7 @@
 #include "ui.h"
 #include "cats.h"
 #include "icons.h"
+#include "log.h"
 #include "render.h"
 #include "stage.h"
 #include "theme.h"
@@ -80,10 +81,34 @@ static const uint32_t k_accent[UI_COLOR_COUNT] = {
     0xFFFFFFFFu,   /* White (the original look) */
 };
 static int g_accent = UI_COLOR_BLUE;
+static uint32_t g_accent_from = 0x0070D1FFu;   /* 0.8.5: a new UI colour blends in from this one */
+static double g_accent_t0 = -100.0, g_ui_time;
+#define COLOR_FADE_TIME 0.45f
+#define BG_FADE_TIME    0.60f   /* a new background fades in over the old one */
 
-void ui_set_color(int idx) { g_accent = (idx >= 0 && idx < UI_COLOR_COUNT) ? idx : UI_COLOR_WHITE; }
+/* at once (tests, the preview) */
+void ui_set_color(int idx) { g_accent = (idx >= 0 && idx < UI_COLOR_COUNT) ? idx : UI_COLOR_WHITE; g_accent_t0 = -100.0; }
+static float accent_mix(void)
+{
+    float t = (float)((g_ui_time - g_accent_t0) / COLOR_FADE_TIME);
+    return t >= 1.0f ? 1.0f : t <= 0.0f ? 0.0f : t * t * (3.0f - 2.0f * t);
+}
 static int accent_white(void) { return g_accent == UI_COLOR_WHITE; }
-static uint32_t accent(void) { return k_accent[g_accent]; }
+static uint32_t accent(void)
+{
+    float m = accent_mix();
+    return m >= 1.0f ? k_accent[g_accent] : sf_col_mix(g_accent_from, k_accent[g_accent], m);
+}
+/* the settings' colour: blends from the colour on screen (0.8.5) */
+static void ui_follow_color(int idx, double now)
+{
+    idx = (idx >= 0 && idx < UI_COLOR_COUNT) ? idx : UI_COLOR_WHITE;
+    g_ui_time = now;
+    if (idx == g_accent) return;
+    g_accent_from = accent();
+    g_accent = idx;
+    g_accent_t0 = now;
+}
 
 /* All outlines breathe together: a slow, gentle glow (brighter and more
  * opaque at the peak), one cycle every OUTLINE_PULSE_PERIOD seconds. */
@@ -300,6 +325,55 @@ static void bg_twilight(float t, float alpha)
 static int g_stage_tex = -1, g_stage_shapes = -1, g_stage_hi = -1;
 static int g_bg_tex = -1;          /* the user's picture (BG_CUSTOM), loaded by the host */
 void ui_set_background_image(int tex) { g_bg_tex = tex; }
+/* 0.8.5: small blurred copies of the Stage and of the picture, shown under
+ * the settings and About cards so what's behind them isn't readable */
+static int g_stage_blur = -1, g_bg_blur = -1;
+void ui_set_background_blur(int tex) { g_bg_blur = tex; }
+
+#define BLUR_W 80
+#define BLUR_H 45
+int ui_make_blur(const unsigned char *rgba, int w, int h, int tex)
+{
+    static unsigned int acc[BLUR_W * BLUR_H * 4];
+    static unsigned char out[BLUR_W * BLUR_H * 4], tmp[BLUR_W * BLUR_H * 4];
+    int bx, by, x, y, c, pass;
+    if (!rgba || w < BLUR_W || h < BLUR_H) return -1;
+    memset(acc, 0, sizeof(acc));
+    /* box average into 80 x 45 (integer math: no int <-> float on the PPU) */
+    for (y = 0; y < h; y++) {
+        by = y * BLUR_H / h;
+        for (x = 0; x < w; x++) {
+            const unsigned char *p = rgba + ((size_t)y * w + x) * 4u;
+            unsigned int *q = acc + ((size_t)by * BLUR_W + (size_t)(x * BLUR_W / w)) * 4u;
+            q[0] += p[0]; q[1] += p[1]; q[2] += p[2];
+        }
+    }
+    {
+        unsigned int n = (unsigned int)((w / BLUR_W) * (h / BLUR_H));
+        if (n == 0) n = 1;
+        for (bx = 0; bx < BLUR_W * BLUR_H; bx++) {
+            for (c = 0; c < 3; c++) out[bx * 4 + c] = (unsigned char)(acc[bx * 4 + c] / n > 255 ? 255 : acc[bx * 4 + c] / n);
+            out[bx * 4 + 3] = 255;
+        }
+    }
+    /* two soft 3x3 passes; bilinear upscaling does the rest */
+    for (pass = 0; pass < 2; pass++) {
+        memcpy(tmp, out, sizeof(out));
+        for (y = 0; y < BLUR_H; y++)
+            for (x = 0; x < BLUR_W; x++)
+                for (c = 0; c < 3; c++) {
+                    int sum = 0, k = 0, dy, dx;
+                    for (dy = -1; dy <= 1; dy++)
+                        for (dx = -1; dx <= 1; dx++) {
+                            int yy = y + dy, xx = x + dx;
+                            if (yy < 0 || yy >= BLUR_H || xx < 0 || xx >= BLUR_W) continue;
+                            sum += tmp[((size_t)yy * BLUR_W + xx) * 4 + c]; k++;
+                        }
+                    out[((size_t)y * BLUR_W + x) * 4 + c] = (unsigned char)(sum / k);
+                }
+    }
+    return r_texture_update_rgba(tex, BLUR_W, BLUR_H, out);
+}
 void ui_set_stage(int bg_tex, int shapes_tex) { g_stage_tex = bg_tex; g_stage_shapes = shapes_tex; }
 void ui_set_stage_highlight(int tex) { g_stage_hi = tex; }
 
@@ -404,7 +478,8 @@ static const StageShape k_stage[] = {
 /* the UI color at full brightness (its largest channel at 255); White -> silver */
 static uint32_t stage_tint(void)
 {
-    uint32_t c = accent_white() ? 0xC4CEE2FFu : (accent() | 0xFFu);
+    /* the colour it is going to (the composite is made once per colour; 0.8.5 crossfades them) */
+    uint32_t c = accent_white() ? 0xC4CEE2FFu : (k_accent[g_accent] | 0xFFu);
     int r = (int)(c >> 24), g = (int)((c >> 16) & 255), b = (int)((c >> 8) & 255), m = r > g ? (r > b ? r : b) : (g > b ? g : b);
     if (m <= 0) return 0xFFFFFFFFu;
     return sf_rgba(r * 255 / m, g * 255 / m, b * 255 / m, 255);
@@ -426,6 +501,10 @@ static size_t g_bake_cap;
 static unsigned char *g_prep_glow;     /* bw x bh: 0.55 x glow over the scene */
 static unsigned char *g_prep_rib;      /* rw x rh/2 x 4: A, wg, wb, wc (0..255) */
 static int g_job_phase = -1, g_job_row, g_prepared;   /* the composite job (stage_job) */
+/* 0.8.5: the previous colour's composites while the new ones fade in */
+static int g_stage_prev_tex = -1, g_stage_prev_rib = -1, g_stage_xfade_off;
+static double g_stage_xfade_t0;
+static void stage_make_blur(void);
 
 void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsigned char *rib, int rw, int rh,
                           const unsigned char *glow, int gw, int gh)
@@ -613,12 +692,29 @@ static int stage_job(uint32_t tint, int sync)
             g_job_row = y1;
             if (g_job_row >= rh) {
                 g_job_phase = -1;
-                if (r_texture_update_rgba(TEX_STAGE, g_src_bw, g_src_bh, g_bake_buf) == 0 &&
-                    r_texture_update_rgba(TEX_STAGE_RIB, g_src_rw, rh, g_bake_rib) == 0) {
-                    g_stage_tex = TEX_STAGE;
-                    g_stage_rib = TEX_STAGE_RIB;
+                if (g_stage_baked && !g_stage_xfade_off) {
+                    /* 0.8.5: a new colour: into the other pair, then the two crossfade */
+                    int bs = g_stage_tex == TEX_STAGE ? TEX_STAGE_B : TEX_STAGE;
+                    int br = g_stage_rib == TEX_STAGE_RIB ? TEX_STAGE_RIB_B : TEX_STAGE_RIB;
+                    g_stage_prev_tex = g_stage_prev_rib = -1;          /* a crossfade still running ends now */
+                    if (r_texture_update_rgba(bs, g_src_bw, g_src_bh, g_bake_buf) == 0 &&
+                        r_texture_update_rgba(br, g_src_rw, rh, g_bake_rib) == 0) {
+                        g_stage_prev_tex = g_stage_tex; g_stage_prev_rib = g_stage_rib;
+                        g_stage_tex = bs; g_stage_rib = br;
+                        g_stage_xfade_t0 = g_ui_time;
+                        g_baked_tint = g_job_tint;
+                        stage_make_blur();
+                        return g_baked_tint == tint;
+                    }
+                    g_stage_xfade_off = 1;                  /* no room for a second pair: change at once from now on */
+                    log_printf("stage: no texture memory for colour crossfades, colours change at once");
+                }
+                if (r_texture_update_rgba(g_stage_tex >= 0 && g_stage_baked ? g_stage_tex : TEX_STAGE, g_src_bw, g_src_bh, g_bake_buf) == 0 &&
+                    r_texture_update_rgba(g_stage_rib >= 0 && g_stage_baked ? g_stage_rib : TEX_STAGE_RIB, g_src_rw, rh, g_bake_rib) == 0) {
+                    if (!g_stage_baked) { g_stage_tex = TEX_STAGE; g_stage_rib = TEX_STAGE_RIB; }
                     g_stage_baked = 1;
                     g_baked_tint = g_job_tint;
+                    stage_make_blur();
                 }
                 return g_stage_baked && g_baked_tint == tint;
             }
@@ -632,21 +728,38 @@ static int stage_job(uint32_t tint, int sync)
     return 0;
 }
 
+static void stage_make_blur(void)
+{
+    if (g_bake_buf && ui_make_blur(g_bake_buf, g_src_bw, g_src_bh, TEX_STAGE_BLUR) == 0) g_stage_blur = TEX_STAGE_BLUR;
+}
+
 /* everything at once (loading screen, or Stage shown with nothing made yet) */
 static void stage_bake(uint32_t tint) { stage_job(tint, 1); }
 
 static void bg_stage(float t, float alpha)
 {
     uint32_t tint = stage_tint(), lite = sf_col_mix(tint, 0xFFFFFFFFu, 0.35f);
-    float hy = H() * LY_HORIZON_Y;
+    float hy = H() * LY_HORIZON_Y, xf = 1.0f;
     int i;
     if (g_src_base && !g_stage_baked) stage_bake(tint);              /* nothing to show yet: now */
     else if (g_src_base && g_baked_tint != tint) stage_job(tint, 0);  /* new colour: in steps, the old one meanwhile */
+    if (g_stage_prev_tex >= 0) {           /* 0.8.5: a colour change crossfades */
+        xf = (float)((g_ui_time - g_stage_xfade_t0) / COLOR_FADE_TIME);
+        if (xf >= 1.0f || xf < 0.0f) { g_stage_prev_tex = g_stage_prev_rib = -1; xf = 1.0f; }
+        else xf = xf * xf * (3.0f - 2.0f * xf);
+    }
     if (g_stage_baked) {
         /* one opaque layer: no blending, so the RSX doesn't read the screen back */
-        if (alpha >= 0.999f) r_set_blend(0);
-        d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha));
-        if (alpha >= 0.999f) r_set_blend(1);
+        if (xf < 1.0f) {
+            if (alpha >= 0.999f) r_set_blend(0);
+            d_image(g_stage_prev_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha));
+            if (alpha >= 0.999f) r_set_blend(1);
+            d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha * xf));
+        } else {
+            if (alpha >= 0.999f) r_set_blend(0);
+            d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha));
+            if (alpha >= 0.999f) r_set_blend(1);
+        }
     } else {
     /* base scene: brightness tinted with the UI color, white-hot cores on top */
     d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, alpha));
@@ -674,7 +787,9 @@ static void bg_stage(float t, float alpha)
             float al = alpha * (0.80f + 0.20f * sinf(t * 0.21f + ph));
             float u0 = (float)i * 0.5f;
             if (g_stage_baked) {      /* glow, body and core in one texture */
-                d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al));
+                if (xf < 1.0f && g_stage_prev_rib >= 0)
+                    d_image_rot(g_stage_prev_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al * (1.0f - xf)));
+                d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al * xf));
                 continue;
             }
             if (g_stage_glow >= 0)    /* the ribbons' own glow moves with them */
@@ -889,7 +1004,14 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     /* 0.8.0: Game Settings / Choose Disc show the big case on the left */
     float pg = (tab == a->tab && (a->panel == PANEL_GAME || a->panel == PANEL_DISC)) ? ease_in_out(a->panel_anim) : 0.0f;
     float de = tab == a->tab ? sf_maxf(ease_in_out(a->display_t), pg) : 0.0f;
+    float fl = tab == a->tab ? a->view[tab].flat : 0.0f, pitch;
     CoverPos big;
+    {
+        CoverPos q1, q2;
+        layout_cover(s, tab, 1.0f, &q1);
+        layout_cover(s, tab, 2.0f, &q2);
+        pitch = q2.cx - q1.cx;           /* the neighbours' spacing */
+    }
     layout_cover(s, tab, 0.0f, &big);
     {
         float sc = DISPLAY_H * H() / ((layout_floor() ? LY_SEL_H : LY_C_SEL_H) * H());
@@ -907,7 +1029,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     {
         CoverPos c0;
         float frac = sf_absf(scroll - (float)center);
-        float la = alpha * (1.0f - sf_minf(1.0f, frac * 2.0f) * 0.6f) * (1.0f - de);
+        float la = alpha * (1.0f - sf_minf(1.0f, frac * 2.0f) * 0.6f) * (1.0f - de) * (1.0f - fl);
         layout_cover(s, tab, 0.0f, &c0);
         if (la > 0.0f) {
             uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
@@ -922,7 +1044,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
             d_rect_hgrad(cx, ly - th * 0.5f, lw * 0.5f, th, core, clear);
         }
     }
-    for (k = LY_MAX_DRAW; k >= 0; k--) {
+    for (k = LY_MAX_DRAW + (fl > 0.0f ? 3 : 0); k >= 0; k--) {
         int side;
         for (side = 0; side < (k == 0 ? 1 : 2); side++) {
             int idx = side == 0 ? center - k : center + k;
@@ -930,6 +1052,18 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
             float ra;
             if (idx < 0 || idx >= gl->count) continue;
             layout_cover(s, tab, (float)idx - scroll, &p);
+            if (fl > 0.0f) {
+                /* 0.8.5: fast gliding: every case a neighbour's size at an even pitch,
+                 * so nothing grows and shrinks through the middle */
+                float dd = (float)idx - scroll, e = ease_in_out(fl);
+                CoverPos q;
+                layout_cover(s, tab, 2.0f, &q);
+                p.cx = sf_lerp(p.cx, W() * 0.5f + dd * pitch, e);
+                p.cy = sf_lerp(p.cy, q.cy, e);
+                p.h = sf_lerp(p.h, q.h, e);
+                p.w = sf_lerp(p.w, q.w, e);
+                p.bright = sf_lerp(p.bright, sf_maxf(0.40f, 0.88f - sf_absf(dd) * 0.09f), e);
+            }
             p.cx += xoff;
             if (de > 0.0f) {
                 float dd = (float)idx - scroll, ad = sf_minf(1.0f, sf_absf(dd)), f = de * (1.0f - ad);
@@ -1344,9 +1478,10 @@ static void draw_bar_groups(const App *a, const BarLayout *L, float alpha, int s
                 float ring = show_ring && it->icon == ICON_CIRCLE ? a->hold.shown : 0.0f;
                 d_badge(it->icon, bx, cy, L->icon, sf_col_alpha(0xFFFFFFFFu, alpha));
                 if (ring > 0.0f) {
-                    d_disc(bx, cy, L->icon * 0.47f, sf_col_alpha(0xFFFFFF33u, alpha * ring));   /* brighten */
-                    d_arc(bx, cy, L->icon * 0.5f + 0.0075f * H(), 0.0042f * H(), 0.0f, 2.0f * PI_F * ring,
-                          sf_col_alpha(accent_or(TH_EXIT_RING, 1.0f), alpha));
+                    /* 0.8.5: no white glow on the button; the ring glows like the controls bar's outline */
+                    float rr = L->icon * 0.5f + 0.0075f * H();
+                    d_arc(bx, cy, rr, 0.0110f * H(), 0.0f, 2.0f * PI_F * ring, sf_col_alpha(glow(accent_or(TH_EXIT_RING, 1.0f)), 0.22f * alpha));
+                    d_arc(bx, cy, rr, 0.0042f * H(), 0.0f, 2.0f * PI_F * ring, sf_col_alpha(glow(accent_or(TH_EXIT_RING, 1.0f)), alpha));
                 }
             }
             x += it->w;
@@ -1411,6 +1546,34 @@ static void draw_value(float xr, float cy, float em, const char *val, int select
 }
 
 /* room one of draw_value's ‹ › takes */
+
+/* 0.8.5: a frosted card: under it, a blurred copy of the background (Stage,
+ * a picture) or, for the soft drawn backgrounds, their colour, so what's
+ * behind it isn't readable; then the dark tint and the tabs' see-through white */
+static void frost_part(int tex, float x, float y, float w, float h, float al)
+{
+    float u0 = x / W(), u1 = (x + w) / W(), v0 = y / H(), v1 = (y + h) / H();
+    if (w <= 0.0f || h <= 0.0f) return;
+    d_image_rot(tex, x + w * 0.5f, y + h * 0.5f, w * PA(), h, 0.0f, u0, u1, v0, v1, sf_col_alpha(0xFFFFFFFFu, al));
+}
+
+static void frost_rect(const App *a, float x, float y, float w, float h, float r, float al)
+{
+    int bg = a->settings.background, tex = -1;
+    float rx = d_xu(r);
+    if (bg == BG_STAGE && g_stage_blur >= 0 && g_stage_baked) tex = g_stage_blur;
+    else if (bg == BG_CUSTOM && g_bg_blur >= 0 && g_bg_tex >= 0) tex = g_bg_blur;
+    if (tex >= 0) {
+        /* the copy, cut to the card's rounded shape: a middle band and two side bands */
+        frost_part(tex, x + rx, y, w - 2.0f * rx, h, al);
+        frost_part(tex, x, y + r, rx, h - 2.0f * r, al);
+        frost_part(tex, x + w - rx, y + r, rx, h - 2.0f * r, al);
+        d_rrect(x, y, w, h, r, sf_col_alpha(0x05060AFFu, 0.30f * al));
+    } else {
+        d_rrect(x, y, w, h, r, sf_col_alpha(sf_col_mix(TH_BG_BOTTOM | 0xFFu, bg_tint(), 0.10f), 0.90f * al));
+    }
+    d_rrect(x, y, w, h, r, sf_col_alpha(TH_TAB_INACTIVE, al));
+}
 
 /* ---- Settings panels (0.8.0) ----------------------------------------
  * Flow Settings is a drawer on the right (the cover flow slides left and
@@ -1506,7 +1669,7 @@ static void draw_segments(float xr, float cy, float em, const char *const *names
     for (i = 0; i < n && i < 4; i++) wmax = sf_maxf(wmax, d_text_width(&g_font_main, em * 0.82f, names[i]));
     for (i = 0; i < n && i < 4; i++) { ws[i] = wmax + 2.0f * pad; total += ws[i]; }
     x = xr - total;
-    d_rrect(x, cy - h * 0.5f, total, h, h * 0.5f, sf_col_alpha(0x00000059u, al));
+    d_rrect(x, cy - h * 0.5f, total, h, h * 0.5f, sf_col_alpha(TH_TAB_INACTIVE, al));   /* 0.8.5: the settings' see-through colour */
     /* the chosen one: a pill that glides between the choices */
     {
         int i0 = sf_clampi((int)floorf(pos), 0, n - 1), i1 = i0 + 1 < n ? i0 + 1 : i0;
@@ -1648,9 +1811,8 @@ static void draw_panel(App *a)
         /* the drawer: a whole card with a soft shadow and the breathing outline all round */
         float r = 0.040f * H();
         d_rrect_glow(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.040f * H(), sf_col_alpha(0x000000FFu, 0.55f * g.alpha));
-        /* 0.8.4: see-through like the console tabs; a dark tint under it keeps the cover flow behind from showing through busily */
-        d_rrect(g.card_x, g.card_y, g.card_w, g.card_h, r, sf_col_alpha(0x05060AFFu, 0.62f * g.alpha));
-        d_rrect(g.card_x, g.card_y, g.card_w, g.card_h, r, sf_col_alpha(TH_TAB_INACTIVE, g.alpha));
+        /* 0.8.5: frosted: the blurred background under the tabs' see-through white */
+        frost_rect(a, g.card_x, g.card_y, g.card_w, g.card_h, r, g.alpha);
         d_rrect_glow(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.014f * H(),
                      sf_col_alpha(hot, 0.22f * g.alpha * (0.6f + 0.4f * g_glow)));
         d_rrect_stroke(g.card_x, g.card_y, g.card_w, g.card_h, r, 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), g.alpha));
@@ -1702,12 +1864,11 @@ static void draw_panel(App *a)
         float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.06f * H()), al = g.alpha * re;
         float grow = d_xu(0.004f * H());
         if (hy + hh > clip_top && hy < clip_bot && al > 0.0f) {
-            d_rrect_glow(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.022f * H(),
-                         sf_col_alpha(hot, 0.30f * al * (0.75f + 0.25f * g_glow)));
-            /* 0.8.4: like the selected console tab: no fill of its own, just the glowing outline */
-            /* 0.8.2: the glowing outline the selected console tab has */
-            d_rrect_stroke(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.0040f * H(),
-                           sf_col_alpha(glow(accent_or(TH_TAB_ACTIVE, 1.0f)), al));
+            /* like the selected console tab: no fill of its own, just the glowing
+             * outline, right on the row's edge (0.8.5: no gap between them) */
+            (void)grow;
+            d_rrect_glow(g.x + ox, hy, g.w, hh, g.rh * 0.5f, 0.022f * H(), sf_col_alpha(hot, 0.30f * al * (0.75f + 0.25f * g_glow)));
+            d_rrect_stroke(g.x + ox, hy, g.w, hh, g.rh * 0.5f, 0.0040f * H(), sf_col_alpha(glow(accent_or(TH_TAB_ACTIVE, 1.0f)), al));
         }
     }
     for (i = 0; i < a->nrows; i++) {        /* 0.8.1: every row's animation, drawn or not */
@@ -1836,8 +1997,7 @@ static void draw_about(const App *a)
     if (al <= 0.003f) return;
     d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.62f * al));
     d_rrect_glow(x, y, w, h, r, 0.040f * H(), sf_col_alpha(0x000000FFu, 0.6f * al));
-    d_rrect(x, y, w, h, r, sf_col_alpha(0x05060AFFu, 0.62f * al));
-    d_rrect(x, y, w, h, r, sf_col_alpha(TH_TAB_INACTIVE, al));
+    frost_rect(a, x, y, w, h, r, al);
     d_rrect_glow(x, y, w, h, r, 0.014f * H(), sf_col_alpha(hot, 0.22f * al * (0.6f + 0.4f * g_glow)));
     d_rrect_stroke(x, y, w, h, r, 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), al));
     yy = y + 0.075f * h / 0.80f;
@@ -1848,7 +2008,7 @@ static void draw_about(const App *a)
     yy += 0.036f * H() * sc;
     title_line(cx - iw * 0.5f, iw, yy, hot, al);
     yy += 0.068f * H() * sc;
-    d_text_box(&g_font_main, cx, yy, iw, 0.025f * H() * sc, 3, sf_col_alpha(TH_TEXT, al),
+    d_text_box(&g_font_main, cx, yy, iw, 0.025f * H() * sc, 3, sf_col_alpha(TH_TEXT_DIM, al),
                "A cover-flow launcher for the PlayStation 3. Browse your games with their real covers and cases, "
                "change how each one starts, and launch it in a press.");
     yy += 0.082f * H() * sc;
@@ -1863,7 +2023,7 @@ static void draw_about(const App *a)
     yy += 0.044f * H() * sc;
     for (i = 0; i < (int)(sizeof(k_about_tools) / sizeof(k_about_tools[0])); i++) {
         /* "Made with" first, a little brighter (0.8.4: swapped with "Created by spooky") */
-        d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(i == 0 ? TH_TEXT : TH_TEXT_DIM, al), k_about_tools[i], ALIGN_CENTER, iw);
+        d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), k_about_tools[i], ALIGN_CENTER, iw);
         yy += 0.037f * H() * sc;
     }
 }
@@ -2255,7 +2415,7 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
         draw_flow_row(a, a->tab, (a->reveal_start > -999.0f ? 0.0f : (1.0f - intro) * W() * 0.12f) + flow_dx, ia);
     }
     {   /* display mode / Game Settings: the title and info fade out; Flow Settings: they move with the row */
-        float fade = 1.0f - sf_maxf(ease_in_out(a->display_t), pgame);
+        float fade = (1.0f - sf_maxf(ease_in_out(a->display_t), pgame)) * (1.0f - ease_in_out(a->view[a->tab].flat));
         g_info_dx = flow_dx;
         if (fade > 0.0f) draw_info(a, ia * fade, &m);
         g_info_dx = 0.0f;
@@ -2264,11 +2424,11 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
         if (a->panel == PANEL_FLOW)        /* the cover flow dims under the drawer */
             d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.40f * ease_in_out(a->panel_anim) * (1.0f - ease_in_out(a->about_t))));
         draw_panel(a);
-        if (a->about_t > 0.0f) draw_about(a);
     }
+    draw_music_card(a, ia);
+    if (a->panel != PANEL_NONE && a->about_t > 0.0f) draw_about(a);   /* 0.8.5: over the music card */
     draw_bar(a, ia);
     draw_letter(a);
-    draw_music_card(a, ia);
     draw_toast(a);
 }
 
@@ -2277,7 +2437,9 @@ void ui_draw(App *a)
     UiMetrics m;
     float intro, ia;
     int animated = 1;
-    ui_set_color(a->settings.ui_color);
+    if (a->mode == MODE_LOADING) ui_set_color(a->settings.ui_color);
+    else ui_follow_color(a->settings.ui_color, a->time);
+    g_ui_time = a->time;
     set_glow(a->time);
     /* composite the Stage during loading, so the cover flow doesn't start with a hitch */
     if (a->mode == MODE_LOADING && a->settings_ready && a->settings.background == BG_STAGE && g_src_base &&
@@ -2292,7 +2454,28 @@ void ui_draw(App *a)
     layout_set_floor(a->settings.background == BG_STAGE);   /* Stage: on its floor; others: centered */
     layout_ui(d_screen(), &m);
     g_intro_shapes = g_intro_parts = 1.0f;
-    if (a->mode != MODE_LOADING) draw_background(a, 1.0f, animated);
+    if (a->mode != MODE_LOADING) {
+        /* 0.8.5: a new background fades in over the one it replaces */
+        static int shown = -1, from = -1;
+        static double t0 = -100.0;
+        int now = a->settings.background;
+        float f;
+        if (shown < 0) shown = now;
+        if (now != shown) {
+            from = (shown == BG_CUSTOM && now == BG_CUSTOM) ? -1 : shown;
+            shown = now;
+            t0 = a->time;
+        }
+        f = (float)((a->time - t0) / BG_FADE_TIME);
+        if (from >= 0 && f < 1.0f && f >= 0.0f && !(from == BG_CUSTOM && g_bg_tex < 0)) {
+            f = f * f * (3.0f - 2.0f * f);
+            draw_background_as(a, 1.0f, animated, from);
+            draw_background_as(a, f, animated, now);
+        } else {
+            from = -1;
+            draw_background(a, 1.0f, animated);
+        }
+    }
 
     if (a->mode == MODE_LOADING) {
         int style = loading_style(a);

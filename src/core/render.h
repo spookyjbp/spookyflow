@@ -21,7 +21,10 @@ enum {
     TEX_STAGE_FX = 16,                        /* Stage's ribbons, flare and stars (brightness) */
     TEX_STAGE_RIB = 17,                       /* Stage's light ribbons */
     TEX_STAGE_GLOW = 18,                      /* Stage's glow halos */
-    TEX_COUNT_FIXED = 19
+    TEX_STAGE_B = 19, TEX_STAGE_RIB_B = 20,   /* 0.8.5: the Stage composites in the new colour while they crossfade */
+    TEX_STAGE_BLUR = 21,                      /* 0.8.5: a small, blurred copy of the Stage (frosted panels) */
+    TEX_BG_BLUR = 22,                         /* 0.8.5: a small, blurred copy of the user's picture */
+    TEX_COUNT_FIXED = 23
 };
 
 /* Cover art: R_COVER_SLOTS textures TEX_COVER0 + slot, one per cover cache

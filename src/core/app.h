@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.8.4"
+#define APP_VERSION     "0.8.5"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -102,6 +102,7 @@ typedef struct {
     int glide;          /* 0.8.4: -1 / +1 while the left stick scrolls continuously, else 0 */
     float glide_pos;    /* the row's position while gliding (index units) */
     float glide_hold;   /* how long the stick has been held */
+    float flat;         /* 0.8.5: 0..1, the row's cases all one size while gliding fast (eases back) */
 } TabView;
 
 /* The row eases to a single step in ~300 ms; while steps come fast (holding the
@@ -110,6 +111,9 @@ typedef struct {
 #define FLOW_STEP_WINDOW 0.25   /* steps further apart than this are "not scrolling" */
 #define FLOW_MAX_LAG     0.20f
 #define FLOW_OMEGA_MAX   400.0f
+#define GLIDE_MAX_SPEED  24.0f   /* games/s: faster and the row's motion breaks up (> ~0.45 of a case per frame) */
+#define GLIDE_FLAT_FROM  10.0f   /* games/s where the row starts going flat ... */
+#define GLIDE_FLAT_FULL  18.0f   /* ... and is flat */
 
 typedef struct {
     AppHost host;

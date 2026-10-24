@@ -164,7 +164,10 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
         if (s->sfx_volume == 0) sf_strlcpy(out, "Off", cap);
         else snprintf(out, cap, "%d%%", s->sfx_volume);
         break;
-    case ROW_F_VOLUME: snprintf(out, cap, "%d%%", s->music_volume); break;
+    case ROW_F_VOLUME:      /* 0.8.5: 0% reads Off */
+        if (s->music_volume == 0) sf_strlcpy(out, "Off", cap);
+        else snprintf(out, cap, "%d%%", s->music_volume);
+        break;
     case ROW_F_SHUFFLE: sf_strlcpy(out, onoff(s->shuffle), cap); break;
     case ROW_F_BACKGROUND: sf_strlcpy(out, settings_background_name(s->background), cap); break;
     case ROW_F_UI_COLOR: sf_strlcpy(out, settings_color_name(s->ui_color), cap); break;
