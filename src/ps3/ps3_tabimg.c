@@ -331,3 +331,41 @@ void ps3_load_tab_images(void)
     load_case_images();
     load_stage();
 }
+
+/* ---- the user's background pictures (0.7.0): /dev_hdd0/tmp/spookyflow/
+ * backgrounds/ (.jpg or .png files). The chosen one is cropped to 16:9 around the
+ * center and resized to 1280x720 into TEX_BG_IMAGE (overwritten in place
+ * when another one is chosen). */
+#define BG_W 1280
+#define BG_H 720
+int ps3_load_bg_image(const char *path)
+{
+    uint8_t *rgba = NULL, *crop, *out;
+    int w = 0, h = 0, cx, cy, cw, ch, y;
+    if (ps3_decode_image(path, BG_W, BG_H, 4096, &w, &h, &rgba) != 0 || !rgba) {
+        log_printf("backgrounds: %s could not be decoded (%dx%d, max 4096 px)", path, w, h);
+        free(rgba);
+        return -1;
+    }
+    if ((float)w / (float)h > 16.0f / 9.0f) { ch = h; cw = h * 16 / 9; } else { cw = w; ch = w * 9 / 16; }
+    if (cw < 1) cw = 1;
+    if (ch < 1) ch = 1;
+    cx = (w - cw) / 2; cy = (h - ch) / 2;
+    crop = (uint8_t *)malloc((size_t)cw * ch * 4u);
+    out = (uint8_t *)malloc((size_t)BG_W * BG_H * 4u);
+    if (!crop || !out) { free(crop); free(out); free(rgba); return -1; }
+    for (y = 0; y < ch; y++) memcpy(crop + (size_t)y * cw * 4u, rgba + (((size_t)(y + cy) * w) + cx) * 4u, (size_t)cw * 4u);
+    free(rgba);
+    img_resample_rgba(crop, cw, ch, out, BG_W, BG_H);
+    free(crop);
+    for (y = 0; y < BG_W * BG_H; y++) out[y * 4 + 3] = 255;
+    if (r_texture_update_rgba(TEX_BG_IMAGE, BG_W, BG_H, out) != 0) {
+        log_printf("backgrounds: no texture memory for %s", path);
+        free(out);
+        return -1;
+    }
+    free(out);
+    ui_set_background_image(TEX_BG_IMAGE);
+    log_printf("backgrounds: %s (%dx%d) ready", path, w, h);
+    return 0;
+}

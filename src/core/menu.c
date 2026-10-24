@@ -14,19 +14,60 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
             tmp[n++] = ROW_G_EMULATOR; tmp[n++] = ROW_G_OFFLINE; tmp[n++] = ROW_G_PS2CFG;
         } else { tmp[n++] = ROW_G_OFFLINE; }
     } else if (panel == PANEL_FLOW) {
-        tmp[n++] = ROW_F_AUTOPLAY; tmp[n++] = ROW_F_OFFLINE; tmp[n++] = ROW_F_SFX; tmp[n++] = ROW_F_VOLUME; tmp[n++] = ROW_F_SHUFFLE;
-        tmp[n++] = ROW_F_BACKGROUND; tmp[n++] = ROW_F_UI_COLOR; tmp[n++] = ROW_F_INFO; tmp[n++] = ROW_F_CASES; tmp[n++] = ROW_F_REFLECT; tmp[n++] = ROW_F_SLEEP; tmp[n++] = ROW_F_COVERS; tmp[n++] = ROW_F_IGNORE_THE;
-        tmp[n++] = ROW_F_XMB_TOP; tmp[n++] = ROW_F_RESCAN; tmp[n++] = ROW_F_PERFTEST; tmp[n++] = ROW_F_QUIT;
-        tmp[n++] = ROW_F_POWEROFF;
+        /* 0.7.0: grouped; Quit and Power Off stay on the first page */
+        tmp[n++] = ROW_FG_LOOK; tmp[n++] = ROW_FG_SOUND; tmp[n++] = ROW_FG_GAMES; tmp[n++] = ROW_FG_SYSTEM;
+        tmp[n++] = ROW_F_QUIT; tmp[n++] = ROW_F_POWEROFF;
     }
     if (n > max) n = max;
     for (i = 0; i < n; i++) out[i] = tmp[i];
     return n;
 }
 
+static const RowKind k_g_look[] = { ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT };
+static const RowKind k_g_sound[] = { ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_SFX };
+static const RowKind k_g_games[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_IGNORE_THE, ROW_F_COVERS, ROW_F_RESCAN };
+static const RowKind k_g_system[] = { ROW_F_SLEEP, ROW_F_XMB_TOP, ROW_F_PERFTEST };
+
+static const RowKind *group_list(RowKind g, int *n)
+{
+    switch (g) {
+    case ROW_FG_LOOK:   *n = (int)(sizeof(k_g_look) / sizeof(k_g_look[0])); return k_g_look;
+    case ROW_FG_SOUND:  *n = (int)(sizeof(k_g_sound) / sizeof(k_g_sound[0])); return k_g_sound;
+    case ROW_FG_GAMES:  *n = (int)(sizeof(k_g_games) / sizeof(k_g_games[0])); return k_g_games;
+    case ROW_FG_SYSTEM: *n = (int)(sizeof(k_g_system) / sizeof(k_g_system[0])); return k_g_system;
+    default: *n = 0; return NULL;
+    }
+}
+
+int menu_group_rows(RowKind group, RowKind *out, int max)
+{
+    int n, i;
+    const RowKind *l = group_list(group, &n);
+    if (n > max) n = max;
+    for (i = 0; i < n; i++) out[i] = l[i];
+    return n;
+}
+
+int menu_is_group(RowKind k) { return k == ROW_FG_LOOK || k == ROW_FG_SOUND || k == ROW_FG_GAMES || k == ROW_FG_SYSTEM; }
+
+int menu_group_of(RowKind k)
+{
+    static const RowKind gs[4] = { ROW_FG_LOOK, ROW_FG_SOUND, ROW_FG_GAMES, ROW_FG_SYSTEM };
+    int g, i, n;
+    for (g = 0; g < 4; g++) {
+        const RowKind *l = group_list(gs[g], &n);
+        for (i = 0; i < n; i++) if (l[i] == k) return (int)gs[g];
+    }
+    return -1;
+}
+
 const char *menu_label(RowKind k)
 {
     switch (k) {
+    case ROW_FG_LOOK: return "Appearance";
+    case ROW_FG_SOUND: return "Music & Sound";
+    case ROW_FG_GAMES: return "Games & Library";
+    case ROW_FG_SYSTEM: return "System";
     case ROW_G_AUTOPLAY: return "Auto-Play";
     case ROW_G_EMULATOR: return "Emulator";
     case ROW_G_OFFLINE: return "Offline Mode";
@@ -56,7 +97,7 @@ const char *menu_label(RowKind k)
 
 int menu_is_action(RowKind k)
 {
-    return k == ROW_D_DISC || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_PERFTEST || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
+    return k == ROW_D_DISC || menu_is_group(k) || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_PERFTEST || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
 }
 
 int menu_is_slider(RowKind k) { return k == ROW_F_VOLUME || k == ROW_F_SFX; }
@@ -87,6 +128,17 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
         sf_strlcpy(out, n[sf_clampi(g->ps2cfg, 0, SET_PS2CFG_MAX)], cap);
         break;
     }
+    /* groups: a short summary of what's inside */
+    case ROW_FG_LOOK: snprintf(out, cap, "%s \xC2\xB7 %s  \xE2\x80\xBA", settings_background_name(s->background), settings_color_name(s->ui_color)); break;
+    case ROW_FG_SOUND:
+        if (s->music_volume == 0) snprintf(out, cap, "Music Off  \xE2\x80\xBA");
+        else snprintf(out, cap, "Music %d%%%s  \xE2\x80\xBA", s->music_volume, s->shuffle ? " \xC2\xB7 Shuffle" : "");
+        break;
+    case ROW_FG_GAMES: snprintf(out, cap, "Auto-Play %s  \xE2\x80\xBA", onoff(s->autoplay)); break;
+    case ROW_FG_SYSTEM:
+        if (s->sleep_min <= 0) sf_strlcpy(out, "Sleep Off  \xE2\x80\xBA", cap);
+        else snprintf(out, cap, "Sleep %d min  \xE2\x80\xBA", s->sleep_min);
+        break;
     case ROW_F_AUTOPLAY: sf_strlcpy(out, onoff(s->autoplay), cap); break;
     case ROW_F_OFFLINE: sf_strlcpy(out, onoff(s->offline), cap); break;
     case ROW_F_SFX:
@@ -129,6 +181,8 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     case ROW_G_EMULATOR: g->emulator = (signed char)cycle(g->emulator, 2, dir); return MENU_FX_CHANGED;
     case ROW_G_OFFLINE: g->offline = (signed char)cycle(g->offline, 3, dir); return MENU_FX_CHANGED;
     case ROW_G_PS2CFG: return MENU_FX_PS2CFG;   /* the app cycles through the configs that exist */
+    case ROW_FG_LOOK: case ROW_FG_SOUND: case ROW_FG_GAMES: case ROW_FG_SYSTEM:
+        return dir == 0 ? MENU_FX_GROUP : MENU_FX_NONE;
     case ROW_F_AUTOPLAY: s->autoplay = cycle(s->autoplay, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_OFFLINE: s->offline = cycle(s->offline, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_SFX: {

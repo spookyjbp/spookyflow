@@ -36,6 +36,8 @@ void ui_set_stage_glow(int tex);
 void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsigned char *rib, int rw, int rh,
                           const unsigned char *glow, int gw, int gh);
 int  ui_stage_baked(void);
+/* the user's background picture (BG_CUSTOM): texture id, -1 = none */
+void ui_set_background_image(int tex);
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */
 void ui_set_color(int idx);

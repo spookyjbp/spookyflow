@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.6.9"
+#define APP_VERSION     "0.7.0"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -33,6 +33,7 @@
 #define SLEEP_FADE_TIME 1.5f
 #define WAKE_FADE_TIME  0.25f
 #define MUSIC_GAIN_MAX  0.5f   /* gain at Music Volume 100% */
+#define MUSIC_START_DELAY 2.0f /* s after the cover flow has come in */
 #define MUSIC_SLEEP_DUCK 0.6f  /* music drops to 40% while the screen sleeps */
 
 typedef enum { MODE_LOADING = 0, MODE_FLOW = 1 } AppMode;
@@ -85,6 +86,11 @@ typedef struct {
     int (*is_file)(void *ctx, const char *path);
     int (*write_file)(const char *path, const void *data, uint32_t len);   /* 0 = written */
     int (*remove_file)(const char *path);                                   /* 0 = removed */
+    /* optional: the user's background pictures (0.7.0): the folder, and a
+     * loader that decodes one, fits it to the screen and makes it the
+     * background texture (ui_set_background_image). 0 = loaded. */
+    const char *bg_dir;
+    int (*load_bg_image)(const char *path);
 } AppHost;
 
 typedef struct {
@@ -148,6 +154,13 @@ typedef struct {
     int panel_plat;         /* platform of the game being edited */
     int panel_game;         /* index of game being edited */
     GameCfg panel_cfg;
+    int flow_group;         /* Flow Settings: the group open (ROW_FG_*), -1 = the first page */
+    /* the user's background pictures (in host.bg_dir) */
+#define APP_MAX_BG_IMAGES 32
+    char bg_files[APP_MAX_BG_IMAGES][128];
+    int nbg_files;
+    char bg_loaded[128];    /* the picture in the texture now ("" = none) */
+    int flow_top_row;       /* row of that group on the first page (◯ goes back to it) */
     /* PS2 config picker, worked out when Game Settings opens on a PS2 game */
     int ps2cfg_ok;          /* 1: a PS2 ISO with a known ID and the host can copy files */
     unsigned ps2cfg_avail;  /* bit n: PS2CFG type n exists for this game (bit 0 = Auto, always) */
@@ -171,7 +184,8 @@ typedef struct {
     float music_swap_t;     /* 0..1 (>= 1: no change going on) */
     float music_prev_off, music_prev_w;   /* the old name's scroll offset and the card's width then */
     float music_cur_off, music_cur_w;     /* written by ui.c each frame */
-    float reveal_start;     /* load_t when the Stage reveal started (-1000 = not used) */   /* how long it stays: longer while a long name scrolls (set by ui.c) */
+    float reveal_start;
+    float flow_t;           /* time since the cover flow appeared */     /* load_t when the Stage reveal started (-1000 = not used) */   /* how long it stays: longer while a long name scrolls (set by ui.c) */
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
     char toast[160];
     volatile int ntfs_busy;  /* 1 while webMAN re-indexes the NTFS drives (Rescan) */

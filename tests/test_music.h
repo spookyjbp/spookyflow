@@ -1035,7 +1035,13 @@ static void test_music_app(void)
     CHECK(g_app.mode == MODE_FLOW);
     CHECK(music_track_count() == 3);
     mus_pump(3);
-    CHECK(music_buffered() > 0);
+    CHECK(music_buffered() == 0);                          /* 0.7.0: not yet, the cover flow just came in */
+    while (g_app.flow_t < INTRO_TIME + MUSIC_START_DELAY - 0.1f) run_frames(0, 0.05f);
+    mus_pump(3);
+    CHECK(music_buffered() == 0);
+    run_frames(0, 0.2f);
+    mus_pump(3);
+    CHECK(music_buffered() > 0);                           /* 2 s after: it plays */
     run_frames(0, 0.05f);
     gen = music_current(NULL, 0);
     CHECK(gen == 1 && g_app.music_name[0] && g_app.music_card_t < 0.5f);
@@ -1308,9 +1314,7 @@ static void test_perf_test(void)
     app_init(&g_app, &g_lib, &host);
     run_frames(0, LOAD_MIN_TIME + 1.5f);
     CHECK(g_app.perf_phase == -1 && g_app.perf_flags == 0);
-    tap(SFB_START); run_frames(0, 0.3f);
-    for (i = 0; i < 25 && g_app.rows[g_app.row] != ROW_F_PERFTEST; i++) tap(SFB_DOWN);
-    CHECK(g_app.rows[g_app.row] == ROW_F_PERFTEST);
+    CHECK(flow_goto(ROW_F_PERFTEST));
     tap(SFB_CROSS);
     CHECK(g_app.perf_phase == 0 && g_perf_calls == 1 && g_perf_last_phase == 0 && !g_app.panel_open);
     run_frames(0, PERF_PHASE_TIME + 0.1f);
@@ -1323,8 +1327,7 @@ static void test_perf_test(void)
     CHECK(strstr(g_app.toast, "send the log") != NULL);
     CHECK(g_perf_calls == n + 1);
     /* ◯ stops it early, and it never exits the app */
-    tap(SFB_START); run_frames(0, 0.3f);
-    for (i = 0; i < 25 && g_app.rows[g_app.row] != ROW_F_PERFTEST; i++) tap(SFB_DOWN);
+    flow_goto(ROW_F_PERFTEST);
     tap(SFB_CROSS);
     run_frames(0, 0.5f);
     for (i = 0; i < n; i++) { g_app.perf_flags = app_perf_phase_flags(i); ui_draw(&g_app); }
@@ -1421,4 +1424,91 @@ static void test_stage_bake(void)
     g_app.settings.ui_color = UI_COLOR_BLUE;
     ui_set_stage_sources(NULL, 0, 0, NULL, 0, 0, NULL, 0, 0);
     ui_set_stage(-1, -1);
+}
+
+/* 0.7.0: the user's background pictures */
+static int g_bg_loads, g_bg_fail;
+static char g_bg_last[256];
+static int fake_bg_load(const char *path) { g_bg_loads++; sf_strlcpy(g_bg_last, path, sizeof(g_bg_last)); return g_bg_fail ? -1 : 0; }
+static int g_bg_count = 2;
+static int bg_list(void *ctx, const char *dir, FsEntry *out, int max)
+{
+    static const char *const k[] = { "b.png", "A.jpg", "notes.txt", ".hidden.jpg" };
+    int i, n = 0;
+    if (strcmp(dir, "/bgs") != 0) return cfg_list(ctx, dir, out, max);
+    if (g_bg_count == 0) return 0;
+    for (i = 0; i < 4 && n < max; i++) {
+        sf_strlcpy(out[n].name, k[i], FS_NAME_MAX);
+        out[n].is_dir = 0; out[n].size = 1;
+        n++;
+    }
+    return n;
+}
+
+static void test_bg_pictures(void)
+{
+    AppHost host;
+    char v[160];
+    int i;
+    printf("background pictures\n");
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = bg_list;
+    host.bg_dir = "/bgs";
+    host.load_bg_image = fake_bg_load;
+    g_bg_loads = 0; g_bg_fail = 0; g_bg_count = 2;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    CHECK(g_app.nbg_files == 2 && strcmp(g_app.bg_files[0], "A.jpg") == 0 && strcmp(g_app.bg_files[1], "b.png") == 0);
+    CHECK(g_bg_loads == 0);                                  /* nothing loaded until one is chosen */
+    CHECK(flow_goto(ROW_F_BACKGROUND));
+    CHECK(g_app.settings.background == BG_STAGE);
+    tap(SFB_LEFT);                                           /* Stage <- the last picture */
+    CHECK(g_app.settings.background == BG_CUSTOM && strcmp(g_app.settings.bg_image, "b.png") == 0);
+    CHECK(g_bg_loads == 1 && strcmp(g_bg_last, "/bgs/b.png") == 0);
+    app_row_value(&g_app, ROW_F_BACKGROUND, v, sizeof(v));
+    CHECK_STR(v, "Picture: b");
+    tap(SFB_LEFT);
+    CHECK(strcmp(g_app.settings.bg_image, "A.jpg") == 0 && g_bg_loads == 2);
+    tap(SFB_LEFT);
+    CHECK(g_app.settings.background == BG_TWILIGHT);
+    tap(SFB_RIGHT);                                          /* back to A: loaded again (the texture held Twilight? no: still A) */
+    CHECK(g_app.settings.background == BG_CUSTOM && g_bg_loads == 2);
+    for (i = 0; i < 4; i++) ui_draw(&g_app);
+    tap(SFB_RIGHT); tap(SFB_RIGHT);                          /* b, then Stage */
+    CHECK(g_app.settings.background == BG_STAGE);
+    tap(SFB_LEFT);                                           /* b again */
+    tap(SFB_CIRCLE); tap(SFB_CIRCLE); run_frames(0, 0.4f);
+    /* the next start loads the saved picture during loading */
+    {
+        Settings keep = g_app.settings;
+        app_init(&g_app, &g_lib, &host);
+        g_app.settings = keep;
+    }
+    g_bg_loads = 0;
+    g_app.settings_ready = 0;
+    {
+        AppHost h2 = host;
+        static const char *sp = "/tmp/sf_bgtest.ini";
+        settings_save(&g_app.settings, sp);
+        h2.settings_path = sp;
+        app_init(&g_app, &g_lib, &h2);
+        run_frames(0, 1.0f);
+        CHECK(g_app.mode == MODE_LOADING && g_bg_loads == 1 && strcmp(g_bg_last, "/bgs/b.png") == 0);
+        run_frames(0, LOAD_MIN_TIME + 1.0f);
+        CHECK(g_app.settings.background == BG_CUSTOM);
+        for (i = 0; i < 3; i++) ui_draw(&g_app);
+        /* the picture was deleted: Stage */
+        g_bg_count = 0;
+        app_init(&g_app, &g_lib, &h2);
+        run_frames(0, LOAD_MIN_TIME + 1.5f);
+        CHECK(g_app.settings.background == BG_STAGE && g_app.nbg_files == 0);
+        remove(sp);
+    }
+    /* no pictures: the Background row has only the styles */
+    CHECK(flow_goto(ROW_F_BACKGROUND));
+    for (i = 0; i < 7; i++) { tap(SFB_RIGHT); CHECK(g_app.settings.background != BG_CUSTOM); }
+    CHECK(g_app.settings.background == BG_STAGE);
+    tap(SFB_CIRCLE); tap(SFB_CIRCLE); run_frames(0, 0.4f);
+    ui_set_background_image(-1);
 }

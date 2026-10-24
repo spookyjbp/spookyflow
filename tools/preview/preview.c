@@ -332,12 +332,14 @@ int main(int argc, char **argv)
     press(SFB_START); step(0, 0.3f);
     press(SFB_DOWN); step(0, 0.1f);
     render("10_flow_settings", 1280, 720);
-    {
-        int i;
-        for (i = 0; i < 6; i++) { press(SFB_DOWN); step(0, 0.08f); }
-        step(0, 0.4f);
-    }
-    render("11_flow_settings_scrolled", 1280, 720);
+    press(SFB_UP); step(0, 0.1f);
+    press(SFB_CROSS); step(0, 0.3f);                 /* Appearance */
+    render("11_flow_settings_appearance", 1280, 720);
+    press(SFB_CIRCLE); step(0, 0.2f);
+    press(SFB_DOWN); step(0, 0.1f);
+    press(SFB_CROSS); step(0, 0.3f);                 /* Music & Sound */
+    render("11b_flow_settings_sound", 1280, 720);
+    press(SFB_CIRCLE); step(0, 0.2f);
     press(SFB_CIRCLE); step(0, 0.4f);
 
     press(SFB_CROSS); step(0, 0.4f);
@@ -568,6 +570,32 @@ int main(int argc, char **argv)
                                 render(nm2, 1280, 720);
                             }
                             g_app.intro = 1.0f; g_app.time = tsave;
+                        }
+                        if (getenv("SF_PREVIEW_CARD")) {   /* 0.7.0: the loading screen of the other backgrounds */
+                            int fr = 0, bgk;
+                            char nm2[64];
+                            double tsave = g_app.time;
+                            float lt;
+                            static const int bgs2[2] = { BG_AURORA, BG_RIBBONS };
+                            for (bgk = 0; bgk < 2; bgk++) {
+                                g_app.settings.background = bgs2[bgk];
+                                g_app.mode = MODE_LOADING; g_app.rescan = 0; g_app.reveal_start = -1000.0f;
+                                g_app.load_step = LOAD_SCAN;
+                                for (lt = 0.0f; lt < 4.0f; lt += 0.1f, fr++) {
+                                    g_app.load_t = lt; g_app.time = tsave + lt;
+                                    g_app.load_shown = sf_clampf((lt - 0.6f) / 3.0f, 0.0f, 1.0f);
+                                    sf_strlcpy(g_app.load_status, "Scanning PS2 games\xE2\x80\xA6", sizeof(g_app.load_status));
+                                    snprintf(nm2, sizeof(nm2), "anim_card_%03d", fr);
+                                    render(nm2, 1280, 720);
+                                }
+                                g_app.mode = MODE_FLOW;
+                                for (lt = 0.0f; lt <= 1.0f; lt += 0.1f, fr++) {
+                                    g_app.intro = lt; g_app.time += 0.11;
+                                    snprintf(nm2, sizeof(nm2), "anim_card_%03d", fr);
+                                    render(nm2, 1280, 720);
+                                }
+                            }
+                            g_app.intro = 1.0f; g_app.time = tsave; g_app.settings.background = BG_STAGE;
                         }
                         {   /* the background alone (no cases), to check its edges */
                             int keep = g_lib.tab[g_app.tab].count;

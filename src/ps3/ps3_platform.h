@@ -11,6 +11,7 @@
 #define SF_TABS_DIR      SF_DATA_DIR "/tabs"
 #define SF_SOUNDS_DIR    SF_DATA_DIR "/sounds"
 #define SF_MUSIC_DIR     SF_DATA_DIR "/music"    /* background music: .mp3 / .wav */
+#define SF_BG_DIR        SF_DATA_DIR "/backgrounds"   /* the user's background pictures */
 #define SF_CASES_DIR     SF_DATA_DIR "/cases"    /* optional case images */
 #define SF_COVERS_DIR    SF_DATA_DIR "/covers"   /* processed cover cache (safe to delete) */
 #define SF_LOG_PATH      SF_DATA_DIR "/log.txt"
@@ -40,6 +41,7 @@ int  ps3_fs_remove_file(const char *path);                                   /* 
 
 /* ps3_tabimg.c: load optional tab images (called during loading) */
 void ps3_load_tab_images(void);
+int  ps3_load_bg_image(const char *path);   /* a background picture -> TEX_BG_IMAGE; 0 = done */
 
 /* ps3_webman.c: send a web command to webMAN MOD (0 = it replied) */
 int ps3_webman_get(const char *command);

@@ -297,6 +297,8 @@ static void bg_twilight(float t, float alpha)
 
 /* ---- Stage: the built-in picture with its button shapes floating ---- */
 static int g_stage_tex = -1, g_stage_shapes = -1, g_stage_hi = -1;
+static int g_bg_tex = -1;          /* the user's picture (BG_CUSTOM), loaded by the host */
+void ui_set_background_image(int tex) { g_bg_tex = tex; }
 void ui_set_stage(int bg_tex, int shapes_tex) { g_stage_tex = bg_tex; g_stage_shapes = shapes_tex; }
 void ui_set_stage_highlight(int tex) { g_stage_hi = tex; }
 
@@ -682,6 +684,16 @@ static void draw_background_as(const App *a, float alpha, int animated, int bg)
     if (bg == BG_STAGE && (g_stage_tex >= 0 || g_src_base) && alpha >= 0.999f) { bg_stage(t, alpha); return; }   /* covers the screen */
     d_rect_grad(0, 0, W(), H(), sf_col_alpha(TH_BG_TOP, alpha), sf_col_alpha(TH_BG_BOTTOM, alpha));
     if (bg == BG_STAGE && (g_stage_tex >= 0 || g_src_base)) { bg_stage(t, alpha); return; }
+    if (bg == BG_CUSTOM) {
+        if (g_bg_tex >= 0) {           /* the picture fills the screen (fitted to 16:9 when loaded) */
+            if (alpha >= 0.999f) r_set_blend(0);
+            d_image(g_bg_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha));
+            if (alpha >= 0.999f) r_set_blend(1);
+        } else {
+            bg_drift(t, alpha);        /* not loaded: Drift */
+        }
+        return;
+    }
     switch (bg) {
     case BG_AURORA:    bg_aurora(t, alpha); break;
     case BG_FIREFLIES: bg_fireflies(t, alpha); break;
@@ -1253,7 +1265,12 @@ static void draw_panel(App *a)
     float list_y = py + pad + th, ix = px + d_xu(pad), iw = pw - 2.0f * d_xu(pad);
     float sbw = 0.0f;
     int per_game = a->panel == PANEL_GAME || a->panel == PANEL_DISC;
+    char gtitle[64];
     const char *ptitle = a->panel == PANEL_GAME ? "Game Settings" : a->panel == PANEL_DISC ? "Choose Disc" : "Flow Settings";
+    if (a->panel == PANEL_FLOW && a->flow_group >= 0) {
+        snprintf(gtitle, sizeof(gtitle), "Flow Settings \xE2\x80\xBA %s", menu_label((RowKind)a->flow_group));
+        ptitle = gtitle;
+    }
     const Game *g;
     if (e <= 0.0f) return;
     if (per_game && (a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_plat].count)) return;
@@ -1349,6 +1366,16 @@ static void draw_letter(const App *a)
     uint32_t acc;
     int b;
     if (t >= LETTER_TIME || !a->letter[0]) return;
+    if (!a->settings.show_info) {
+        /* no title/info line: the rail sits halfway between the selected case and the controls bar */
+        CoverPos c0;
+        BarLayout L;
+        float case_bot;
+        layout_cover(d_screen(), a->tab, 0.0f, &c0);
+        ui_bar_layout(0, &L);
+        case_bot = c0.cy + c0.h * 0.5f;
+        y = sf_clampf((case_bot + L.bar_y) * 0.5f, case_bot + ph * 0.6f, L.bar_y - ph * 0.6f);
+    }
     al = t < 0.45f ? 1.0f : sf_maxf(0.0f, 1.0f - (t - 0.45f) / (LETTER_TIME - 0.45f));
     al *= sf_minf(1.0f, t / 0.08f);                                     /* quick fade in */
     k = ease_out_cubic(sf_minf(1.0f, t / 0.30f));
@@ -1568,14 +1595,55 @@ static void draw_loading_stage(const App *a, float alpha, float rt)
     }
 }
 
-/* 1: the loading screen is the Stage reveal; 0: the classic one; -1: black (waiting for Stage) */
+/* ---- the loading screen of every other background (0.7.0) -------------
+ * The chosen background fades in from black; a frosted card in the middle
+ * (the controls bar's fill and glowing outline) rises into place with the
+ * kittens, the name, the status and a glowing progress line. When the cover
+ * flow comes in, only the card fades away. ea = opacity, rt = seconds. */
+static void draw_loading_card(const App *a, float alpha, float rt, float grow)
+{
+    float ea = alpha * ease_in_out(clamp01((rt - 0.45f) / 0.80f));
+    float rise = (1.0f - ease_out_cubic(clamp01((rt - 0.45f) / 1.0f))) * 0.035f * H();
+    float sc = 1.0f + 0.04f * grow;
+    float ch = 0.66f * H() * sc, cw = d_xu(0.80f * H()) * sc, cx = W() * 0.5f, cy = H() * 0.5f + rise, top = cy - ch * 0.5f;
+    float t = (float)a->time;
+    if (ea <= 0.002f) return;
+    d_rrect(cx - cw * 0.5f, top, cw, ch, 0.06f * H(), sf_col_alpha(0x0A0B10FFu, 0.80f * ea));   /* dark glass... */
+    d_rrect(cx - cw * 0.5f, top, cw, ch, 0.06f * H(), sf_col_alpha(TH_BAR, ea));                  /* ...with the bar's sheen */
+    d_rrect_stroke(cx - cw * 0.5f, top, cw, ch, 0.06f * H(), 0.0028f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), ea));
+    {   /* the kittens, breathing gently */
+        float breath = 1.0f + 0.010f * sinf(t * 2.1f);
+        float kh = 0.25f * H() * sc * breath, kw = d_xu(kh * (float)g_cats_w / (float)g_cats_h);
+        d_image(TEX_CATS, cx - kw * 0.5f, top + ch * 0.23f - kh * 0.5f, kw, kh, sf_col_alpha(0xFFFFFFFFu, ea));
+    }
+    draw_wordmark(a, top + ch * 0.58f, 0.085f * H() * sc, ea);
+    d_text(&g_font_main, cx, top + ch * 0.75f, 0.023f * H() * sc, sf_col_alpha(TH_TEXT_DIM, ea), a->load_status, ALIGN_CENTER);
+    {
+        uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
+        float full = cw * 0.70f, hw = full * 0.5f * clamp01(a->load_shown), y = top + ch * 0.84f;
+        float th = 0.0045f * H(), gh = 0.022f * H();
+        uint32_t track = sf_col_alpha(0xFFFFFFFFu, 0.10f * ea), core = sf_col_alpha(sf_col_mix(glow(col), 0xFFFFFFFFu, 0.35f), ea),
+                 haze = sf_col_alpha(glow(col), 0.35f * ea);
+        d_rect_hgrad(cx - full * 0.5f, y - th * 0.5f, full * 0.5f, th, track & 0xFFFFFF00u, track);
+        d_rect_hgrad(cx, y - th * 0.5f, full * 0.5f, th, track, track & 0xFFFFFF00u);
+        if (hw > 0.0f) {
+            d_rect_hgrad(cx - hw, y - gh * 0.5f, hw, gh, clear, haze);
+            d_rect_hgrad(cx, y - gh * 0.5f, hw, gh, haze, clear);
+            d_rect_hgrad(cx - hw, y - th * 0.5f, hw, th, clear, core);
+            d_rect_hgrad(cx, y - th * 0.5f, hw, th, core, clear);
+        }
+    }
+}
+
+/* 1: the loading screen is the Stage reveal; 2: the card over the chosen
+ * background; -1: black (settings / Stage not ready yet) */
 static int loading_style(const App *a)
 {
     int stage_ok = g_stage_tex >= 0 || g_src_base != NULL;
     if (!a->settings_ready) return -1;
-    if (a->settings.background != BG_STAGE) return 0;
+    if (a->settings.background != BG_STAGE) return 2;
     if (stage_ok) return 1;
-    return a->load_step <= LOAD_PREPARE ? -1 : 0;        /* Stage failed to load: the classic one */
+    return a->load_step <= LOAD_PREPARE ? -1 : 2;        /* Stage failed to load: the card */
 }
 
 static void draw_loading(const App *a, float alpha)
@@ -1649,9 +1717,15 @@ void ui_draw(App *a)
             g_intro_shapes = g_intro_parts = 1.0f;
             stage_reveal_overlay(rt);
             draw_loading_stage(a, 1.0f, rt);
-        } else if (style == 0) {
-            draw_background(a, 1.0f, animated);
-            draw_loading(a, 1.0f);
+        } else if (style == 2) {
+            float rt, fade;
+            int bg = a->settings.background == BG_STAGE ? BG_ANIMATED : a->settings.background;
+            if (a->reveal_start <= -999.0f) a->reveal_start = a->rescan ? -100.0f : sf_maxf(a->load_t, 0.4f);
+            rt = a->load_t - a->reveal_start;
+            draw_background_as(a, 1.0f, animated, bg);
+            fade = 1.0f - ease_in_out(clamp01(rt / 1.2f));      /* the background fades in from black */
+            if (fade > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, fade));
+            draw_loading_card(a, 1.0f, rt, 0.0f);
         } else {
             d_rect(0, 0, W(), H(), 0x000000FFu);
         }
@@ -1692,6 +1766,9 @@ void ui_draw(App *a)
                 (g_stage_tex >= 0 || g_src_base)) {
                 /* Stage reveal: same scene underneath, only the name and kittens fade */
                 draw_loading_stage(a, la, 100.0f);
+            } else if (la > 0.0f && a->reveal_start > -999.0f) {
+                /* the card fades away, growing a little; the background is the same */
+                draw_loading_card(a, la, 100.0f, 1.0f - la);
             } else if (la > 0.0f) {
                 draw_background_as(a, la, 1, BG_ANIMATED);
                 draw_loading(a, la);

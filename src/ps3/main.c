@@ -287,6 +287,8 @@ int main(int argc, const char *argv[])
     host.read_at = ps3_read_at;
     host.ntfs_refresh = ntfs_refresh;
     host.music_dir = SF_MUSIC_DIR;
+    host.bg_dir = SF_BG_DIR;
+    host.load_bg_image = ps3_load_bg_image;
     host.is_file = ps3_fs_is_file;
     host.write_file = ps3_fs_write_file;
     host.remove_file = ps3_fs_remove_file;

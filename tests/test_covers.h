@@ -1004,9 +1004,8 @@ static void test_ntfs_rescan(void)
     app_init(&g_app, &g_lib, &host);
     run_frames(0, LOAD_MIN_TIME + 1.5f);
     CHECK(g_app.mode == MODE_FLOW && g_ntfs_refreshes == 0);                      /* a normal start reads the index as it is */
-    tap(SFB_START);
-    for (i = 0; i < 20 && g_app.rows[g_app.row] != ROW_F_RESCAN; i++) tap(SFB_DOWN);
-    CHECK(g_app.rows[g_app.row] == ROW_F_RESCAN);
+    CHECK(flow_goto(ROW_F_RESCAN));
+    (void)i;
     tap(SFB_CROSS);
     run_frames(0, RESCAN_MIN_TIME + 1.5f);
     CHECK(g_ntfs_refreshes == 1 && g_app.mode == MODE_FLOW);
@@ -1223,14 +1222,17 @@ static void test_bg_and_reflect(void)
     CHECK_STR(t, "Off");
     /* Background cycles through the 7 styles (the picture option is gone) */
     CHECK(s.background == BG_STAGE);                            /* fix 13: Stage is the default */
-    for (i = 0; i < 6; i++) { menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g); CHECK(s.background != BG_RETIRED_1 && s.background != BG_STAGE); }
+    for (i = 0; i < 6; i++) { menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g); CHECK(s.background != BG_CUSTOM && s.background != BG_STAGE); }
     CHECK(s.background == BG_TWILIGHT);
     menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g);
     CHECK(s.background == BG_STAGE);
     menu_change(ROW_F_BACKGROUND, 0, -1, &s, &g);
     CHECK(s.background == BG_TWILIGHT);
-    settings_parse_line(&s, "background2=1");                    /* a saved "Image" loads as Stage */
-    CHECK(s.background == BG_STAGE);
+    settings_parse_line(&s, "background2=1");                    /* 0.7.0: 1 = a picture of your own again */
+    CHECK(s.background == BG_CUSTOM);
+    settings_parse_line(&s, "background_image=Night Sky.jpg");
+    CHECK_STR(s.bg_image, "Night Sky.jpg");
+    settings_parse_line(&s, "background2=7");
     settings_parse_line(&s, "background=0");                     /* the pre-fix-13 key is ignored... */
     CHECK(s.background == BG_STAGE);
     settings_parse_line(&s, "background2=3");                    /* ...the new one is used */

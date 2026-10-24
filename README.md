@@ -141,10 +141,24 @@ the cover flow.
 They are applied when the game is launched (see *Launching*). The RSX clock
 row was removed in milestone 3; overclocking may come back later.
 
-**Flow Settings (START)** — Auto-play (global, default Off), Music volume
-(0% turns the music off), Shuffle music, Background (Stage, Drift, Aurora, Fireflies,
-Ribbons, Halo, Twilight), Download missing covers (stub),
-Ignore “The” when sorting, Rescan library, Quit to XMB.
+**Flow Settings (START)** — grouped (0.7.0). The first page lists the groups,
+each with a short summary; ✖ opens one, ◯ goes back:
+
+- **Appearance** — Background, UI Color, Show Game Info, Custom Cases, Reflections
+- **Music & Sound** — Music Volume (0% = off), Shuffle Music, Sound Effects
+- **Games & Library** — Auto-Play, Offline Mode, Ignore “The”, Download
+  Missing Covers (stub), Rescan Library
+- **System** — Sleep, Pin to top of XMB (no pop-up; only a failure says
+  something), Performance Test
+- then **Quit to XMB** and **Power Off PS3** directly.
+
+**Background pictures (0.7.0):** put `.jpg` / `.png` pictures (any size up to
+4096 px) in **`/dev_hdd0/tmp/spookyflow/backgrounds/`** (made on the first
+start). Each one then appears in Appearance → Background as
+`Picture: <file name>`, after the built-in styles; with no pictures there,
+the option doesn't appear. The picture is cropped to 16:9 around its center
+and resized to 1280×720 when chosen. If a chosen picture is later deleted,
+Stage is used.
 
 ## Where your games are read from (internal HDD)
 
@@ -305,7 +319,7 @@ played:
   are skipped.
 - **.wav** — 16-bit PCM, mono or stereo, any sample rate.
 
-Music starts when the cover flow appears and loops through the folder,
+Music starts 2 seconds after the cover flow has come in and loops through the folder,
 with a 2-second pause between songs (skipping with SELECT is immediate).
 **Shuffle music** On plays every song once in a random order before any
 repeats; Off plays them by file name. **Music volume** sets the level (the
@@ -453,7 +467,15 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.6.9 — Stage reveal:** with the Stage background, the start-up
+15. **0.7.0:** Flow Settings in groups; your own background pictures
+    (`backgrounds/` folder, several at once); every background other than
+    Stage gets its own loading screen (the background fades in from black and
+    a frosted card with the kittens, the name and a glowing progress line
+    rises into place; only the card fades when the cover flow comes in);
+    music starts 2 s after the cover flow is in; with Show Game Info off the
+    A–Z rail sits halfway between the selected case and the controls bar; no
+    pop-up for Pin to top of XMB.
+    **0.6.9 — Stage reveal:** with the Stage background, the start-up
     screen opens from black: the horizon line draws itself out from the
     middle, the scene opens up from it, the shapes and particles drift in,
     then the name and the kittens (standing on the horizon, mirrored in the

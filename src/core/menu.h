@@ -11,6 +11,8 @@ typedef enum {
     /* Flow settings (global) */
     ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT, ROW_F_SLEEP, ROW_F_COVERS,
     ROW_F_IGNORE_THE, ROW_F_XMB_TOP, ROW_F_RESCAN, ROW_F_PERFTEST, ROW_F_QUIT, ROW_F_POWEROFF,
+    /* Flow settings groups (0.7.0): the first page lists these, ✖ opens one */
+    ROW_FG_LOOK, ROW_FG_SOUND, ROW_FG_GAMES, ROW_FG_SYSTEM,
     /* Choose Disc (multi-disc games): row i = disc i */
     ROW_D_DISC
 } RowKind;
@@ -30,10 +32,16 @@ enum {
     MENU_FX_PS2CFG,         /* PS2 config row: the app knows which configs exist */
     MENU_FX_XMB_TOP,        /* pin-to-top changed: patch our PARAM.SFO */
     MENU_FX_POWEROFF,       /* power off the console */
-    MENU_FX_PERFTEST        /* run the performance test */
+    MENU_FX_PERFTEST,       /* run the performance test */
+    MENU_FX_GROUP           /* open a Flow Settings group */
 };
 
-int  menu_rows(int panel, int plat, RowKind *out, int max);
+int  menu_rows(int panel, int plat, RowKind *out, int max);   /* PANEL_FLOW: the group page */
+/* the rows of a Flow Settings group (ROW_FG_*) */
+int  menu_group_rows(RowKind group, RowKind *out, int max);
+int  menu_is_group(RowKind k);
+/* the group a Flow Settings row belongs to (ROW_FG_*), or -1 for rows on the first page */
+int  menu_group_of(RowKind k);
 const char *menu_label(RowKind k);
 /* Is this an action row (no value, ✖ activates)? */
 int  menu_is_action(RowKind k);

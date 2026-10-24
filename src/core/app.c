@@ -9,6 +9,7 @@
 #include "title.h"
 #include "util.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static int sync_xmb_priority(App *a);
@@ -253,6 +254,80 @@ static void refresh_ntfs(App *a)
 }
 
 /* read the music folder (start-up and Rescan Library) */
+/* ---- the user's background pictures ---------------------------------- */
+static int cmp_name_i(const void *x, const void *y) { return sf_stricmp((const char *)x, (const char *)y); }
+
+static void scan_backgrounds(App *a)
+{
+    static FsEntry ent[128];
+    int n, i;
+    a->nbg_files = 0;
+    if (!a->host.bg_dir || !a->host.fs_list) return;
+    n = a->host.fs_list(a->host.fs_ctx, a->host.bg_dir, ent, 128);
+    for (i = 0; i < n && a->nbg_files < APP_MAX_BG_IMAGES; i++) {
+        const char *nm = ent[i].name;
+        if (ent[i].is_dir || nm[0] == '.' || strlen(nm) >= sizeof(a->bg_files[0])) continue;
+        if (!sf_ends_with_i(nm, ".jpg") && !sf_ends_with_i(nm, ".jpeg") && !sf_ends_with_i(nm, ".png")) continue;
+        sf_strlcpy(a->bg_files[a->nbg_files++], nm, sizeof(a->bg_files[0]));
+    }
+    qsort(a->bg_files, (size_t)a->nbg_files, sizeof(a->bg_files[0]), cmp_name_i);
+    if (a->nbg_files) log_printf("backgrounds: %d picture%s in %s", a->nbg_files, a->nbg_files == 1 ? "" : "s", a->host.bg_dir);
+}
+
+static int bg_index(const App *a, const char *name)
+{
+    int i;
+    for (i = 0; i < a->nbg_files; i++) if (strcmp(a->bg_files[i], name) == 0) return i;
+    return -1;
+}
+
+/* make sure the picture the settings ask for is the one in the texture */
+static void sync_bg_image(App *a)
+{
+    char path[512];
+    if (a->settings.background != BG_CUSTOM) return;
+    if (bg_index(a, a->settings.bg_image) < 0) {
+        log_printf("backgrounds: \"%s\" is gone, using Stage", a->settings.bg_image);
+        a->settings.background = BG_STAGE;
+        return;
+    }
+    if (strcmp(a->bg_loaded, a->settings.bg_image) == 0) return;
+    snprintf(path, sizeof(path), "%s/%s", a->host.bg_dir, a->settings.bg_image);
+    if (a->host.load_bg_image && a->host.load_bg_image(path) == 0) {
+        sf_strlcpy(a->bg_loaded, a->settings.bg_image, sizeof(a->bg_loaded));
+        log_printf("backgrounds: using %s", path);
+    } else {
+        a->bg_loaded[0] = '\0';
+        log_printf("backgrounds: %s could not be loaded", path);
+        if (a->mode == MODE_FLOW) app_show_toast(a, "That picture couldn't be loaded (see log)");
+    }
+}
+
+/* ←/→/✖ on Background: the styles, then each picture */
+static void background_cycle(App *a, int dir)
+{
+    static const int styles[] = { BG_STAGE, BG_ANIMATED, BG_AURORA, BG_FIREFLIES, BG_RIBBONS, BG_HALO, BG_TWILIGHT };
+    int ns = (int)(sizeof(styles) / sizeof(styles[0])), n = ns + a->nbg_files, cur = 0, i, d = dir == 0 ? 1 : dir;
+    char val[160];
+    if (a->settings.background == BG_CUSTOM) {
+        i = bg_index(a, a->settings.bg_image);
+        cur = i >= 0 ? ns + i : 0;
+    } else {
+        for (i = 0; i < ns; i++) if (styles[i] == a->settings.background) cur = i;
+    }
+    cur = ((cur + d) % n + n) % n;
+    if (cur < ns) a->settings.background = styles[cur];
+    else {
+        a->settings.background = BG_CUSTOM;
+        sf_strlcpy(a->settings.bg_image, a->bg_files[cur - ns], sizeof(a->settings.bg_image));
+        sync_bg_image(a);
+    }
+    sound_play(SND_CHANGE);
+    app_row_value(a, ROW_F_BACKGROUND, val, sizeof(val));
+    log_printf("flow setting: Background = %s", val);
+    app_save(a);
+}
+
 static void scan_music(App *a)
 {
     if (!a->host.music_dir || !a->host.fs_list || !a->host.read_at) return;
@@ -281,7 +356,9 @@ static void music_tick(App *a)
     music_set_volume(music_gain(a->settings.music_volume));
     music_set_shuffle(a->settings.shuffle);
     music_set_duck(1.0f - MUSIC_SLEEP_DUCK * a->sleep_t);
-    music_set_playing(a->mode == MODE_FLOW && !a->exiting && a->music_scanned);
+    /* music starts MUSIC_START_DELAY after the cover flow has come in */
+    music_set_playing(a->mode == MODE_FLOW && !a->exiting && a->music_scanned &&
+                      a->intro >= 1.0f && a->flow_t >= INTRO_TIME + MUSIC_START_DELAY);
     gen = music_current(name, sizeof(name));
     if (gen != a->music_gen) {
         a->music_gen = gen;
@@ -352,6 +429,8 @@ static void loading_update(App *a, float dt)
         break;
     case LOAD_PREPARE:
         if (a->host.prepare) a->host.prepare();
+        scan_backgrounds(a);
+        sync_bg_image(a);
         lib_clear(a->lib);
         scanner_begin(&a->scanner, a->host.roots, a->host.nroots);
         scanner_set_reader(&a->scanner, a->host.read_at, a->host.fs_ctx);
@@ -412,6 +491,7 @@ static void loading_update(App *a, float dt)
         /* the loading screen can't be skipped: it always runs its full time */
         if (a->load_t >= (a->rescan ? RESCAN_MIN_TIME : LOAD_MIN_TIME) && a->load_shown >= 0.999f) {
             a->mode = MODE_FLOW;
+            a->flow_t = 0.0f;
             a->intro = 0.0f;
             input_reset(&a->input);
             log_printf("ui: cover flow ready (tab %s)", k_plat_name[a->tab]);
@@ -448,6 +528,7 @@ void app_open_panel(App *a, int panel)
     } else {
         a->nrows = menu_rows(panel, a->tab, a->rows, MENU_MAX_ROWS);
     }
+    a->flow_group = -1;
     a->row = 0;
     spring_snap(&a->row_hl, 0.0f);
     spring_snap(&a->list_scroll, 0.0f);
@@ -610,6 +691,14 @@ static void ps2cfg_cycle(App *a, int dir)
 
 void app_row_value(const App *a, RowKind k, char *out, size_t cap)
 {
+    if (k == ROW_F_BACKGROUND && a->settings.background == BG_CUSTOM) {
+        char nm[128], *dot;
+        sf_strlcpy(nm, a->settings.bg_image, sizeof(nm));
+        dot = strrchr(nm, '.');
+        if (dot && dot != nm) *dot = '\0';
+        snprintf(out, cap, "Picture: %s", nm);
+        return;
+    }
     if (k != ROW_G_PS2CFG || a->panel != PANEL_GAME) {
         menu_value_text(k, a->panel_plat, &a->settings, &a->panel_cfg, out, cap);
         return;
@@ -724,6 +813,28 @@ static int perf_update(App *a, float dt)
     return 1;
 }
 
+/* Flow Settings groups: ✖ on a group opens its page, ◯ comes back */
+static void flow_enter_group(App *a, RowKind g)
+{
+    a->flow_top_row = a->row;
+    a->flow_group = (int)g;
+    a->nrows = menu_group_rows(g, a->rows, MENU_MAX_ROWS);
+    a->row = 0;
+    spring_snap(&a->row_hl, 0.0f);
+    spring_snap(&a->list_scroll, 0.0f);
+    log_printf("panel: Flow Settings > %s", menu_label(g));
+}
+
+static void flow_leave_group(App *a)
+{
+    a->flow_group = -1;
+    a->nrows = menu_rows(PANEL_FLOW, a->tab, a->rows, MENU_MAX_ROWS);
+    a->row = sf_clampi(a->flow_top_row, 0, a->nrows - 1);
+    spring_snap(&a->row_hl, (float)a->row);
+    spring_snap(&a->list_scroll, 0.0f);
+    sound_play(SND_CLOSE);
+}
+
 static void apply_fx(App *a, RowKind k, int fx)
 {
     char val[48];
@@ -774,10 +885,12 @@ static void apply_fx(App *a, RowKind k, int fx)
     case MENU_FX_XMB_TOP:
         log_printf("flow setting: Pin to top of XMB = %s", a->settings.xmb_top ? "On" : "Off");
         app_save(a);
-        if (sync_xmb_priority(a) < 0) app_show_toast(a, "Couldn't update the XMB position (see log)");
-        else app_show_toast(a, a->settings.xmb_top ? "Pinned to the top of the XMB" : "No longer pinned in the XMB");
+        if (sync_xmb_priority(a) < 0) app_show_toast(a, "Couldn't update the XMB position (see log)");   /* only failures say anything */
         break;
     case MENU_FX_PS2CFG:        /* handled in panel_input (needs the direction) */
+        break;
+    case MENU_FX_GROUP:
+        flow_enter_group(a, k);
         break;
     case MENU_FX_PERFTEST:
         app_close_panel(a);
@@ -794,7 +907,11 @@ static void panel_input(App *a)
     RowKind k;
     int vis = PANEL_VISIBLE_ROWS, first;
     if (!a->panel_open || a->nrows <= 0) return;
-    if (in->pressed & SFB_CIRCLE) { app_close_panel(a); return; }
+    if (in->pressed & SFB_CIRCLE) {
+        if (a->panel == PANEL_FLOW && a->flow_group >= 0) { flow_leave_group(a); return; }   /* back to the groups */
+        app_close_panel(a);
+        return;
+    }
     /* only ◯ goes back (START / ▲ don't close the panel they opened) */
     /* Settings menus: D-pad only (the stick is ignored), one step per press */
     {
@@ -811,11 +928,15 @@ static void panel_input(App *a)
             if (in->pressed & SFB_LEFT) ps2cfg_cycle(a, -1);
             if (in->pressed & SFB_RIGHT) ps2cfg_cycle(a, +1);
             if (in->pressed & SFB_CROSS) ps2cfg_cycle(a, 0);
+        } else if (k == ROW_F_BACKGROUND) {
+            if (in->pressed & SFB_LEFT) background_cycle(a, -1);
+            if (in->pressed & SFB_RIGHT) background_cycle(a, +1);
+            if (in->pressed & SFB_CROSS) background_cycle(a, 0);
         } else if (!menu_is_action(k)) {
             if (in->pressed & SFB_LEFT) apply_fx(a, k, menu_change(k, a->panel_plat, -1, &a->settings, &a->panel_cfg));
             if (in->pressed & SFB_RIGHT) apply_fx(a, k, menu_change(k, a->panel_plat, +1, &a->settings, &a->panel_cfg));
         }
-        if ((in->pressed & SFB_CROSS) && k != ROW_G_PS2CFG) apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
+        if ((in->pressed & SFB_CROSS) && k != ROW_G_PS2CFG && k != ROW_F_BACKGROUND) apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
     }
     if (a->mode != MODE_FLOW) return;      /* rescan switched modes */
     spring_set(&a->row_hl, (float)a->row);
@@ -965,6 +1086,7 @@ static void animate(App *a, float dt)
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;
     if (a->toast_t < TOAST_TIME) a->toast_t += dt;
     if (a->music_card_t < a->music_card_len) a->music_card_t += dt;
+    a->flow_t += dt;
     if (a->music_swap_t < 1.0f) a->music_swap_t = sf_minf(1.0f, a->music_swap_t + dt / MUSIC_SWAP_TIME);
     /* title/chips cross-fade on selection change */
     {

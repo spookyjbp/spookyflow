@@ -10,8 +10,8 @@
 /* Per-game tri-state for auto-play */
 enum { AP_DEFAULT = 0, AP_ON = 1, AP_OFF = 2 };
 /* Background styles (values are stored in settings.ini; keep them stable) */
-/* 1 was the user's background picture (removed in 0.6.0; a saved 1 loads as Stage) */
-enum { BG_ANIMATED = 0 /* "Drift" */, BG_RETIRED_1 = 1, BG_AURORA = 2, BG_FIREFLIES = 3,
+/* 1 = one of the user's own pictures (0.7.0; settings.bg_image names it) */
+enum { BG_ANIMATED = 0 /* "Drift" */, BG_CUSTOM = 1, BG_AURORA = 2, BG_FIREFLIES = 3,
        BG_RIBBONS = 4, BG_HALO = 5, BG_TWILIGHT = 6, BG_STAGE = 7, BG_COUNT = 8 };
 const char *settings_background_name(int bg);
 enum { UI_COLOR_BLUE = 0, UI_COLOR_RED, UI_COLOR_GREEN, UI_COLOR_PURPLE, UI_COLOR_PINK,
@@ -40,6 +40,7 @@ typedef struct {
     int show_info;           /* genre / players / size chips under the case, default 1 */
     int ignore_the;          /* default 0 */
     int xmb_top;             /* pin spookyflow to the top of the XMB Game column, default 0 */
+    char bg_image[128];      /* BG_CUSTOM: file name in the backgrounds folder */
     int last_tab;            /* 0..2 */
     char last_key[PLAT_COUNT][SET_KEY_MAX];
     GameCfg games[SET_MAX_GAMES];

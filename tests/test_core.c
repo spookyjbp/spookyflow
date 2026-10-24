@@ -481,9 +481,18 @@ static void test_menu(void)
     CHECK(r[1] == ROW_G_EMULATOR && r[2] == ROW_G_OFFLINE && r[3] == ROW_G_PS2CFG);
     CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 2);
     CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_OFFLINE);
-    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 18);
-    CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_SFX && r[6] == ROW_F_UI_COLOR && r[7] == ROW_F_INFO && r[8] == ROW_F_CASES && r[9] == ROW_F_REFLECT && r[10] == ROW_F_SLEEP &&
-          r[13] == ROW_F_XMB_TOP && r[15] == ROW_F_PERFTEST && r[16] == ROW_F_QUIT && r[17] == ROW_F_POWEROFF);
+    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 6);
+    CHECK(r[0] == ROW_FG_LOOK && r[1] == ROW_FG_SOUND && r[2] == ROW_FG_GAMES && r[3] == ROW_FG_SYSTEM && r[4] == ROW_F_QUIT && r[5] == ROW_F_POWEROFF);
+    {   /* every setting is in exactly one group, and no page needs scrolling */
+        static const RowKind all[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND,
+            ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT, ROW_F_SLEEP, ROW_F_COVERS, ROW_F_IGNORE_THE, ROW_F_XMB_TOP,
+            ROW_F_RESCAN, ROW_F_PERFTEST };
+        int k2, total = 0, gi;
+        for (k2 = 0; k2 < (int)(sizeof(all) / sizeof(all[0])); k2++) CHECK(menu_group_of(all[k2]) >= 0);
+        for (gi = 0; gi < 4; gi++) { int nn = menu_group_rows(r[gi], r + 8, 8); CHECK(nn > 0 && nn <= PANEL_VISIBLE_ROWS); total += nn; }
+        CHECK(total == (int)(sizeof(all) / sizeof(all[0])));
+        CHECK(menu_group_of(ROW_F_QUIT) == -1);
+    }
     settings_defaults(&s);
     memset(&g, 0, sizeof(g));
     menu_value_text(ROW_G_EMULATOR, PLAT_PS1, &s, &g, v, sizeof(v)); CHECK_STR(v, "Standard");
@@ -751,6 +760,22 @@ static int power_off_ok(void) { g_power_off_calls++; return 0; }
 static void run_frames(uint32_t held, float secs);
 static void tap(uint32_t b);
 
+/* 0.7.0: open Flow Settings (if needed), the group holding row k, and move to k */
+static int flow_goto(RowKind k)
+{
+    int i, g = menu_group_of(k);
+    if (g_app.panel != PANEL_FLOW) { tap(SFB_START); run_frames(0, 0.3f); }
+    if (g_app.flow_group >= 0 && g_app.flow_group != g) { tap(SFB_CIRCLE); run_frames(0, 0.1f); }
+    if (g >= 0 && g_app.flow_group != g) {
+        for (i = 0; i < 4; i++) tap(SFB_UP);
+        for (i = 0; i < 8 && g_app.rows[g_app.row] != (RowKind)g; i++) tap(SFB_DOWN);
+        tap(SFB_CROSS);
+    }
+    for (i = 0; i < 8; i++) tap(SFB_UP);
+    for (i = 0; i < 12 && g_app.rows[g_app.row] != k; i++) tap(SFB_DOWN);
+    return g_app.rows[g_app.row] == k;
+}
+
 /* 16-bit stereo WAV in memory */
 static size_t make_wav(unsigned char *b, int rate, int frames, int16_t l, int16_t r)
 {
@@ -841,11 +866,16 @@ static void test_sound(void)
         CHECK(sound_play_count(SND_OPEN) == op + 1);
         tap(SFB_DOWN);
         CHECK(sound_play_count(SND_MOVE) == mv + 2);
+        tap(SFB_UP); tap(SFB_CROSS);                         /* Appearance */
+        CHECK(g_app.flow_group == ROW_FG_LOOK);
+        tap(SFB_DOWN);                                       /* UI Color */
         tap(SFB_RIGHT);
         CHECK(sound_play_count(SND_CHANGE) == ch + 1);
         tap(SFB_LEFT);
+        tap(SFB_CIRCLE);                                     /* back to the groups */
+        CHECK(g_app.panel_open && g_app.flow_group == -1 && g_app.rows[g_app.row] == ROW_FG_LOOK);
         tap(SFB_CIRCLE); run_frames(0, 0.4f);
-        CHECK(sound_play_count(SND_CLOSE) == cl + 1);
+        CHECK(sound_play_count(SND_CLOSE) == cl + 2);
     }
 }
 
@@ -910,11 +940,11 @@ static void test_sfo(void)
         app_init(&g_app, &g_lib, &host);
         g_app.settings.xmb_top = 0;
         run_frames(0, LOAD_MIN_TIME + 1.5f);
-        tap(SFB_START);
-        for (i = 0; i < 13; i++) tap(SFB_DOWN);
-        CHECK(g_app.rows[g_app.row] == ROW_F_XMB_TOP);
+        CHECK(flow_goto(ROW_F_XMB_TOP));
+        (void)i;
         tap(SFB_CROSS);
         CHECK(g_app.settings.xmb_top == 1);
+        CHECK(g_app.toast_t >= TOAST_TIME || !g_app.toast[0]);   /* 0.7.0: no pop-up */
         CHECK(sfo_file_get_u32(path, "ITEM_PRIORITY", &v) == 0 && v == SFO_PRIORITY_TOP);
         tap(SFB_RIGHT);
         CHECK(g_app.settings.xmb_top == 0);
@@ -1106,24 +1136,24 @@ static void test_app(void)
         char key[SET_KEY_MAX];
         sf_strlcpy(key, lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), sizeof(key));
         tap(SFB_START);
-        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 18);
-        for (i = 0; i < 12; i++) tap(SFB_DOWN);
-        CHECK(g_app.rows[g_app.row] == ROW_F_IGNORE_THE);
+        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 6);         /* 0.7.0: 4 groups + Quit + Power Off */
+        CHECK(flow_goto(ROW_F_IGNORE_THE));
         tap(SFB_CROSS);
         CHECK(g_app.settings.ignore_the == 1);
         CHECK_STR(lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), key);
         run_frames(0, 0.5f);
-        CHECK(fabsf(g_app.list_scroll.x - 7.0f) < 0.01f);   /* row 13 of 18: scrolled by seven */
-        tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN); run_frames(0, 0.5f);
+        CHECK(fabsf(g_app.list_scroll.x) < 0.01f);           /* every page fits: no scrolling */
+        tap(SFB_CIRCLE);                                       /* back to the first page */
+        CHECK(g_app.flow_group == -1 && g_app.rows[g_app.row] == ROW_FG_GAMES);
+        tap(SFB_DOWN); tap(SFB_DOWN); run_frames(0, 0.5f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
-        CHECK(fabsf(g_app.list_scroll.x - 11.0f) < 0.01f);  /* scrolled to keep row 17 visible */
         /* the menus ignore the stick, and holding the D-pad moves only one row */
         run_frames(SFB_STICK_UP, 1.0f); run_frames(0, 0.1f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
         run_frames(SFB_STICK_LEFT, 1.0f); run_frames(SFB_STICK_RIGHT, 1.0f); run_frames(0, 0.1f);
         CHECK(g_app.settings.ignore_the == 1 && g_app.settings.autoplay == 0);
         run_frames(SFB_UP, 1.5f); run_frames(0, 0.1f);
-        CHECK(g_app.rows[g_app.row] == ROW_F_PERFTEST);          /* one row up, held */
+        CHECK(g_app.rows[g_app.row] == ROW_FG_SYSTEM);           /* one row up, held */
         tap(SFB_DOWN);
         /* power off: one press, no confirmation */
         tap(SFB_DOWN);
@@ -1171,9 +1201,7 @@ static void test_app(void)
     /* rescan returns to the loading screen and back */
     app_init(&g_app, &g_lib, &host);
     run_frames(0, LOAD_MIN_TIME + 1.5f);   /* loading screen + intro */
-    tap(SFB_START);
-    for (i = 0; i < 14; i++) tap(SFB_DOWN);
-    CHECK(g_app.rows[g_app.row] == ROW_F_RESCAN);
+    CHECK(flow_goto(ROW_F_RESCAN));
     tap(SFB_CROSS);
     CHECK(g_app.mode == MODE_LOADING && g_app.panel == PANEL_NONE);
     run_frames(0, LOAD_MIN_TIME + 1.5f);   /* loading screen + intro */
@@ -1265,6 +1293,7 @@ int main(void)
     test_panel_back();
     test_perf_test();
     test_stage_bake();
+    test_bg_pictures();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

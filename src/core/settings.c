@@ -99,9 +99,9 @@ void settings_parse_line(Settings *s, const char *line_in)
     /* "background2" since fix 13 (Stage became the default; the old
      * "background" key is ignored so everyone gets it once) */
     else if (strcmp(key, "background2") == 0) {
-        s->background = parse_int(val, 0, BG_COUNT - 1, BG_STAGE);
-        if (s->background == BG_RETIRED_1) s->background = BG_STAGE;   /* the picture option is gone */
+        s->background = parse_int(val, 0, BG_COUNT - 1, BG_STAGE);   /* 1 = a picture: the app checks it exists */
     }
+    else if (strcmp(key, "background_image") == 0) sf_strlcpy(s->bg_image, val, sizeof(s->bg_image));
     else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_BLUE);
     else if (strcmp(key, "reflections") == 0) s->reflections = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "custom_cases") == 0) s->cases = parse_int(val, 0, 1, 1);
@@ -146,6 +146,7 @@ int settings_save(const Settings *s, const char *path)
     fprintf(f, "shuffle=%d\n", s->shuffle);
     fprintf(f, "sfx_volume=%d\n", s->sfx_volume);
     fprintf(f, "background2=%d\n", s->background);
+    if (s->bg_image[0] && !strchr(s->bg_image, '\n')) fprintf(f, "background_image=%s\n", s->bg_image);
     fprintf(f, "ui_color=%d\n", s->ui_color);
     fprintf(f, "custom_cases=%d\n", s->cases);
     fprintf(f, "reflections=%d\n", s->reflections);
@@ -219,6 +220,6 @@ int settings_autoplay_effective(const Settings *s, const GameCfg *cfg)
 
 const char *settings_background_name(int bg)
 {
-    static const char *const names[BG_COUNT] = { "Drift", "Stage", "Aurora", "Fireflies", "Ribbons", "Halo", "Twilight", "Stage" };
+    static const char *const names[BG_COUNT] = { "Drift", "Picture", "Aurora", "Fireflies", "Ribbons", "Halo", "Twilight", "Stage" };
     return (bg >= 0 && bg < BG_COUNT) ? names[bg] : "Stage";
 }
