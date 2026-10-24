@@ -241,6 +241,17 @@ int main(int argc, char **argv)
         }
         step(0, 0.5f);
     }
+    if (getenv("SF_PREVIEW_GLIDE_END")) { /* 0.8.6: full speed into the end of the list, still holding */
+        int fr = 0, k, n = g_app.lib->tab[g_app.tab].count;
+        char nm[64];
+        g_app.music_card_t = g_app.music_card_len;
+        app_select(&g_app, g_app.tab, n > 45 ? n - 45 : 0, 0); step(0, 0.5f);
+        for (k = 0; k < 240; k++) {
+            app_update(&g_app, SFB_STICK_RIGHT, DT); ui_update_targets(&g_app);
+            if (k >= 18 && (k & 1)) { snprintf(nm, sizeof(nm), "anim_gend_%03d", fr++); render(nm, 640, 360); }
+        }
+        step(0, 0.5f);
+    }
     if (getenv("SF_PREVIEW_SCROLL")) {    /* 0.8.3: moving through the rows, every frame */
         int fr = 0, k, j;
         char nm[64];

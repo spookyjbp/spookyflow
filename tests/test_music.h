@@ -1888,4 +1888,27 @@ static void test_stick_glide(void)
     CHECK(v->sel == g_lib.tab[PLAT_PS2].count - 1);
     for (f = 0; f < 60; f++) app_update(&g_app, 0, 1.0f / 60.0f);
     CHECK(v->sel == g_lib.tab[PLAT_PS2].count - 1 && fabsf(v->scroll.x - (float)v->sel) < 0.001f);
+    {   /* 0.8.6: at full speed into the end it brakes (no dead stop), and the
+         * row comes back from flat while the stick is still held there */
+        int n = g_lib.tab[PLAT_PS2].count;
+        float pd = 0.0f, maxdrop = 0.0f, flat_peak = 0.0f;
+        app_select(&g_app, PLAT_PS2, n - 45, 0);
+        for (f = 0; f < 60; f++) app_update(&g_app, 0, 1.0f / 60.0f);
+        prev = v->scroll.x;
+        for (f = 0; f < 240; f++) {
+            float d;
+            app_update(&g_app, SFB_STICK_RIGHT, 1.0f / 60.0f);
+            d = v->scroll.x - prev;
+            if (f > 30 && pd - d > maxdrop) maxdrop = pd - d;
+            if (v->flat > flat_peak) flat_peak = v->flat;
+            pd = d;
+            prev = v->scroll.x;
+        }
+        CHECK(flat_peak > 0.9f);                 /* it did reach full speed */
+        CHECK(maxdrop < 0.05f);                  /* slows over many frames (was ~0.4 in one frame) */
+        CHECK(v->sel == n - 1 && fabsf(v->scroll.x - (float)(n - 1)) < 0.001f);
+        CHECK(v->flat < 0.02f);                  /* still holding: the cases are back to normal */
+        for (f = 0; f < 30; f++) app_update(&g_app, 0, 1.0f / 60.0f);
+        CHECK(v->sel == n - 1 && fabsf(v->scroll.x - (float)(n - 1)) < 0.001f);
+    }
 }

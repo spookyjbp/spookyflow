@@ -476,7 +476,13 @@ Next: Download Missing Covers, sizes of folder games, release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.8.5:** the selected row's outline sits right on the row (no gap).
+15. **0.8.6:** holding the stick into the **end of the list** (either end)
+    no longer stops dead with the row still flat: it brakes over the last
+    few games, and the cases grow back to normal as it slows, even while
+    you keep holding. The row also goes flat a bit sooner as it speeds up
+    (from 6 games a second, fully at 14), so the in-between speeds don't
+    race a big middle case past.
+    **0.8.5:** the selected row's outline sits right on the row (no gap).
     Holding the stick through hundreds of games looks calm now: at speed
     the cases all go to one size at an even spacing (nothing pulses through
     the middle), the title and info fade until you slow down, and the top

@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.8.5"
+#define APP_VERSION     "0.8.6"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -112,8 +112,10 @@ typedef struct {
 #define FLOW_MAX_LAG     0.20f
 #define FLOW_OMEGA_MAX   400.0f
 #define GLIDE_MAX_SPEED  24.0f   /* games/s: faster and the row's motion breaks up (> ~0.45 of a case per frame) */
-#define GLIDE_FLAT_FROM  10.0f   /* games/s where the row starts going flat ... */
-#define GLIDE_FLAT_FULL  18.0f   /* ... and is flat */
+#define GLIDE_FLAT_FROM   6.0f   /* games/s where the row starts going flat ... (0.8.6: was 10) */
+#define GLIDE_FLAT_FULL  14.0f   /* ... and is flat (0.8.6: was 18) */
+#define GLIDE_BRAKE       7.0f   /* 1/s: near an end the speed is at most this x the games left ... */
+#define GLIDE_BRAKE_MIN   0.6f   /* ... plus this (games/s), so it arrives */
 
 typedef struct {
     AppHost host;

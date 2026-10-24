@@ -1074,6 +1074,13 @@ static void stick_glide(App *a, TabView *v, const GameList *gl, const Input *in)
     k = sf_clampf((v->glide_hold - REPEAT_DELAY) / REPEAT_ACCEL, 0.0f, 1.0f);
     speed = sf_minf(1.0f / (REPEAT_SLOW + (REPEAT_FAST - REPEAT_SLOW) * k), GLIDE_MAX_SPEED);
     if (!v->glide) { v->glide = dir; v->glide_pos = v->scroll.x; }
+    {   /* 0.8.6: brake into the end of the list instead of stopping dead
+         * there; the row's real speed (not the stick's) drives step_rate,
+         * so the flat row grows back as it slows and once it has stopped */
+        float left = dir > 0 ? (float)(gl->count - 1) - v->glide_pos : v->glide_pos;
+        speed = sf_minf(speed, GLIDE_BRAKE * sf_maxf(left, 0.0f) + GLIDE_BRAKE_MIN);
+        if (left <= speed * dt) speed = left > 0.0f ? left / dt : 0.0f;
+    }
     v->glide_pos = sf_clampf(v->glide_pos + (float)dir * speed * dt, 0.0f, (float)(gl->count - 1));
     {
         int now = sf_clampi((int)floorf(v->glide_pos + 0.5f), 0, gl->count - 1);
@@ -1081,7 +1088,7 @@ static void stick_glide(App *a, TabView *v, const GameList *gl, const Input *in)
     }
     /* the row is at the glide position, moving at its speed */
     v->scroll.x = v->scroll.target = v->glide_pos;
-    v->scroll.v = (v->glide_pos > 0.0f && v->glide_pos < (float)(gl->count - 1)) ? (float)dir * speed : 0.0f;
+    v->scroll.v = (float)dir * speed;
     v->step_t = a->time;
     v->step_rate = speed;
 }
