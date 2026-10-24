@@ -832,6 +832,8 @@ static void test_sound(void)
         CHECK(sound_length((SoundId)id) > 0 && !sound_is_custom((SoundId)id));
         CHECK(strstr(sound_file_name((SoundId)id), ".wav") != NULL);
     }
+    /* 0.8.3: the built-in set is spooky's sounds (tools/gen_sounds.py) */
+    CHECK(sound_length(SND_MOVE) == 2223 && sound_length(SND_TAB) == 20640 && sound_length(SND_CONFIRM) == 39087);
     /* silence when nothing plays */
     sound_set_enabled(1); sound_set_volume(1.0f);
     sound_mix(out, 1024);
@@ -839,13 +841,17 @@ static void test_sound(void)
     CHECK(nonzero == 0);
     /* a played sound comes out on both channels, within -1..1 */
     sound_play(SND_CONFIRM);
-    sound_mix(out, 1024);
-    for (i = 0, peak = 0.0f; i < 1024; i++) {
-        CHECK(out[i * 2] == out[i * 2 + 1]);
-        if (fabsf(out[i * 2]) > peak) peak = fabsf(out[i * 2]);
+    {   /* 0.8.3: the built-in sounds are spooky's (quiet, gentle starts): look at the whole sound */
+        int b;
+        for (b = 0, peak = 0.0f; b < 40; b++) {
+            sound_mix(out, 1024);
+            for (i = 0; i < 1024; i++) {
+                CHECK(out[i * 2] == out[i * 2 + 1]);
+                if (fabsf(out[i * 2]) > peak) peak = fabsf(out[i * 2]);
+            }
+        }
     }
-    CHECK(peak > 0.05f && peak <= 1.0f);
-    for (i = 0; i < 40; i++) sound_mix(out, 1024);       /* let it finish */
+    CHECK(peak > 0.01f && peak <= 1.0f);
     /* many rapid plays never overflow or clip past 1 */
     for (i = 0; i < 100; i++) sound_play(SND_MOVE);
     for (i = 0; i < 10; i++) { int k; sound_mix(out, 1024); for (k = 0; k < 2048; k++) CHECK(out[k] <= 1.0f && out[k] >= -1.0f); }

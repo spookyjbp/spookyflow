@@ -1513,10 +1513,10 @@ static void draw_segments(float xr, float cy, float em, const char *const *names
         hw = sf_lerp(ws[i0], ws[i1], f);
     }
     d_rrect(hx, cy - h * 0.5f, hw, h, h * 0.5f,
-            sf_col_alpha(sel ? (accent_white() ? 0xD8DCE6FFu : (accent() | 0xFFu)) : 0x505668FFu, al));
+            sf_col_alpha(sel ? 0x6A7084FFu : 0x505668FFu, al));     /* 0.8.3: gray: the row's glow is the colour */
     for (i = 0; i < n && i < 4; i++) {
         float d = sf_absf(pos - (float)i), on = 1.0f - sf_minf(1.0f, d);
-        uint32_t c = sf_col_mix(TH_TEXT_DIM, (sel && accent_white()) ? 0x101218FFu : TH_TEXT, on);
+        uint32_t c = sf_col_mix(TH_TEXT_DIM, TH_TEXT, on);
         d_text(&g_font_main, x + ws[i] * 0.5f, cy, em * 0.82f, sf_col_alpha(c, al), names[i], ALIGN_CENTER);
         x += ws[i];
     }
@@ -1672,11 +1672,24 @@ static void draw_panel(App *a)
     scroll_y = panel_row_y(a, &g, a->list_scroll.x);
     clip_top = g.list_y - g.rh * 0.6f;
     clip_bot = g.bottom - 0.01f * H();
-    /* the gliding highlight, glowing in the UI colour */
+    /* 0.8.3: every row's background first, then the highlight gliding over
+     * them, then the names and values (before, the rows were drawn over the
+     * highlight and cut it while it moved) */
+    for (i = 0; i < a->nrows; i++) {
+        float ry = g.list_y + panel_row_y(a, &g, (float)i) - scroll_y, rh = panel_row_h(a, &g, i);
+        float rt = clamp01((a->page_t - 0.04f - (float)(i + 1) * 0.035f) / 0.24f), re = ease_out_cubic(rt);
+        float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.06f * H()), fa = g.alpha * re;
+        if (ry + rh < clip_top || ry > clip_bot) continue;
+        if (ry < g.list_y - 0.002f * H()) fa *= clamp01(1.0f - (g.list_y - ry) / (g.rh * 0.6f));
+        if (ry + rh > clip_bot - g.rh * 0.6f) fa *= clamp01((clip_bot - ry - rh) / (g.rh * 0.6f) + 1.0f);
+        if (fa > 0.003f) d_rrect(g.x + ox, ry, g.w, rh, g.rh * 0.5f, sf_col_alpha(g.drawer ? 0x22252EFFu : 0x161922D8u, fa));
+    }
+    /* the gliding highlight: a lighter pill; only its glow and outline are in the UI colour */
     {
         float hy = g.list_y + panel_row_y(a, &g, a->row_hl.x) - scroll_y;
-        int r0 = (int)floorf(a->row_hl.x + 0.5f);
-        float hh = panel_row_h(a, &g, sf_clampi(r0, 0, a->nrows - 1));
+        int r0 = (int)floorf(a->row_hl.x + 0.5f), i0 = sf_clampi((int)floorf(a->row_hl.x), 0, a->nrows - 1);
+        float hf = clamp01(a->row_hl.x - (float)i0);
+        float hh = sf_lerp(panel_row_h(a, &g, i0), panel_row_h(a, &g, sf_clampi(i0 + 1, 0, a->nrows - 1)), hf);
         float rt = clamp01((a->page_t - 0.04f - (float)(r0 + 1) * 0.035f) / 0.24f), re = ease_out_cubic(rt);
         float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.06f * H()), al = g.alpha * re;
         float grow = d_xu(0.004f * H());
@@ -1684,7 +1697,7 @@ static void draw_panel(App *a)
             d_rrect_glow(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.022f * H(),
                          sf_col_alpha(hot, 0.30f * al * (0.75f + 0.25f * g_glow)));
             d_rrect(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f,
-                    sf_col_alpha(accent_white() ? 0x5A5E6CFFu : sf_col_mix(accent() | 0xFFu, 0x101420FFu, 0.42f), al));
+                    sf_col_alpha(0x343844FFu, al));
             /* 0.8.2: the glowing outline the selected console tab has */
             d_rrect_stroke(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.0040f * H(),
                            sf_col_alpha(glow(accent_or(TH_TAB_ACTIVE, 1.0f)), al));
@@ -1710,8 +1723,8 @@ static void draw_panel(App *a)
         if (fa <= 0.003f) continue;
         xl = g.x + ox + d_xu(g.rh * 0.36f);
         xr = g.x + ox + g.w - d_xu(g.rh * 0.34f) - (a->nrows > g.vis ? d_xu(0.016f * H()) : 0.0f);
-        if (!sel) d_rrect(g.x + ox, ry, g.w, rh, g.rh * 0.5f, sf_col_alpha(g.drawer ? 0x22252EFFu : 0x161922D8u, fa));
-        tc = sel ? TH_TEXT : TH_TEXT_DIM;
+        /* the name brightens as the highlight arrives, instead of all at once */
+        tc = sf_col_mix(TH_TEXT_DIM, TH_TEXT, clamp01(1.0f - sf_absf(a->row_hl.x - (float)i)));
         if (k == ROW_D_DISC) {
             const Disc *dd = lib_game_disc(a->lib, game, i);
             char lab[TITLE_MAX];
@@ -1785,6 +1798,7 @@ static const char *const k_about_features[] = {
     "Background music, eight backgrounds and your own pictures",
 };
 static const char *const k_about_tools[] = {
+    "Created by spooky",
     "PSL1GHT SDK  \xC2\xB7  Tiny3D  \xC2\xB7  webMAN MOD",
     "minimp3 by lieff  \xC2\xB7  DejaVu fonts",
     "Written with Claude by Anthropic",
@@ -1838,7 +1852,8 @@ static void draw_about(const App *a)
     d_text(&g_font_main, cx, yy, 0.027f * H() * sc, sf_col_alpha(sf_col_mix(hot, 0xFFFFFFFFu, 0.45f), al), "Made with", ALIGN_CENTER);
     yy += 0.044f * H() * sc;
     for (i = 0; i < (int)(sizeof(k_about_tools) / sizeof(k_about_tools[0])); i++) {
-        d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), k_about_tools[i], ALIGN_CENTER, iw);
+        /* 0.8.3: "Created by spooky" first, a little brighter */
+        d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(i == 0 ? TH_TEXT : TH_TEXT_DIM, al), k_about_tools[i], ALIGN_CENTER, iw);
         yy += 0.037f * H() * sc;
     }
 }

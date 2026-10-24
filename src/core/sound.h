@@ -1,4 +1,4 @@
-/* sound.h - UI sound effects: built-in synthesized sounds, optional user WAV
+/* sound.h - UI sound effects: built-in sounds (sounds_data.c), optional user WAV
  * overrides, and a small mixer the platform audio thread pulls from.
  *
  * Threading: sound_play() is called from the main thread and only pushes a
@@ -27,7 +27,7 @@ typedef enum {
 /* File names users can drop in the sounds folder (e.g. "move.wav"). */
 const char *sound_file_name(SoundId id);
 
-/* Build the built-in sounds. Call once before anything else. Returns 0. */
+/* Load the built-in sounds. Call once before anything else. Returns 0. */
 int  sound_init(void);
 /* Replace one sound with a WAV file's contents (PCM 8/16-bit, mono/stereo,
  * any rate; converted to 48 kHz mono). 0 = loaded, -1 = can't open,

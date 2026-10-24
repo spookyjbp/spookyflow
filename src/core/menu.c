@@ -89,7 +89,7 @@ const char *menu_label(RowKind k)
     case ROW_F_IGNORE_THE: return "Ignore \"The\" When Sorting";
     case ROW_F_XMB_TOP: return "Pin to Top of XMB";
     case ROW_F_RESCAN: return "Rescan Library";
-    case ROW_F_ABOUT: return "About spookyflow";
+    case ROW_F_ABOUT: return "About";
     case ROW_F_QUIT: return "Quit to XMB";
     case ROW_F_POWEROFF: return "Power Off PS3";
     }

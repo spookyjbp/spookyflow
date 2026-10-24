@@ -1,11 +1,11 @@
-/* sound.c - see sound.h. All sounds are mono float at SND_RATE. */
+/* sound.c - see sound.h. All sounds are mono float at SND_RATE; the
+ * built-in ones come from sounds_data.c (tools/gen_sounds.py). */
 #include "sound.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define PI2 6.28318530718f
 
 typedef struct { float *pcm; int len; int custom; } Sound;
 typedef struct { int id; int pos; float gain; int active; } Voice;
@@ -29,75 +29,19 @@ static const char *const k_names[SND_COUNT] = {
 
 const char *sound_file_name(SoundId id) { return (id >= 0 && id < SND_COUNT) ? k_names[id] : ""; }
 
-/* ---- synthesis -------------------------------------------------------- */
+/* ---- built-in sounds (0.8.3: spooky's sound set, sounds_data.c) -------- */
 
-static float env_ad(float t, float attack, float decay)
-{
-    if (t < attack) return t / attack;
-    return expf(-(t - attack) / decay);
-}
+extern const short *const g_sound_builtin[SND_COUNT];
+extern const int g_sound_builtin_len[SND_COUNT];
 
-/* soft bell note: fundamental + a quiet octave, attack/decay envelope */
-static void add_note(float *b, int len, float start_s, float freq, float amp, float decay)
+static int make(SoundId id)
 {
-    int i, s0 = (int)(start_s * SND_RATE);
-    for (i = s0; i < len; i++) {
-        float t = (float)(i - s0) / SND_RATE;
-        float e = env_ad(t, 0.003f, decay);
-        if (e < 0.0005f && t > 0.01f) break;
-        b[i] += amp * e * (sinf(PI2 * freq * t) + 0.25f * sinf(PI2 * 2.0f * freq * t));
-    }
-}
-
-static int make(SoundId id, float seconds)
-{
-    int len = (int)(seconds * SND_RATE);
-    float *b = (float *)calloc((size_t)len, sizeof(float));
+    int len = g_sound_builtin_len[id], i;
+    float *b;
+    if (len <= 0) return -1;
+    b = (float *)malloc((size_t)len * sizeof(float));
     if (!b) return -1;
-    switch (id) {
-    case SND_MOVE:      /* short, soft tick */
-        add_note(b, len, 0.0f, 1760.0f, 0.22f, 0.018f);
-        break;
-    case SND_CHANGE:    /* slightly higher, shorter tick */
-        add_note(b, len, 0.0f, 2349.0f, 0.18f, 0.012f);
-        break;
-    case SND_TAB: {     /* airy whoosh: noise through a sweeping low-pass */
-        unsigned seed = 12345u;
-        float lp = 0.0f;
-        int i;
-        for (i = 0; i < len; i++) {
-            float t = (float)i / SND_RATE, n, cut, k;
-            seed = seed * 1664525u + 1013904223u;
-            n = ((float)(seed >> 9) / 4194304.0f) - 1.0f;
-            cut = 600.0f + 2600.0f * (t / seconds);
-            k = 1.0f - expf(-PI2 * cut / SND_RATE);
-            lp += k * (n - lp);
-            b[i] = 0.30f * lp * env_ad(t, 0.035f, 0.045f);
-        }
-        add_note(b, len, 0.0f, 523.25f, 0.08f, 0.05f);
-        break;
-    }
-    case SND_OPEN:      /* two rising notes */
-        add_note(b, len, 0.000f, 659.25f, 0.16f, 0.07f);
-        add_note(b, len, 0.055f, 987.77f, 0.16f, 0.09f);
-        break;
-    case SND_CLOSE:     /* two falling notes */
-        add_note(b, len, 0.000f, 987.77f, 0.14f, 0.06f);
-        add_note(b, len, 0.050f, 659.25f, 0.14f, 0.08f);
-        break;
-    case SND_CONFIRM:   /* bright three-note arpeggio */
-        add_note(b, len, 0.000f, 783.99f, 0.14f, 0.08f);
-        add_note(b, len, 0.050f, 987.77f, 0.14f, 0.08f);
-        add_note(b, len, 0.100f, 1318.5f, 0.14f, 0.14f);
-        break;
-    default: break;
-    }
-    {   /* bring every built-in sound to the same peak (~0.45 at 100%) */
-        int i;
-        float pk = 0.0f;
-        for (i = 0; i < len; i++) if (fabsf(b[i]) > pk) pk = fabsf(b[i]);
-        if (pk > 0.0f) for (i = 0; i < len; i++) b[i] *= 0.45f / pk;
-    }
+    for (i = 0; i < len; i++) b[i] = (float)g_sound_builtin[id][i] / 32768.0f;
     g_builtin[id] = b;
     g_builtin_len[id] = len;
     return 0;
@@ -105,12 +49,11 @@ static int make(SoundId id, float seconds)
 
 int sound_init(void)
 {
-    static const float secs[SND_COUNT] = { 0.09f, 0.18f, 0.30f, 0.28f, 0.06f, 0.45f };
     int i;
     memset(g_voice, 0, sizeof(g_voice));
     g_req_head = g_req_tail = 0;
     for (i = 0; i < SND_COUNT; i++) {
-        if (!g_builtin[i] && make((SoundId)i, secs[i]) != 0) continue;
+        if (!g_builtin[i] && make((SoundId)i) != 0) continue;
         if (!g_snd[i].custom) { g_snd[i].pcm = g_builtin[i]; g_snd[i].len = g_builtin_len[i]; }
     }
     return 0;

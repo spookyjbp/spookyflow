@@ -34,7 +34,8 @@ drives at once), through webMAN MOD's NTFS index.
   **Sound Effects**. To use your own sounds, put WAV files (PCM 8- or 16-bit, mono
   or stereo, any sample rate, up to 3 s) in `/dev_hdd0/tmp/spookyflow/sounds/`
   named `move.wav`, `tab.wav`, `open.wav`, `close.wav`, `change.wav`,
-  `confirm.wav`; any you don't add keep the built-in sound. Restart spookyflow
+  `confirm.wav`; any you don't add keep the built-in sound (spooky's sound set,
+  since 0.8.3). Restart spookyflow
   after adding them; the log lists which files were used.
 - Tab images are trimmed of transparent borders and smoothly scaled to fill the tab.
 - Flow Settings → **Offline mode** sets offline mode for every PS2/PS3 game; a game's own
@@ -474,15 +475,24 @@ Next: Download Missing Covers, sizes of folder games, release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.8.2:** in Flow Settings and Game Settings ← / → change a value
+15. **0.8.3:** moving through the settings rows (Choose Disc too) is
+    smooth: the rows' backgrounds are drawn first and the highlight glides
+    over them (before, the row being left was drawn over it and cut it).
+    The highlight is a gray pill: its glow and outline are the only parts
+    in the UI color (the chosen Default / On / Off is gray too). The row
+    is now just **About**, and the card says **Created by spooky**.
+    **spooky's sound set is built in**: move, tab, open, close, change and
+    confirm sound like the files you had in the sounds folder, without
+    them (files there still replace them; `tools/gen_sounds.py <folder>`
+    rebuilds src/core/sounds_data.c from a folder of WAVs).
+    **0.8.2:** in Flow Settings and Game Settings ← / → change a value
     and stop at the first and last choice (no wrap); ✖ only opens a group
     or runs an action (the controls bar shows "◀▶ Change" on a value and
     "✖ Select" on a group or action). The names and values are centered in
     their rows, the titles centered too, and the selected row has the
     glowing outline of the selected console tab. Music & Sound: Sound
     Effects first. The name on the loading screens has no glow any more.
-    The A–Z rail only enlarges the letter you're on. New **About
-    spookyflow** row: a centered card with what the app is, its features
+    The A–Z rail only enlarges the letter you're on. New **About** row: a centered card with what the app is, its features
     and what it was made with (◯ goes back).
     **0.8.1:** ■ display mode dims the console tabs like the other cases;
     Game Settings / Choose Disc hide them. Flow Settings is now a whole card
@@ -731,6 +741,7 @@ make -f Makefile.host preview   # renders preview/*.png with the real UI code
 make pkg                        # PS3 build (needs PSL1GHT + Tiny3D, $PSL1GHT set)
 python3 tools/gen_font.py       # regenerate font atlases (src/core/font_data.c)
 python3 tools/gen_icons.py      # regenerate button badges + background thumbnails (src/core/icons_data.c)
+python3 tools/gen_sounds.py DIR # built-in UI sounds from DIR/move.wav ... confirm.wav (src/core/sounds_data.c)
 # new background thumbnails (art/bg_thumbs.png), from renders of each background alone:
 #   SF_PREVIEW_THUMBS=1 SF_PREVIEW_STAGE=<stage dumps> ./build-host/preview preview
 #   python3 tools/gen_icons.py --thumbs preview

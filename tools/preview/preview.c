@@ -226,6 +226,17 @@ int main(int argc, char **argv)
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
     step(0, 0.5f);
     render("03_flow_ps2", 1280, 720);
+    if (getenv("SF_PREVIEW_SCROLL")) {    /* 0.8.3: moving through the rows, every frame */
+        int fr = 0, k, j;
+        char nm[64];
+        g_app.music_card_t = g_app.music_card_len;
+        press(SFB_START); step(0, 0.8f);
+        for (j = 0; j < 3; j++) {
+            press(SFB_DOWN);
+            for (k = 0; k < 14; k++) { snprintf(nm, sizeof(nm), "anim_scr_%03d", fr++); render(nm, 1280, 720); step(0, 1.0f / 60.0f); }
+        }
+        press(SFB_CIRCLE); step(0, 0.5f);
+    }
     if (getenv("SF_PREVIEW_GROUPS")) {    /* 0.8.1: entering / leaving a group, every frame */
         int fr = 0, k, gi;
         char nm[64];
