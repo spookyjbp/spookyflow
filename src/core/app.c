@@ -3,6 +3,7 @@
 #include "sfo.h"
 #include "sound.h"
 #include "music.h"
+#include "discid.h"
 #include "log.h"
 #include "title.h"
 #include "util.h"
@@ -415,6 +416,8 @@ static void loading_update(App *a, float dt)
 /* ------------------------------------------------------------------ */
 /* Panels                                                              */
 
+static void ps2cfg_probe(App *a, const Game *g);
+
 void app_open_panel(App *a, int panel)
 {
     const Game *g = app_selected_game(a, a->tab);
@@ -435,6 +438,8 @@ void app_open_panel(App *a, int panel)
     a->panel_plat = a->tab;
     a->panel_game = a->view[a->tab].sel;
     if (g) a->panel_cfg = settings_game_get(&a->settings, lib_key(a->lib, g));
+    a->ps2cfg_ok = 0;
+    if (g && panel == PANEL_GAME && a->tab == PLAT_PS2) ps2cfg_probe(a, g);
     sound_play(SND_OPEN);
     log_printf("panel: open %s%s%s", panel == PANEL_GAME ? "Game Settings" : panel == PANEL_DISC ? "Choose Disc" : "Flow Settings",
                g && panel != PANEL_FLOW ? " for " : "", g && panel != PANEL_FLOW ? lib_title(a->lib, g) : "");
@@ -467,6 +472,177 @@ static int sync_xmb_priority(App *a)
     }
     log_printf("xmb: ITEM_PRIORITY %u -> %u (%s)", (unsigned)have, (unsigned)want, a->settings.xmb_top ? "pinned to top" : "normal");
     return 1;
+}
+
+/* ------------------------------------------------------------------ */
+/* PS2 config picker (launch.h explains how webMAN uses CONFIG files)  */
+
+static unsigned char g_cfg_a[64 * 1024], g_cfg_b[64 * 1024];
+
+static App *g_isfile_app;
+static int host_is_file(void *ctx, const char *path)
+{
+    (void)ctx;
+    return g_isfile_app && g_isfile_app->host.is_file && g_isfile_app->host.is_file(g_isfile_app->host.fs_ctx, path);
+}
+
+/* whole small file -> buf; length, or -1 (missing / unreadable / too big) */
+static int cfg_read(const App *a, const char *path, unsigned char *buf, int cap)
+{
+    int n;
+    if (!a->host.read_at) return -1;
+    n = a->host.read_at(a->host.fs_ctx, path, 0, buf, (uint32_t)cap);
+    return (n < 0 || n >= cap) ? -1 : n;
+}
+
+/* the PS2 ID of a disc (from the library, else from the ISO itself) */
+static int ps2_disc_id(const App *a, const char *path, const char *lib_id, char *gid, size_t cap)
+{
+    char raw[32];
+    if (lib_id && ps2cfg_game_id(lib_id, gid, cap)) return 1;
+    if (a->host.read_at && discid_read(PLAT_PS2, path, 0, a->host.read_at, a->host.fs_ctx, raw, sizeof(raw)))
+        return ps2cfg_game_id(raw, gid, cap);
+    return 0;
+}
+
+/* Is <iso>.CONFIG one of the standard files (a copy we can drop)? */
+static int cfg_is_standard(App *a, const char *gid, const unsigned char *data, int len)
+{
+    int t;
+    char src[COVER_PATH_MAX];
+    g_isfile_app = a;
+    for (t = PS2CFG_CUSTOM; t < PS2CFG_COUNT; t++) {
+        int n;
+        if (!ps2cfg_find(t, gid, host_is_file, NULL, src, sizeof(src))) continue;
+        n = cfg_read(a, src, g_cfg_b, (int)sizeof(g_cfg_b));
+        if (n == len && memcmp(g_cfg_b, data, (size_t)len) == 0) return 1;
+    }
+    return 0;
+}
+
+/* What webMAN would use for this disc if spookyflow leaves it to it */
+static int cfg_auto_pick(App *a, const char *iso, const char *gid)
+{
+    char p[COVER_PATH_MAX];
+    int n, t;
+    static const int order[] = { PS2CFG_APP, PS2CFG_CUSTOM, PS2CFG_NET, PS2CFG_GX, PS2CFG_SOFT };
+    g_isfile_app = a;
+    snprintf(p, sizeof(p), "%s.CONFIG" PS2CFG_BACKUP_EXT, iso);
+    if (host_is_file(NULL, p)) return PS2CFG_OWN;              /* put back on launch */
+    snprintf(p, sizeof(p), "%s.CONFIG", iso);
+    n = cfg_read(a, p, g_cfg_a, (int)sizeof(g_cfg_a));
+    if (n >= 0 && !cfg_is_standard(a, gid, g_cfg_a, n)) return PS2CFG_OWN;
+    for (t = 0; t < 5; t++) if (ps2cfg_find(order[t], gid, host_is_file, NULL, p, sizeof(p))) return order[t];
+    return -1;
+}
+
+static void ps2cfg_probe(App *a, const Game *g)
+{
+    const Disc *d = lib_game_disc(a->lib, g, 0);
+    const char *path = d ? lib_str(a->lib, d->path) : lib_path(a->lib, g);
+    const char *lid = lib_str(a->lib, d ? d->id : g->id);
+    char p[COVER_PATH_MAX];
+    int t;
+    a->ps2cfg_ok = 0; a->ps2cfg_avail = 1u; a->ps2cfg_auto = -1; a->ps2cfg_gid[0] = '\0';
+    if ((g->flags & GAME_DEMO) || !ps2cfg_is_iso(path)) return;
+    if (!a->host.is_file || !a->host.read_at || !a->host.write_file || !a->host.remove_file) return;
+    if (!ps2_disc_id(a, path, lid, a->ps2cfg_gid, sizeof(a->ps2cfg_gid))) return;
+    g_isfile_app = a;
+    for (t = PS2CFG_CUSTOM; t < PS2CFG_COUNT; t++)
+        if (ps2cfg_find(t, a->ps2cfg_gid, host_is_file, NULL, p, sizeof(p))) a->ps2cfg_avail |= 1u << t;
+    a->ps2cfg_auto = cfg_auto_pick(a, path, a->ps2cfg_gid);
+    a->ps2cfg_ok = 1;
+    log_printf("ps2 config: %s, found:%s%s%s%s%s, Auto gives %s", a->ps2cfg_gid,
+               (a->ps2cfg_avail & 2u) ? " CUSTOM" : "", (a->ps2cfg_avail & 4u) ? " NET" : "",
+               (a->ps2cfg_avail & 8u) ? " GX" : "", (a->ps2cfg_avail & 16u) ? " SOFT" : "",
+               (a->ps2cfg_avail & 32u) ? " PS2-Config-app" : "",
+               a->ps2cfg_auto < 0 ? "none" : ps2cfg_name(a->ps2cfg_auto));
+}
+
+/* ←/→/✖ on the row: step through Auto and the configs that exist */
+static void ps2cfg_cycle(App *a, int dir)
+{
+    int cur = sf_clampi(a->panel_cfg.ps2cfg, 0, PS2CFG_COUNT - 1), i, d = dir == 0 ? 1 : dir;
+    char val[64];
+    if (!a->ps2cfg_ok) {
+        app_show_toast(a, "PS2 configs work with PS2 ISOs on the internal drive");
+        return;
+    }
+    if (a->ps2cfg_avail == 1u) {
+        app_show_toast(a, "No PS2 config files found for this game");
+        return;
+    }
+    for (i = 0; i < PS2CFG_COUNT; i++) {
+        cur = ((cur + d) % PS2CFG_COUNT + PS2CFG_COUNT) % PS2CFG_COUNT;
+        if (a->ps2cfg_avail & (1u << cur)) break;
+    }
+    if (cur == a->panel_cfg.ps2cfg) return;
+    a->panel_cfg.ps2cfg = (signed char)cur;
+    sound_play(SND_CHANGE);
+    if (settings_game_set(&a->settings, &a->panel_cfg) != 0) log_printf("settings: per-game table full, change not stored");
+    app_row_value(a, ROW_G_PS2CFG, val, sizeof(val));
+    log_printf("game setting: [%s] PS2 Config = %s", a->panel_cfg.key, val);
+    app_save(a);
+}
+
+void app_row_value(const App *a, RowKind k, char *out, size_t cap)
+{
+    if (k != ROW_G_PS2CFG || a->panel != PANEL_GAME) {
+        menu_value_text(k, a->panel_plat, &a->settings, &a->panel_cfg, out, cap);
+        return;
+    }
+    if (!a->ps2cfg_ok) { sf_strlcpy(out, "Not available", cap); return; }
+    if (a->panel_cfg.ps2cfg > 0 && (a->ps2cfg_avail & (1u << a->panel_cfg.ps2cfg)))
+        sf_strlcpy(out, ps2cfg_name(a->panel_cfg.ps2cfg), cap);
+    else if (a->panel_cfg.ps2cfg > 0)
+        snprintf(out, cap, "%s (missing)", ps2cfg_name(a->panel_cfg.ps2cfg));
+    else if (a->ps2cfg_auto < 0)
+        sf_strlcpy(out, "Auto (none found)", cap);
+    else
+        snprintf(out, cap, "Auto (%s)", ps2cfg_name(a->ps2cfg_auto));
+}
+
+static int cfg_copy(App *a, const char *src, const char *dst)
+{
+    int n = cfg_read(a, src, g_cfg_a, (int)sizeof(g_cfg_a));
+    if (n < 0) return -1;
+    return a->host.write_file(dst, g_cfg_a, (uint32_t)n);
+}
+
+/* Before a PS2 ISO launches: put the chosen config next to it as
+ * <iso>.CONFIG, or for Auto take spookyflow's copy away again. */
+static void ps2cfg_apply(App *a, const char *iso, const char *lib_id, int type)
+{
+    char gid[16], cfg[COVER_PATH_MAX], bak[COVER_PATH_MAX], src[COVER_PATH_MAX];
+    int n;
+    if (!ps2cfg_is_iso(iso) || !a->host.is_file || !a->host.read_at || !a->host.write_file || !a->host.remove_file) return;
+    if (!ps2_disc_id(a, iso, lib_id, gid, sizeof(gid))) { log_printf("ps2 config: no ID for %s, left to webMAN", iso); return; }
+    g_isfile_app = a;
+    snprintf(cfg, sizeof(cfg), "%s.CONFIG", iso);
+    snprintf(bak, sizeof(bak), "%s.CONFIG" PS2CFG_BACKUP_EXT, iso);
+    if (type > 0 && !ps2cfg_find(type, gid, host_is_file, NULL, src, sizeof(src))) {
+        log_printf("ps2 config: %s has no %s config any more, using Auto", gid, ps2cfg_name(type));
+        type = PS2CFG_AUTO;
+    }
+    n = cfg_read(a, cfg, g_cfg_a, (int)sizeof(g_cfg_a));
+    if (type == PS2CFG_AUTO) {
+        if (host_is_file(NULL, bak)) {                       /* the user's own file comes back */
+            if (cfg_copy(a, bak, cfg) == 0) { a->host.remove_file(bak); log_printf("ps2 config: %s restored", cfg); }
+        } else if (n >= 0 && cfg_is_standard(a, gid, g_cfg_a, n)) {
+            if (a->host.remove_file(cfg) == 0) log_printf("ps2 config: Auto, removed the copy %s (webMAN picks)", cfg);
+        }
+        return;
+    }
+    if (n >= 0 && !cfg_is_standard(a, gid, g_cfg_a, n) && !host_is_file(NULL, bak)) {
+        /* a config of the user's own (made in ManaGunZ, say): keep it aside */
+        if (a->host.write_file(bak, g_cfg_a, (uint32_t)n) != 0) {
+            log_printf("ps2 config: can't keep %s aside, not changing it", cfg);
+            return;
+        }
+        log_printf("ps2 config: your %s kept as %s", cfg, bak);
+    }
+    if (cfg_copy(a, src, cfg) == 0) log_printf("ps2 config: %s -> %s", src, cfg);
+    else log_printf("ps2 config: couldn't write %s", cfg);
 }
 
 static void apply_fx(App *a, RowKind k, int fx)
@@ -522,9 +698,7 @@ static void apply_fx(App *a, RowKind k, int fx)
         if (sync_xmb_priority(a) < 0) app_show_toast(a, "Couldn't update the XMB position (see log)");
         else app_show_toast(a, a->settings.xmb_top ? "Pinned to the top of the XMB" : "No longer pinned in the XMB");
         break;
-    case MENU_FX_PS2CFG_STUB:
-        log_printf("action: PS2 config editor (not in milestone 1) for [%s]", a->panel_cfg.key);
-        app_show_toast(a, "PS2 config editor arrives in a later milestone");
+    case MENU_FX_PS2CFG:        /* handled in panel_input (needs the direction) */
         break;
     }
 }
@@ -551,11 +725,15 @@ static void panel_input(App *a)
     if (a->panel == PANEL_DISC) {
         if (in->pressed & SFB_CROSS) { launch_disc(a, a->row); app_close_panel(a); }
     } else {
-        if (!menu_is_action(k)) {
+        if (k == ROW_G_PS2CFG) {
+            if (in->pressed & SFB_LEFT) ps2cfg_cycle(a, -1);
+            if (in->pressed & SFB_RIGHT) ps2cfg_cycle(a, +1);
+            if (in->pressed & SFB_CROSS) ps2cfg_cycle(a, 0);
+        } else if (!menu_is_action(k)) {
             if (in->pressed & SFB_LEFT) apply_fx(a, k, menu_change(k, a->panel_plat, -1, &a->settings, &a->panel_cfg));
             if (in->pressed & SFB_RIGHT) apply_fx(a, k, menu_change(k, a->panel_plat, +1, &a->settings, &a->panel_cfg));
         }
-        if (in->pressed & SFB_CROSS) apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
+        if ((in->pressed & SFB_CROSS) && k != ROW_G_PS2CFG) apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
     }
     if (a->mode != MODE_FLOW) return;      /* rescan switched modes */
     spring_set(&a->row_hl, (float)a->row);
@@ -608,6 +786,8 @@ static void launch_disc(App *a, int disc)
                k_plat_name[a->tab], name, req.autoplay ? "on" : "off", req.offline, req.emulator,
                wm.valid ? (wm.autoplay ? "read (its Auto-play is on)" : "read") : "not found");
     log_printf("launch: request %s", cmd);
+    if (a->tab == PLAT_PS2 && a->host.launch)
+        ps2cfg_apply(a, path, lib_str(a->lib, d ? d->id : g->id), c.ps2cfg);
     if (!a->host.launch || a->host.launch(cmd) != 0) {
         app_show_toast(a, "Launching needs webMAN MOD running");
         return;

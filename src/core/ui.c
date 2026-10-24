@@ -204,36 +204,65 @@ static void bg_fireflies(float t, float alpha)
 }
 
 /* Ribbons: three thin glowing ribbons flowing across the lower screen */
+/* one ribbon: a soft band along a wavy line across the whole width (core
+ * color in the middle, clear at both edges) */
+typedef struct { float base, slope, amp, k, w, ph, thick; } RibbonDef;
+static void ribbon_band(const RibbonDef *d, float t, float scale, uint32_t core)
+{
+    enum { SEG = 44 };
+    uint32_t clear = core & 0xFFFFFF00u;
+    int i;
+    if ((core & 255) == 0) return;
+    r_tris_begin();
+    for (i = 0; i < SEG; i++) {
+        float u[2], y[2], h[2];
+        int j;
+        u[0] = (float)i / SEG; u[1] = (float)(i + 1) / SEG;
+        for (j = 0; j < 2; j++) {
+            float uu = u[j] * 1.1f - 0.05f;                    /* a little past both edges */
+            y[j] = d->base + d->slope * (uu - 0.5f)
+                 + d->amp * sinf(uu * d->k * 3.14159f + t * d->w + d->ph)
+                 + d->amp * 0.35f * sinf(uu * 6.3f - t * d->w * 1.7f + d->ph * 1.3f);
+            h[j] = d->thick * scale * (0.55f + 0.45f * sinf(uu * 4.7f + t * 0.17f + d->ph));
+            u[j] = W() * uu;
+        }
+        r_vtx(u[0], y[0] - h[0], clear); r_vtx(u[1], y[1] - h[1], clear); r_vtx(u[1], y[1], core);
+        r_vtx(u[0], y[0] - h[0], clear); r_vtx(u[1], y[1], core); r_vtx(u[0], y[0], core);
+        r_vtx(u[0], y[0], core); r_vtx(u[1], y[1], core); r_vtx(u[1], y[1] + h[1], clear);
+        r_vtx(u[0], y[0], core); r_vtx(u[1], y[1] + h[1], clear); r_vtx(u[0], y[0] + h[0], clear);
+    }
+    r_tris_end();
+}
+
+/* Ribbons: flowing bands of light over the whole screen, from the top to
+ * the floor, each with a wide soft glow; they sway and drift on their own */
 static void bg_ribbons(float t, float alpha)
 {
+    static const RibbonDef k_rib[] = {
+        /* base   slope   amp    k     w      ph    thick (fractions of H) */
+        { 0.10f,  0.10f, 0.045f, 1.6f, 0.13f, 0.0f, 0.014f },
+        { 0.20f, -0.14f, 0.060f, 2.1f, 0.17f, 1.3f, 0.020f },
+        { 0.31f,  0.18f, 0.050f, 1.4f, 0.11f, 2.6f, 0.012f },
+        { 0.42f, -0.08f, 0.070f, 2.5f, 0.15f, 3.9f, 0.022f },
+        { 0.53f,  0.12f, 0.055f, 1.8f, 0.19f, 5.2f, 0.016f },
+        { 0.64f, -0.16f, 0.065f, 2.2f, 0.12f, 0.7f, 0.024f },
+        { 0.75f,  0.09f, 0.060f, 2.0f, 0.16f, 2.0f, 0.018f },
+        { 0.86f, -0.11f, 0.050f, 1.7f, 0.14f, 3.3f, 0.022f },
+        { 0.95f,  0.07f, 0.040f, 2.4f, 0.18f, 4.6f, 0.015f },
+    };
     uint32_t c0 = bg_tint();
-    int r, i;
-    enum { SEG = 40 };
-    for (r = 0; r < 3; r++) {
-        float base = H() * (0.70f + 0.07f * (float)r), amp = H() * (0.06f + 0.02f * (float)r);
-        float k = 2.2f + 0.6f * (float)r, w = 0.18f + 0.05f * (float)r, ph = (float)r * 2.0f;
-        uint32_t c = hue_shift(c0, ((float)r - 1.0f) * 0.25f);
-        uint32_t core = sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.25f), 0.38f * alpha);
-        uint32_t clear = c & 0xFFFFFF00u;
-        r_tris_begin();
-        for (i = 0; i < SEG; i++) {
-            float u0 = (float)i / SEG, u1 = (float)(i + 1) / SEG;
-            float x0 = W() * u0, x1 = W() * u1;
-            float y0 = base + amp * sinf(u0 * k * 3.14159f + t * w + ph) + amp * 0.4f * sinf(u0 * 7.0f - t * w * 1.6f + ph);
-            float y1 = base + amp * sinf(u1 * k * 3.14159f + t * w + ph) + amp * 0.4f * sinf(u1 * 7.0f - t * w * 1.6f + ph);
-            float h0 = H() * (0.010f + 0.012f * (0.5f + 0.5f * sinf(u0 * 5.0f + t * 0.2f + ph)));
-            float h1 = H() * (0.010f + 0.012f * (0.5f + 0.5f * sinf(u1 * 5.0f + t * 0.2f + ph)));
-            /* upper half: transparent edge -> core */
-            r_vtx(x0, y0 - h0, clear); r_vtx(x1, y1 - h1, clear); r_vtx(x1, y1, core);
-            r_vtx(x0, y0 - h0, clear); r_vtx(x1, y1, core); r_vtx(x0, y0, core);
-            /* lower half: core -> transparent edge */
-            r_vtx(x0, y0, core); r_vtx(x1, y1, core); r_vtx(x1, y1 + h1, clear);
-            r_vtx(x0, y0, core); r_vtx(x1, y1 + h1, clear); r_vtx(x0, y0 + h0, clear);
-        }
-        r_tris_end();
+    int n = (int)(sizeof(k_rib) / sizeof(k_rib[0])), r;
+    for (r = 0; r < n; r++) {
+        RibbonDef d = k_rib[r];
+        float breathe = 0.75f + 0.25f * sinf(t * (0.21f + 0.03f * (float)r) + d.ph);
+        uint32_t c = hue_shift(c0, ((float)(r % 3) - 1.0f) * 0.22f);
+        d.base *= H(); d.slope *= H(); d.amp *= H(); d.thick *= H();
+        d.base += H() * 0.012f * sinf(t * 0.05f + d.ph);           /* slow drift up and down */
+        ribbon_band(&d, t, 5.0f, sf_col_alpha(c, 0.13f * alpha * breathe));                                     /* glow */
+        ribbon_band(&d, t, 1.4f, sf_col_alpha(c, 0.42f * alpha * breathe));                                   /* body */
+        ribbon_band(&d, t, 0.35f, sf_col_alpha(sf_col_mix(c, 0xFFFFFFFFu, 0.55f), 0.55f * alpha * breathe)); /* bright core */
     }
-    d_blob_ellipse(W() * 0.5f, H() * 0.78f, W() * 0.7f * d_screen()->pa, H() * 0.22f, sf_col_alpha(sf_col_mix(c0, 0x000000FFu, 0.6f), 0.22f * alpha));
-    vignette(alpha * 0.8f);
+    vignette(alpha * 0.45f);
 }
 
 /* Halo: a calm glow behind the selected game, breathing very slowly */
@@ -264,8 +293,6 @@ static void bg_twilight(float t, float alpha)
     vignette(alpha * 0.6f);
 }
 
-static int g_bg_tex = -1;
-void ui_set_background_image(int tex) { g_bg_tex = tex; }
 
 /* ---- Stage: the built-in picture with its button shapes floating ---- */
 static int g_stage_tex = -1, g_stage_shapes = -1, g_stage_hi = -1;
@@ -478,15 +505,6 @@ static void draw_background_as(const App *a, float alpha, int animated, int bg)
 {
     float t = animated ? (float)a->time : 0.0f;
     d_rect_grad(0, 0, W(), H(), sf_col_alpha(TH_BG_TOP, alpha), sf_col_alpha(TH_BG_BOTTOM, alpha));
-    if (bg == BG_IMAGE) {
-        if (g_bg_tex >= 0) {
-            /* the picture fills the screen (it was cropped to 16:9 when loaded) */
-            d_image(g_bg_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha));
-            return;
-        }
-        bg_drift(0.0f, alpha);   /* no picture: a still version of Drift */
-        return;
-    }
     if (bg == BG_STAGE && g_stage_tex >= 0) { bg_stage(t, alpha); return; }
     switch (bg) {
     case BG_AURORA:    bg_aurora(t, alpha); break;
@@ -962,9 +980,10 @@ void ui_bar_layout(int panel_mode, BarLayout *L)
         group_add_badge(&L->g[2], ICON_L2, L->icon);
         group_add_badge(&L->g[2], ICON_R2, L->icon);
         L->g[2].label = "A\xE2\x80\x93Z";
-        group_add_badge(&L->g[3], ICON_START, L->icon);    L->g[3].label = "Flow Settings";
-        group_add_badge(&L->g[4], ICON_CIRCLE, L->icon);   L->g[4].label = "Exit (Hold)";
-        L->n = 5;
+        group_add_badge(&L->g[3], ICON_SELECT, L->icon);   L->g[3].label = "Next Song";
+        group_add_badge(&L->g[4], ICON_START, L->icon);    L->g[4].label = "Flow Settings";
+        group_add_badge(&L->g[5], ICON_CIRCLE, L->icon);   L->g[5].label = "Exit (Hold)";
+        L->n = 6;
     } else {
         group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = panel_mode == 2 ? "Launch" : "Change";
         group_add_badge(&L->g[1], ICON_CIRCLE, L->icon);   L->g[1].label = "Back";
@@ -1114,7 +1133,7 @@ static void draw_panel(App *a)
             continue;
         }
         d_text(&g_font_main, ix + d_xu(rh * 0.42f), cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), menu_label(k), ALIGN_LEFT);
-        menu_value_text(k, a->panel_plat, &a->settings, &a->panel_cfg, val, sizeof(val));
+        app_row_value(a, k, val, sizeof(val));
         if (menu_is_slider(k)) {
             float tw = d_xu(0.20f * H() * sc), tx = xr - tw, th2 = 0.008f * H();
             float v = menu_slider_value(k, &a->settings);
@@ -1304,7 +1323,7 @@ void ui_draw(App *a)
 {
     UiMetrics m;
     float intro, ia;
-    int animated = a->settings.background != BG_IMAGE || a->mode == MODE_LOADING;
+    int animated = 1;
     ui_set_color(a->settings.ui_color);
     set_glow(a->time);
     layout_use_case_images(a->settings.cases);

@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.5.1 (milestone 5)"
+#define APP_VERSION     "0.6.0"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -75,6 +75,12 @@ typedef struct {
      * needs read_at. The host runs music_decode_step() on a thread and
      * music_mix() in its audio callback. NULL = no music. */
     const char *music_dir;
+    /* optional: small file operations for the PS2 config picker (with
+     * read_at). is_file gets fs_ctx; write_file replaces the file; both
+     * return 0 / 1 as named. Without them the PS2 Config row is unavailable. */
+    int (*is_file)(void *ctx, const char *path);
+    int (*write_file)(const char *path, const void *data, uint32_t len);   /* 0 = written */
+    int (*remove_file)(const char *path);                                   /* 0 = removed */
 } AppHost;
 
 typedef struct {
@@ -138,6 +144,11 @@ typedef struct {
     int panel_plat;         /* platform of the game being edited */
     int panel_game;         /* index of game being edited */
     GameCfg panel_cfg;
+    /* PS2 config picker, worked out when Game Settings opens on a PS2 game */
+    int ps2cfg_ok;          /* 1: a PS2 ISO with a known ID and the host can copy files */
+    unsigned ps2cfg_avail;  /* bit n: PS2CFG type n exists for this game (bit 0 = Auto, always) */
+    int ps2cfg_auto;        /* what Auto gives: -1 nothing, a PS2CFG_* type or PS2CFG_OWN */
+    char ps2cfg_gid[16];    /* SLUS_209.14 */
 
     /* overlays */
     char letter[4];
@@ -173,7 +184,10 @@ void app_init(App *a, Library *lib, const AppHost *host);
 void app_update(App *a, uint32_t held, float dt);
 /* Request a clean exit (sysutil exit event, Quit row...). */
 void app_request_exit(App *a, const char *why);
-float music_gain(int percent);   /* Music Volume setting -> music_set_volume() */
+float music_gain(int percent);
+/* Text of a settings row's value as shown (the PS2 Config row knows more
+ * than menu_value_text: what exists for this game and what Auto picks). */
+void app_row_value(const App *a, RowKind k, char *out, size_t cap);   /* Music Volume setting -> music_set_volume() */
 /* Save settings now (also called on exit). */
 void app_save(App *a);
 

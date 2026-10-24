@@ -4,7 +4,7 @@
 
 enum {
     ICON_CROSS = 0, ICON_TRIANGLE = 1, ICON_CIRCLE = 2, ICON_START = 3,
-    ICON_L1 = 4, ICON_R1 = 5, ICON_L2 = 6, ICON_R2 = 7, ICON_COUNT = 8
+    ICON_L1 = 4, ICON_R1 = 5, ICON_L2 = 6, ICON_R2 = 7, ICON_SELECT = 8, ICON_COUNT = 9
 };
 
 typedef struct { int x, w; } IconRect;   /* horizontal extent in the atlas; height = atlas h */

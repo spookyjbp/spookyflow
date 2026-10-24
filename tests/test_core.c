@@ -332,7 +332,7 @@ static void test_bar_layout(void)
             float px_x = scr[k].px * scr[k].pa;   /* physical px per logical x unit */
             float gaps[BAR_MAX_GROUPS + 1];
             ui_bar_layout(mode, &L);
-            CHECK(L.n == (mode ? 2 : 5));
+            CHECK(L.n == (mode ? 2 : 6));
             CHECK_NEAR(L.bar_x, scr[k].W * 0.015f, 1e-3);
             CHECK_NEAR(L.bar_x + L.bar_w, scr[k].W * 0.985f, 1e-3);
             gaps[0] = L.g[0].x - L.bar_x;
@@ -1260,6 +1260,7 @@ int main(void)
     test_bg_and_reflect();
     test_music();
     test_music_app();
+    test_ps2_config();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

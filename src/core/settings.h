@@ -10,7 +10,8 @@
 /* Per-game tri-state for auto-play */
 enum { AP_DEFAULT = 0, AP_ON = 1, AP_OFF = 2 };
 /* Background styles (values are stored in settings.ini; keep them stable) */
-enum { BG_ANIMATED = 0 /* "Drift" */, BG_IMAGE = 1, BG_AURORA = 2, BG_FIREFLIES = 3,
+/* 1 was the user's background picture (removed in 0.6.0; a saved 1 loads as Stage) */
+enum { BG_ANIMATED = 0 /* "Drift" */, BG_RETIRED_1 = 1, BG_AURORA = 2, BG_FIREFLIES = 3,
        BG_RIBBONS = 4, BG_HALO = 5, BG_TWILIGHT = 6, BG_STAGE = 7, BG_COUNT = 8 };
 const char *settings_background_name(int bg);
 enum { UI_COLOR_BLUE = 0, UI_COLOR_RED, UI_COLOR_GREEN, UI_COLOR_PURPLE, UI_COLOR_PINK,
@@ -21,7 +22,9 @@ typedef struct {
     signed char autoplay;    /* AP_* */
     signed char emulator;    /* PS1: 0 Standard 1 Netemu; PS2: 0 Default 1 Netemu */
     signed char offline;     /* AP_DEFAULT (follow the global setting), AP_ON, AP_OFF */
+    signed char ps2cfg;      /* PS2: PS2CFG_* (launch.h), 0 = Auto (webMAN picks) */
 } GameCfg;
+#define SET_PS2CFG_MAX   5   /* PS2CFG_COUNT - 1 */
 
 typedef struct {
     int autoplay;            /* global, 0/1, default 0 */

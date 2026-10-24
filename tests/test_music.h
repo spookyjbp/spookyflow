@@ -1075,3 +1075,163 @@ static void test_music_app(void)
     music_reset();
     memfs_reset();
 }
+
+/* ---- 0.6.0: PS2 config picker ---- */
+static int cfg_list(void *ctx, const char *dir, FsEntry *out, int max)
+{
+    static const char *const k[] = { "Okami [SLUS-21115].iso", "God Hand.iso" };
+    int i;
+    (void)ctx;
+    if (strcmp(dir, "/dev_hdd0/PS2ISO") != 0) return -1;
+    for (i = 0; i < 2 && i < max; i++) {
+        sf_strlcpy(out[i].name, k[i], FS_NAME_MAX);
+        out[i].is_dir = 0;
+        out[i].size = 1000;
+    }
+    return 2;
+}
+static int cfg_write(const char *path, const void *data, uint32_t len) { return memfs_put(path, data, len) ? 0 : -1; }
+static int cfg_remove(const char *path)
+{
+    MemFile *f = memfs_find(path);
+    if (!f) return -1;
+    free(f->data); memset(f, 0, sizeof(*f));
+    return 0;
+}
+static int mf_is(const char *path, const char *text)
+{
+    MemFile *f = memfs_find(path);
+    return f && f->len == strlen(text) && memcmp(f->data, text, f->len) == 0;
+}
+
+#define OKAMI     "/dev_hdd0/PS2ISO/Okami [SLUS-21115].iso"
+#define OKAMI_CFG OKAMI ".CONFIG"
+#define OKAMI_BAK OKAMI ".CONFIG" PS2CFG_BACKUP_EXT
+
+static void cfg_open_row(void)
+{
+    int i;
+    tap(SFB_TRIANGLE); run_frames(0, 0.3f);
+    for (i = 0; i < 3; i++) tap(SFB_DOWN);            /* Auto-Play, Emulator, Offline, PS2 Config */
+}
+
+static void test_ps2_config(void)
+{
+    AppHost host;
+    char v[64], gid[16], p[COVER_PATH_MAX];
+    Settings s;
+    printf("ps2 config picker\n");
+    /* ids and paths */
+    CHECK(ps2cfg_game_id("SLUS21115", gid, sizeof(gid)) && strcmp(gid, "SLUS_211.15") == 0);
+    CHECK(ps2cfg_game_id("slus-211.15", gid, sizeof(gid)) && strcmp(gid, "SLUS_211.15") == 0);
+    CHECK(!ps2cfg_game_id("BLUS30443x", gid, sizeof(gid)) && !ps2cfg_game_id("", gid, sizeof(gid)));
+    CHECK(!ps2cfg_game_id("SLUS2111", gid, sizeof(gid)));
+    CHECK(ps2cfg_is_iso("/a/b.ISO") && ps2cfg_is_iso("/a/b.iso.0") && !ps2cfg_is_iso("/a/b.BIN.ENC"));
+    /* settings: the 4th column holds 100 + the choice; old RSX values are ignored */
+    settings_defaults(&s);
+    settings_parse_line(&s, "game 0 0 0 103 SLUS21115");
+    CHECK(settings_game_get(&s, "SLUS21115").ps2cfg == PS2CFG_GX);
+    settings_parse_line(&s, "game 1 0 0 2 OLDGAME");
+    CHECK(settings_game_get(&s, "OLDGAME").ps2cfg == 0 && settings_game_get(&s, "OLDGAME").autoplay == 1);
+
+    memfs_reset();
+    memfs_put(PS2CFG_MGZ_DIR "/CONFIG/NET/SLUS_211.15.CONFIG", "NETCFG", 6);
+    memfs_put(PS2CFG_APP_DIR "/CONFIG/GX/SLUS_211.15.CONFIG", "GXCFG", 5);
+    CHECK(ps2cfg_find(PS2CFG_NET, "SLUS_211.15", mem_is_file, NULL, p, sizeof(p)) && strstr(p, "MANAGUNZ0"));
+    CHECK(!ps2cfg_find(PS2CFG_SOFT, "SLUS_211.15", mem_is_file, NULL, p, sizeof(p)));
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    host.launch = fake_launch;
+    host.read_at = mem_read_at;
+    host.is_file = mem_is_file;
+    host.write_file = cfg_write;
+    host.remove_file = cfg_remove;
+    g_launch_calls = 0; g_launch_fail = 0;
+    app_init(&g_app, &g_lib, &host);
+    g_app.settings.last_tab = PLAT_PS2;
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    g_app.tab = PLAT_PS2;
+    app_select(&g_app, PLAT_PS2, idx_of(PLAT_PS2, "Okami"), 0);
+
+    /* the row lists Auto and the configs that exist; Auto shows what webMAN would pick */
+    cfg_open_row();
+    CHECK(g_app.panel == PANEL_GAME && g_app.rows[g_app.row] == ROW_G_PS2CFG);
+    CHECK(g_app.ps2cfg_ok && g_app.ps2cfg_avail == (1u | (1u << PS2CFG_NET) | (1u << PS2CFG_GX)));
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "Auto (NET)");
+    tap(SFB_RIGHT);
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "NET");
+    tap(SFB_RIGHT);
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "GX");
+    tap(SFB_RIGHT);                                         /* wraps to Auto */
+    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
+    tap(SFB_LEFT);
+    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_GX);
+    CHECK(settings_game_get(&g_app.settings, g_app.panel_cfg.key).ps2cfg == PS2CFG_GX);   /* stored */
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+
+    /* launching with GX: the GX file is put next to the ISO */
+    tap(SFB_CROSS);
+    CHECK(g_launch_calls == 1 && mf_is(OKAMI_CFG, "GXCFG"));
+    relaunch_reset(); run_frames(0, 0.1f);
+    /* back to Auto: spookyflow's copy is removed, so webMAN picks again */
+    cfg_open_row();
+    tap(SFB_RIGHT);
+    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    tap(SFB_CROSS);
+    CHECK(g_launch_calls == 2 && !memfs_find(OKAMI_CFG));
+    relaunch_reset(); run_frames(0, 0.1f);
+
+    /* a config of the user's own is kept aside and comes back with Auto */
+    memfs_put(OKAMI_CFG, "MINE", 4);
+    cfg_open_row();
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "Auto (game's own file)");
+    tap(SFB_RIGHT);                                         /* NET */
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    tap(SFB_CROSS);
+    CHECK(mf_is(OKAMI_CFG, "NETCFG") && mf_is(OKAMI_BAK, "MINE"));
+    relaunch_reset(); run_frames(0, 0.1f);
+    tap(SFB_CROSS);                                         /* again: the backup isn't overwritten */
+    CHECK(mf_is(OKAMI_BAK, "MINE"));
+    relaunch_reset(); run_frames(0, 0.1f);
+    cfg_open_row();
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "NET");
+    tap(SFB_LEFT);                                          /* Auto */
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "Auto (game's own file)");
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    tap(SFB_CROSS);
+    CHECK(mf_is(OKAMI_CFG, "MINE") && !memfs_find(OKAMI_BAK));
+    relaunch_reset(); run_frames(0, 0.1f);
+
+    /* a chosen config that has gone missing: Auto, nothing breaks */
+    {
+        GameCfg c = settings_game_get(&g_app.settings, lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)));
+        c.ps2cfg = PS2CFG_SOFT;
+        settings_game_set(&g_app.settings, &c);
+        tap(SFB_CROSS);
+        CHECK(mf_is(OKAMI_CFG, "MINE"));
+        relaunch_reset(); run_frames(0, 0.1f);
+        cfg_open_row();
+        app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+        CHECK_STR(v, "SOFT (missing)");
+        tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    }
+
+    /* no title ID (and none inside the image): not available, ✖ explains */
+    app_select(&g_app, PLAT_PS2, idx_of(PLAT_PS2, "God Hand"), 0);
+    cfg_open_row();
+    CHECK(!g_app.ps2cfg_ok);
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "Not available");
+    tap(SFB_CROSS);
+    CHECK(strstr(g_app.toast, "PS2 ISOs") != NULL);
+    tap(SFB_TRIANGLE); run_frames(0, TOAST_TIME + 0.2f);
+    memfs_reset();
+}

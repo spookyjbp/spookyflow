@@ -134,7 +134,7 @@ the cover flow.
 (no files are ever renamed):
 
 - PS1: Auto-play, Emulator (Standard / Netemu)
-- PS2: Auto-play, Emulator (Default / Netemu), Offline mode, PS2 config (stub)
+- PS2: Auto-play, Emulator (Default / Netemu), Offline mode, PS2 Config (see *PS2 configs*)
 - PS3: Auto-play, Offline mode
 
 “Default (Off)” means “use the global Auto-play setting, which is Off”.
@@ -142,7 +142,8 @@ They are applied when the game is launched (see *Launching*). The RSX clock
 row was removed in milestone 3; overclocking may come back later.
 
 **Flow Settings (START)** — Auto-play (global, default Off), Music volume
-(0% turns the music off), Shuffle music, Background (Animated / Image), Download missing covers (stub),
+(0% turns the music off), Shuffle music, Background (Stage, Drift, Aurora, Fireflies,
+Ribbons, Halo, Twilight), Download missing covers (stub),
 Ignore “The” when sorting, Rescan library, Quit to XMB.
 
 ## Where your games are read from (internal HDD)
@@ -226,17 +227,9 @@ the particle PNGs (cut off-grid from their sheet, so stitched back together
 first; `DOTS` in the script lists which ones). Pick other styles in Flow
 Settings → Background.
 
-## Background picture (optional)
-
-Put a picture here and choose **Flow Settings → Background → Image**:
-
-```
-/dev_hdd0/tmp/spookyflow/background.jpg   (or background.png)
-```
-
-Any size up to 4096 px; it's cropped to 16:9 around the center and resized
-to 1280×720 once at startup. spookyflow ships no background pictures. Without
-the file, Image shows a still version of Drift. The log says whether it was found.
+The **Ribbons** style fills the whole screen with flowing bands of light,
+from the top down to the floor. (The *Image* background, your own picture,
+was removed in 0.6.0; if it was selected, Stage is used.)
 
 **Reflections** (Flow Settings, On by default) mirror the bottom of each case
 on the floor below it, fading out.
@@ -323,6 +316,30 @@ scrolls until its end has shown, and the card stays up until it has.
 It gets quieter while the screen sleeps and fades out when you exit or
 launch a game. Files that can't be played are skipped (the log says which).
 Rescan Library also re-reads the music folder.
+
+## PS2 configs (0.6.0)
+
+PS2 ISOs run with `ps2_netemu`, which reads compatibility patches from a
+**CONFIG** file next to the ISO (`Game.iso.CONFIG`). When there is none,
+webMAN MOD copies the first one it finds for the game's ID, in this order:
+the PS2 Config app's own file, then the **CUSTOM**, **NET**, **GX** and
+**SOFT** sets (from the PS2 Config app, `/dev_hdd0/game/PS2CONFIG/USRDIR`,
+or ManaGunZ, `/dev_hdd0/game/MANAGUNZ0/USRDIR/sys/CONFIG`).
+
+**Game Settings → PS2 Config** (← →) lets you choose:
+
+- **Auto** — webMAN decides, as before. The row shows what that will be,
+  e.g. `Auto (NET)`, `Auto (game's own file)` or `Auto (none found)`.
+- **CUSTOM / NET / GX / SOFT / PS2 Config app** — only the ones that exist
+  for this game are offered. On launch spookyflow copies that file to
+  `Game.iso.CONFIG`.
+
+A CONFIG of your own (made with ManaGunZ, say) is never lost: before
+replacing it spookyflow keeps it as `Game.iso.CONFIG.sfbak`, and choosing
+Auto again puts it back. Switching back to Auto removes spookyflow's copy,
+so webMAN picks again. The game's ID comes from the file name
+(`[SLUS-21115]`) or from inside the ISO. Not available for PS2 Classics
+(`.BIN.ENC`) or games without an ID. The log lists what was found and copied.
 
 ## Launching (milestone 3)
 
@@ -435,7 +452,11 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.5.1:** the Stage background no longer shows hard vertical lines
+15. **0.6.0:** Game Settings → PS2 Config picks the CONFIG for PS2 ISOs
+    (Auto / CUSTOM / NET / GX / SOFT); SELECT “Next Song” is on the controls
+    bar; the Ribbons background fills the whole screen; the Image background
+    is removed.
+    **0.5.1:** the Stage background no longer shows hard vertical lines
     near the left and right edges (its glow layer was drawn about 7% too
     narrow on a 16:9 screen; the ribbons were slightly too narrow too).
     **Milestone 5 (0.5.0):** background music from
@@ -540,7 +561,6 @@ contents (or attach it) in our chat.
 ## Not yet (on purpose)
 
 - Downloading missing covers (the Flow Settings row is still a stub).
-- The PS2 config editor (a stub that shows a message).
 - PS2 ISOs and PS3 game folders on NTFS drives (webMAN's NTFS index has neither).
 - Folder sizes for `GAMES`/`GAMEZ` entries are not computed (chip hidden).
 

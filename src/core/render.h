@@ -15,7 +15,7 @@ enum {
     TEX_DISC = 7,   /* generated: anti-aliased disc (9-slice rounded rectangles) */
     TEX_CATS = 8,   /* kitten artwork on the loading screen (cats_data.c) */
     TEX_CASE_PS1 = 9, TEX_CASE_PS2 = 10, TEX_CASE_PS3 = 11,   /* optional case images (the user's) */
-    TEX_BG_IMAGE = 12,   /* optional background picture (the user's) */
+    TEX_FREE_12 = 12,    /* unused (was the background picture) */
     TEX_STAGE = 13, TEX_STAGE_SHAPES = 14,   /* built-in Stage background (brightness) + its floating shapes */
     TEX_STAGE_HI = 15,                        /* Stage's white-hot cores */
     TEX_STAGE_FX = 16,                        /* Stage's ribbons, flare and stars (brightness) */

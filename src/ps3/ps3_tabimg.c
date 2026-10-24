@@ -192,48 +192,6 @@ static void load_case_images(void)
             log_printf("cases: %s not found, %s covers are shown without a case", mine[p], p == 0 ? "PS1" : p == 1 ? "PS2" : "PS3");
 }
 
-/* ---- background picture: /dev_hdd0/tmp/spookyflow/background.jpg (or
- * .png), shown with Flow Settings > Background > Image. Cropped to the
- * screen shape and resized to 1280x720 once. */
-#define BG_W 1280
-#define BG_H 720
-
-static void load_background(void)
-{
-    static const char *const names[] = { SF_BG_IMAGE ".jpg", SF_BG_IMAGE ".JPG", SF_BG_IMAGE ".png", SF_BG_IMAGE ".PNG", SF_BG_IMAGE ".jpeg" };
-    int i;
-    for (i = 0; i < (int)(sizeof(names) / sizeof(names[0])); i++) {
-        uint8_t *rgba = NULL, *crop, *out;
-        int w = 0, h = 0, cx, cy, cw, ch, y;
-        if (!ps3_fs_exists(names[i])) continue;
-        if (ps3_decode_image(names[i], BG_W, BG_H, 4096, &w, &h, &rgba) != 0 || !rgba) {
-            log_printf("background: %s could not be decoded (%dx%d, max 4096)", names[i], w, h);
-            free(rgba);
-            return;
-        }
-        /* crop to 16:9 around the center */
-        if ((float)w / (float)h > 16.0f / 9.0f) { ch = h; cw = h * 16 / 9; } else { cw = w; ch = w * 9 / 16; }
-        cx = (w - cw) / 2; cy = (h - ch) / 2;
-        crop = (uint8_t *)malloc((size_t)cw * ch * 4u);
-        out = (uint8_t *)malloc((size_t)BG_W * BG_H * 4u);
-        if (!crop || !out) { free(crop); free(out); free(rgba); return; }
-        for (y = 0; y < ch; y++) memcpy(crop + (size_t)y * cw * 4u, rgba + (((size_t)(y + cy) * w) + cx) * 4u, (size_t)cw * 4u);
-        free(rgba);
-        img_resample_rgba(crop, cw, ch, out, BG_W, BG_H);
-        free(crop);
-        for (y = 0; y < BG_W * BG_H; y++) out[y * 4 + 3] = 255;
-        if (r_texture_upload_rgba(TEX_BG_IMAGE, BG_W, BG_H, out) == 0) {
-            ui_set_background_image(TEX_BG_IMAGE);
-            log_printf("background: using %s (%dx%d)", names[i], w, h);
-        } else {
-            log_printf("background: no texture memory for %s", names[i]);
-        }
-        free(out);
-        return;
-    }
-    log_printf("background: no %s.jpg/.png (Background > Image shows a plain backdrop)", SF_BG_IMAGE);
-}
-
 /* ---- built-in Stage background (src/core/stage_data.c) ---- */
 static int upload_png_buffer(int tex, const unsigned char *buf, unsigned size, int *ow, int *oh)
 {
@@ -367,6 +325,5 @@ void ps3_load_tab_images(void)
     }
     for (p = 0; p < PLAT_COUNT; p++) load_one(p);
     load_case_images();
-    load_background();
     load_stage();
 }

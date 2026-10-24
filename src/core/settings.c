@@ -77,7 +77,9 @@ void settings_parse_line(Settings *s, const char *line_in)
                  * option stored 0 = Off: that now reads as Default, which is
                  * Off unless the global option is turned on. */
                 g.offline = (signed char)sf_clampi(o, 0, 2);
-                (void)r;                                /* old RSX clock preset: ignored */
+                /* 4th column: before 0.3.0 the RSX clock preset (ignored, < 100);
+                 * since 0.6.0 100 + the PS2 config choice */
+                g.ps2cfg = (signed char)(r >= 100 ? sf_clampi(r - 100, 0, SET_PS2CFG_MAX) : 0);
                 settings_game_set(s, &g);
             }
         }
@@ -96,7 +98,10 @@ void settings_parse_line(Settings *s, const char *line_in)
     else if (strcmp(key, "sfx_volume") == 0) s->sfx_volume = parse_int(val, 0, 100, 50);
     /* "background2" since fix 13 (Stage became the default; the old
      * "background" key is ignored so everyone gets it once) */
-    else if (strcmp(key, "background2") == 0) s->background = parse_int(val, 0, BG_COUNT - 1, BG_STAGE);
+    else if (strcmp(key, "background2") == 0) {
+        s->background = parse_int(val, 0, BG_COUNT - 1, BG_STAGE);
+        if (s->background == BG_RETIRED_1) s->background = BG_STAGE;   /* the picture option is gone */
+    }
     else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_BLUE);
     else if (strcmp(key, "reflections") == 0) s->reflections = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "custom_cases") == 0) s->cases = parse_int(val, 0, 1, 1);
@@ -152,11 +157,11 @@ int settings_save(const Settings *s, const char *path)
     for (p = 0; p < PLAT_COUNT; p++)
         if (s->last_key[p][0] && !strchr(s->last_key[p], '\n'))
             fprintf(f, "last_key_%s=%s\n", k_plat_suffix[p], s->last_key[p]);
-    fprintf(f, "# game <autoplay 0=default 1=on 2=off> <emulator> <offline 0=default 1=on 2=off> <unused> <key>\n");
+    fprintf(f, "# game <autoplay 0=default 1=on 2=off> <emulator> <offline 0=default 1=on 2=off> <ps2 config: 0=auto, 100+n> <key>\n");
     for (i = 0; i < s->game_count; i++) {
         const GameCfg *g = &s->games[i];
         if (strchr(g->key, '\n')) continue;
-        fprintf(f, "game %d %d %d 0 %s\n", g->autoplay, g->emulator, g->offline, g->key);
+        fprintf(f, "game %d %d %d %d %s\n", g->autoplay, g->emulator, g->offline, g->ps2cfg > 0 ? 100 + g->ps2cfg : 0, g->key);
     }
     fflush(f);
     fclose(f);
@@ -183,7 +188,7 @@ GameCfg settings_game_get(const Settings *s, const char *key)
 int settings_game_set(Settings *s, const GameCfg *cfg)
 {
     int i = find_game(s, cfg->key);
-    int is_default = cfg->autoplay == 0 && cfg->emulator == 0 && cfg->offline == 0;
+    int is_default = cfg->autoplay == 0 && cfg->emulator == 0 && cfg->offline == 0 && cfg->ps2cfg == 0;
     if (!cfg->key[0]) return -1;
     if (i >= 0) {
         if (is_default) {
@@ -214,6 +219,6 @@ int settings_autoplay_effective(const Settings *s, const GameCfg *cfg)
 
 const char *settings_background_name(int bg)
 {
-    static const char *const names[BG_COUNT] = { "Drift", "Image", "Aurora", "Fireflies", "Ribbons", "Halo", "Twilight", "Stage" };
+    static const char *const names[BG_COUNT] = { "Drift", "Stage", "Aurora", "Fireflies", "Ribbons", "Halo", "Twilight", "Stage" };
     return (bg >= 0 && bg < BG_COUNT) ? names[bg] : "Stage";
 }

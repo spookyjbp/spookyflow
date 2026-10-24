@@ -64,3 +64,56 @@ int launch_build(const LaunchReq *req, const WmConfig *wm, char *out, size_t cap
     if (n < 0 || (size_t)n >= cap || n >= LAUNCH_CMD_MAX - 64) { out[0] = '\0'; return -1; }
     return 0;
 }
+
+/* ------------------------------------------------------------------ */
+/* PS2 CONFIG files                                                    */
+
+const char *ps2cfg_name(int type)
+{
+    static const char *const n[PS2CFG_COUNT + 1] = { "Auto", "CUSTOM", "NET", "GX", "SOFT", "PS2 Config app", "game's own file" };
+    return (type >= 0 && type <= PS2CFG_COUNT) ? n[type] : "Auto";
+}
+
+int ps2cfg_is_iso(const char *path)
+{
+    return path && (sf_ends_with_i(path, ".iso") || sf_ends_with_i(path, ".iso.0"));
+}
+
+int ps2cfg_game_id(const char *id, char *out, size_t cap)
+{
+    char c[10];
+    int n = 0, i;
+    if (!out || cap < 12) return 0;
+    out[0] = '\0';
+    if (!id) return 0;
+    for (; *id && n < 9; id++) {
+        char ch = *id;
+        if (ch == '_' || ch == '-' || ch == '.' || ch == ' ') continue;
+        if (ch >= 'a' && ch <= 'z') ch = (char)(ch - 32);
+        if (n < 4 ? !(ch >= 'A' && ch <= 'Z') : !(ch >= '0' && ch <= '9')) return 0;
+        c[n++] = ch;
+    }
+    for (; *id; id++) if (*id != '_' && *id != '-' && *id != '.' && *id != ' ') return 0;   /* nothing after it */
+    if (n != 9) return 0;
+    for (i = 0; i < 4; i++) out[i] = c[i];
+    out[4] = '_'; out[5] = c[4]; out[6] = c[5]; out[7] = c[6]; out[8] = '.'; out[9] = c[7]; out[10] = c[8]; out[11] = '\0';
+    return 1;
+}
+
+int ps2cfg_find(int type, const char *gid, IsFileFn is_file, void *ctx, char *out, size_t cap)
+{
+    static const char *const dir[5] = { "", "CUSTOM", "NET", "GX", "SOFT" };
+    if (!gid || !gid[0] || !is_file || !out || cap == 0) return 0;
+    out[0] = '\0';
+    if (type == PS2CFG_APP) {
+        snprintf(out, cap, "%s/%s.CONFIG", PS2CFG_APP_DIR, gid);
+        if (is_file(ctx, out)) return 1;
+    } else if (type >= PS2CFG_CUSTOM && type <= PS2CFG_SOFT) {
+        snprintf(out, cap, "%s/CONFIG/%s/%s.CONFIG", PS2CFG_APP_DIR, dir[type], gid);
+        if (is_file(ctx, out)) return 1;
+        snprintf(out, cap, "%s/CONFIG/%s/%s.CONFIG", PS2CFG_MGZ_DIR, dir[type], gid);
+        if (is_file(ctx, out)) return 1;
+    }
+    out[0] = '\0';
+    return 0;
+}

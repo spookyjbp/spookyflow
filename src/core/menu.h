@@ -27,7 +27,7 @@ enum {
     MENU_FX_RESCAN,
     MENU_FX_QUIT,
     MENU_FX_COVERS_STUB,
-    MENU_FX_PS2CFG_STUB,
+    MENU_FX_PS2CFG,         /* PS2 config row: the app knows which configs exist */
     MENU_FX_XMB_TOP,        /* pin-to-top changed: patch our PARAM.SFO */
     MENU_FX_POWEROFF        /* power off the console (app asks for a second press) */
 };

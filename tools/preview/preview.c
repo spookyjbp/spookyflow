@@ -284,6 +284,17 @@ int main(int argc, char **argv)
     press(SFB_DOWN); step(0, 0.1f);
     press(SFB_DOWN); step(0, 0.3f);
     render("09_game_settings_ps2", 1280, 720);
+    /* the PS2 Config row on a real ISO (demo games have none: fake what the probe finds) */
+    g_app.ps2cfg_ok = 1;
+    g_app.ps2cfg_avail = 1u | (1u << PS2CFG_NET) | (1u << PS2CFG_GX) | (1u << PS2CFG_CUSTOM);
+    g_app.ps2cfg_auto = PS2CFG_CUSTOM;
+    g_app.panel_cfg.ps2cfg = PS2CFG_AUTO;
+    step(0, 0.1f);
+    render("09b_ps2_config_auto", 1280, 720);
+    g_app.panel_cfg.ps2cfg = PS2CFG_NET;
+    step(0, 0.1f);
+    render("09c_ps2_config_net", 1280, 720);
+    g_app.panel_cfg.ps2cfg = PS2CFG_AUTO;
     press(SFB_CIRCLE); step(0, 0.4f);
 
     press(SFB_START); step(0, 0.3f);
@@ -441,30 +452,6 @@ int main(int argc, char **argv)
                 g_app.settings.ui_color = UI_COLOR_BLUE;
                 g_app.settings.background = BG_ANIMATED;
                 g_app.time = t0;
-            }
-            /* the user's background picture (raw dump; only with SF_PREVIEW_BG) */
-            {
-                const char *bgf = getenv("SF_PREVIEW_BG");
-                FILE *f = bgf ? fopen(bgf, "rb") : NULL;
-                int w = 0, h = 0;
-                if (f && fscanf(f, "%d %d", &w, &h) == 2 && fgetc(f) == '\n' && w > 0 && h > 0) {
-                    unsigned char *px = (unsigned char *)malloc((size_t)w * h * 4);
-                    if (px && fread(px, 1, (size_t)w * h * 4, f) == (size_t)w * h * 4 &&
-                        r_texture_upload_rgba(TEX_BG_IMAGE, w, h, px) == 0) {
-                        ui_set_background_image(TEX_BG_IMAGE);
-                        g_app.settings.background = BG_IMAGE;
-                        render("33_bg_image_ps2", 1280, 720);
-                        render("33_bg_image_ps2_1080p", 1920, 1080);
-                        press(SFB_R1); step_covers(0.8f);
-                        render("33_bg_image_ps3", 1280, 720);
-                        press(SFB_L1); press(SFB_L1); step_covers(0.8f);
-                        render("33_bg_image_ps1", 1280, 720);
-                        press(SFB_R1); step_covers(0.6f);
-                        g_app.settings.background = BG_ANIMATED;
-                    }
-                    free(px);
-                }
-                if (f) fclose(f);
             }
             /* the built-in Stage background (raw dumps of art/stage.*; SF_PREVIEW_STAGE dir) */
             {

@@ -68,3 +68,26 @@ int ps3_fs_list(void *ctx, const char *dir, FsEntry *out, int max)
     if (skipped) log_printf("scan: %s: %d names too long, skipped", dir, skipped);
     return n;
 }
+
+/* ---- small file operations (PS2 config picker) ---- */
+int ps3_fs_is_file(void *ctx, const char *path)
+{
+    sysFSStat st;
+    (void)ctx;
+    return sysFsStat(path, &st) == 0 && (st.st_mode & SF_S_IFMT) != SF_S_IFDIR;
+}
+
+int ps3_fs_write_file(const char *path, const void *data, uint32_t len)
+{
+    s32 fd;
+    u64 n = 0;
+    int ok;
+    if (sysFsOpen(path, SYS_O_WRONLY | SYS_O_CREAT | SYS_O_TRUNC, &fd, NULL, 0) != 0) return -1;
+    ok = len == 0 || (sysFsWrite(fd, data, len, &n) == 0 && n == len);
+    sysFsClose(fd);
+    if (!ok) { sysFsUnlink(path); return -1; }
+    sysFsChmod(path, 0666);      /* other tools (ManaGunZ, FTP) can replace it */
+    return 0;
+}
+
+int ps3_fs_remove_file(const char *path) { return sysFsUnlink(path) == 0 ? 0 : -1; }

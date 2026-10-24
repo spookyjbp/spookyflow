@@ -55,7 +55,7 @@ const char *menu_label(RowKind k)
 
 int menu_is_action(RowKind k)
 {
-    return k == ROW_D_DISC || k == ROW_G_PS2CFG || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
+    return k == ROW_D_DISC || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
 }
 
 int menu_is_slider(RowKind k) { return k == ROW_F_VOLUME || k == ROW_F_SFX; }
@@ -81,7 +81,11 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
         else if (g->offline == AP_OFF) sf_strlcpy(out, "Off", cap);
         else snprintf(out, cap, "Default (%s)", onoff(s->offline));
         break;
-    case ROW_G_PS2CFG: sf_strlcpy(out, "Edit", cap); break;
+    case ROW_G_PS2CFG: {   /* the app shows more (what Auto picks, what exists): app_row_value */
+        static const char *const n[SET_PS2CFG_MAX + 1] = { "Auto", "CUSTOM", "NET", "GX", "SOFT", "PS2 Config app" };
+        sf_strlcpy(out, n[sf_clampi(g->ps2cfg, 0, SET_PS2CFG_MAX)], cap);
+        break;
+    }
     case ROW_F_AUTOPLAY: sf_strlcpy(out, onoff(s->autoplay), cap); break;
     case ROW_F_OFFLINE: sf_strlcpy(out, onoff(s->offline), cap); break;
     case ROW_F_SFX:
@@ -122,7 +126,7 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     case ROW_G_AUTOPLAY: g->autoplay = (signed char)cycle(g->autoplay, 3, dir); return MENU_FX_CHANGED;
     case ROW_G_EMULATOR: g->emulator = (signed char)cycle(g->emulator, 2, dir); return MENU_FX_CHANGED;
     case ROW_G_OFFLINE: g->offline = (signed char)cycle(g->offline, 3, dir); return MENU_FX_CHANGED;
-    case ROW_G_PS2CFG: return dir == 0 ? MENU_FX_PS2CFG_STUB : MENU_FX_NONE;
+    case ROW_G_PS2CFG: return MENU_FX_PS2CFG;   /* the app cycles through the configs that exist */
     case ROW_F_AUTOPLAY: s->autoplay = cycle(s->autoplay, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_OFFLINE: s->offline = cycle(s->offline, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_SFX: {
@@ -145,11 +149,12 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     }
     case ROW_F_SHUFFLE: s->shuffle = cycle(s->shuffle, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_BACKGROUND: {
-        /* menu order: the animated styles, then the still image */
-        static const int order[BG_COUNT] = { BG_STAGE, BG_ANIMATED, BG_AURORA, BG_FIREFLIES, BG_RIBBONS, BG_HALO, BG_TWILIGHT, BG_IMAGE };
+        /* menu order */
+        static const int order[] = { BG_STAGE, BG_ANIMATED, BG_AURORA, BG_FIREFLIES, BG_RIBBONS, BG_HALO, BG_TWILIGHT };
+        const int n = (int)(sizeof(order) / sizeof(order[0]));
         int i, cur = 0;
-        for (i = 0; i < BG_COUNT; i++) if (order[i] == s->background) cur = i;
-        s->background = order[cycle(cur, BG_COUNT, dir)];
+        for (i = 0; i < n; i++) if (order[i] == s->background) cur = i;
+        s->background = order[cycle(cur, n, dir)];
         return MENU_FX_CHANGED;
     }
     case ROW_F_UI_COLOR: s->ui_color = cycle(s->ui_color, UI_COLOR_COUNT, dir); return MENU_FX_CHANGED;

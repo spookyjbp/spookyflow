@@ -7,6 +7,7 @@ rendered at 2x and downsampled.
   2 circle   - black round button, red ring
   3 start    - black right-pointing arrow button, like the DualShock 3's START
   4..7 L1 R1 L2 R2 - black rounded shoulder buttons, white label
+  8 select   - black flat rounded-rectangle button, like the DualShock 3's SELECT
 Every button has the same near-black body and the same thin gray rim, so they
 read as one family and stay visible on the dark UI.
 Stored as planar R,G,B,A in one RLE stream (same codec as the fonts), with a
@@ -33,7 +34,7 @@ SYMBOL = {                       # DualShock 3 symbol colors
     "triangle": (0x3C, 0xD0, 0xA0),
     "circle":   (0xF2, 0x5C, 0x6A),
 }
-BADGES = ["cross", "triangle", "circle", "start", "L1", "R1", "L2", "R2"]
+BADGES = ["cross", "triangle", "circle", "start", "L1", "R1", "L2", "R2", "select"]
 SHOULDER_W = 104   # final px width of shoulder buttons (height = OUT)
 START_W = 150      # final px width of the START pill
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -83,6 +84,18 @@ def start_button():
     return rgb.resize((OUT, OUT), Image.LANCZOS), alpha.resize((OUT, OUT), Image.LANCZOS)
 
 
+def select_button():
+    """DualShock 3 SELECT: a small flat black rounded rectangle, wider than tall"""
+    rim = round(S * 0.045)
+    x0, x1, y0, y1 = S * 0.10, S * 0.90, S * 0.29, S * 0.71
+    rad = (y1 - y0) * 0.42
+    alpha = Image.new("L", (S, S), 0)
+    ImageDraw.Draw(alpha).rounded_rectangle([x0, y0, x1, y1], radius=rad, fill=255)
+    rgb = Image.new("RGB", (S, S), RIM)
+    ImageDraw.Draw(rgb).rounded_rectangle([x0 + rim, y0 + rim, x1 - rim, y1 - rim], radius=rad - rim, fill=BODY)
+    return rgb.resize((OUT, OUT), Image.LANCZOS), alpha.resize((OUT, OUT), Image.LANCZOS)
+
+
 def badge(kind):
     pad = 2 * SS
     stroke = round(S * 0.085)
@@ -121,6 +134,8 @@ def main():
     for kind in BADGES:
         if kind == "start":
             imgs.append(start_button())
+        elif kind == "select":
+            imgs.append(select_button())
         elif kind[0] in "LR":
             imgs.append(pill(kind, SHOULDER_W, 0.42))
         else:

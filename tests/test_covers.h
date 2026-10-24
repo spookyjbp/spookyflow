@@ -1209,18 +1209,22 @@ static void test_bg_and_reflect(void)
     GameCfg g;
     char t[32];
     int i;
-    printf("background picture, reflections\n");
+    printf("backgrounds, reflections\n");
     settings_defaults(&s);
     memset(&g, 0, sizeof(g));
     CHECK(s.reflections == 1);
     CHECK(menu_change(ROW_F_REFLECT, 0, 0, &s, &g) == MENU_FX_CHANGED && s.reflections == 0);
     menu_value_text(ROW_F_REFLECT, 0, &s, &g, t, sizeof(t));
     CHECK_STR(t, "Off");
-    /* Background cycles through every style and ends on Image */
+    /* Background cycles through the 7 styles (the picture option is gone) */
     CHECK(s.background == BG_STAGE);                            /* fix 13: Stage is the default */
-    for (i = 0; i < BG_COUNT - 1; i++) menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g);
-    CHECK(s.background == BG_IMAGE);
+    for (i = 0; i < 6; i++) { menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g); CHECK(s.background != BG_RETIRED_1 && s.background != BG_STAGE); }
+    CHECK(s.background == BG_TWILIGHT);
     menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g);
+    CHECK(s.background == BG_STAGE);
+    menu_change(ROW_F_BACKGROUND, 0, -1, &s, &g);
+    CHECK(s.background == BG_TWILIGHT);
+    settings_parse_line(&s, "background2=1");                    /* a saved "Image" loads as Stage */
     CHECK(s.background == BG_STAGE);
     settings_parse_line(&s, "background=0");                     /* the pre-fix-13 key is ignored... */
     CHECK(s.background == BG_STAGE);
@@ -1235,15 +1239,10 @@ static void test_bg_and_reflect(void)
     ui_set_stage_fx(-1);
     ui_set_stage_highlight(-1);
     CHECK_STR(settings_background_name(BG_FIREFLIES), "Fireflies");
-    /* every background, with and without a picture and reflections, draws */
+    /* every background, with and without reflections, draws */
     for (i = 0; i < BG_COUNT; i++) { g_app.settings.background = i; ui_draw(&g_app); }
-    ui_set_background_image(TEX_BG_IMAGE);
-    g_app.settings.background = BG_IMAGE;
-    g_app.settings.reflections = 1;
-    ui_draw(&g_app);
     g_app.settings.reflections = 0;
-    ui_draw(&g_app);
-    ui_set_background_image(-1);
+    for (i = 0; i < BG_COUNT; i++) { g_app.settings.background = i; ui_draw(&g_app); }
     g_app.settings.background = BG_ANIMATED;
     g_app.settings.reflections = 1;
 }

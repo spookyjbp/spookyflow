@@ -57,4 +57,33 @@ typedef struct {
  * (no path, unknown console, or too long). */
 int launch_build(const LaunchReq *req, const WmConfig *wm, char *out, size_t cap);
 
+/* ---- PS2 CONFIG files ------------------------------------------------
+ * ps2_netemu reads compatibility patches from "<iso>.CONFIG" next to a PS2
+ * ISO. When that file is missing, webMAN MOD (include/mount/mount_cobra.h,
+ * ps2_classic.h: copy_ps2config_iso) copies the first one it finds for the
+ * game's ID (SLUS_209.14), in this order:
+ *   PS2CFG_APP_DIR/<ID>.CONFIG                       (the PS2 Config app's own)
+ *   then for CUSTOM, NET, GX, SOFT:
+ *     PS2CFG_APP_DIR/CONFIG/<type>/<ID>.CONFIG
+ *     PS2CFG_MGZ_DIR/CONFIG/<type>/<ID>.CONFIG       (ManaGunZ's set)
+ * and it never replaces an existing one. So spookyflow picks a config by
+ * copying it to <iso>.CONFIG before launching, and goes back to "Auto" by
+ * removing the copy (a file of the user's own is kept aside as
+ * <iso>.CONFIG.sfbak and put back). */
+enum { PS2CFG_AUTO = 0, PS2CFG_CUSTOM = 1, PS2CFG_NET = 2, PS2CFG_GX = 3, PS2CFG_SOFT = 4,
+       PS2CFG_APP = 5, PS2CFG_COUNT = 6,
+       PS2CFG_OWN = 6 /* only as an Auto result: the game's own <iso>.CONFIG */ };
+#define PS2CFG_APP_DIR    "/dev_hdd0/game/PS2CONFIG/USRDIR"
+#define PS2CFG_MGZ_DIR    "/dev_hdd0/game/MANAGUNZ0/USRDIR/sys"
+#define PS2CFG_BACKUP_EXT ".sfbak"
+
+typedef int (*IsFileFn)(void *ctx, const char *path);
+const char *ps2cfg_name(int type);           /* "Auto", "CUSTOM", "NET", "GX", "SOFT", "PS2 Config app" */
+/* 1 if path is a PS2 ISO that gets a CONFIG (.iso, or split .iso.0) */
+int ps2cfg_is_iso(const char *path);
+/* "SLUS20914" / "SLUS-20914" / "SLUS_209.14" -> "SLUS_209.14"; 0 if not an ID */
+int ps2cfg_game_id(const char *id, char *out, size_t cap);
+/* where webMAN finds this type's file for the game (first match); 1 = found */
+int ps2cfg_find(int type, const char *gid, IsFileFn is_file, void *ctx, char *out, size_t cap);
+
 #endif

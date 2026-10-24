@@ -242,6 +242,9 @@ int main(int argc, const char *argv[])
     host.read_at = ps3_read_at;
     host.ntfs_refresh = ntfs_refresh;
     host.music_dir = SF_MUSIC_DIR;
+    host.is_file = ps3_fs_is_file;
+    host.write_file = ps3_fs_write_file;
+    host.remove_file = ps3_fs_remove_file;
     host.covers = ps3_covers_start();
     app_init(&g_app, &g_lib, &host);
 
