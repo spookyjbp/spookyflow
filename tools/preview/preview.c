@@ -226,6 +226,53 @@ int main(int argc, char **argv)
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
     step(0, 0.5f);
     render("03_flow_ps2", 1280, 720);
+    if (getenv("SF_PREVIEW_PANELS")) {    /* 0.8.0: the new panels, frame by frame */
+        int fr = 0, k;
+        char nm[64];
+        float keep = g_app.music_card_t;
+        g_app.music_card_t = g_app.music_card_len;
+        press(SFB_TRIANGLE);
+        for (k = 0; k < 16; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_DOWN); step(0, 0.25f);
+        press(SFB_RIGHT);
+        for (k = 0; k < 6; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_LEFT); step(0, 0.2f);
+        press(SFB_CIRCLE);
+        for (k = 0; k < 10; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_START);
+        for (k = 0; k < 16; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_CROSS);                                   /* Appearance */
+        for (k = 0; k < 14; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_DOWN); step(0, 0.2f);
+        press(SFB_RIGHT);                                   /* UI Color: the ring glides */
+        for (k = 0; k < 6; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_LEFT); step(0, 0.3f);
+        for (k = 0; k < 30; k++) ui_draw(&g_app);
+        press(SFB_DOWN); step(0, 0.2f);
+        press(SFB_CROSS);                                   /* Show Game Info: the switch slides */
+        for (k = 0; k < 6; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_CROSS); step(0, 0.3f);
+        press(SFB_CIRCLE);                                  /* back to the groups */
+        for (k = 0; k < 12; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        press(SFB_CIRCLE);
+        for (k = 0; k < 10; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
+        {   /* Choose Disc: make the selected game a two-disc one */
+            Game *gm = (Game *)app_selected_game(&g_app, g_app.tab);
+            if (gm && g_lib.ndiscs + 2 <= LIB_MAX_DISCS) {
+                Disc *d0 = &g_lib.disc[g_lib.ndiscs], *d1 = d0 + 1;
+                memset(d0, 0, sizeof(*d0) * 2);
+                d0->path = d1->path = gm->path; d0->id = d1->id = gm->id;
+                d0->size = 4404019200ull; d1->size = 3758096384ull; d0->num = 1; d1->num = 2;
+                gm->disc0 = (uint16_t)g_lib.ndiscs; gm->ndisc = 2; g_lib.ndiscs += 2;
+                app_open_panel(&g_app, PANEL_DISC);
+                step(0, 0.8f);
+                render("09d_choose_disc", 1280, 720);
+                press(SFB_CIRCLE); step(0, 0.5f);
+                gm->ndisc = 0; g_lib.ndiscs -= 2;
+            }
+        }
+        g_app.music_card_t = keep;
+    }
     if (getenv("SF_PREVIEW_DISPLAY")) {   /* 0.7.2: Square = display mode, Circle = back */
         int fr = 0;
         char nm[64];
@@ -331,6 +378,7 @@ int main(int argc, char **argv)
     press(SFB_DOWN); step(0, 0.1f);
     press(SFB_DOWN); step(0, 0.3f);
     render("09_game_settings_ps2", 1280, 720);
+    render("09_game_settings_ps2_4x3", 960, 720);
     /* the PS2 Config row on a real ISO (demo games have none: fake what the probe finds) */
     g_app.ps2cfg_ok = 1;
     g_app.ps2cfg_avail = 1u | (1u << PS2CFG_NET) | (1u << PS2CFG_GX) | (1u << PS2CFG_CUSTOM);
@@ -345,14 +393,15 @@ int main(int argc, char **argv)
     press(SFB_CIRCLE); step(0, 0.4f);
 
     press(SFB_START); step(0, 0.3f);
-    press(SFB_DOWN); step(0, 0.1f);
+    press(SFB_DOWN); step(0, 0.5f);
     render("10_flow_settings", 1280, 720);
     press(SFB_UP); step(0, 0.1f);
-    press(SFB_CROSS); step(0, 0.3f);                 /* Appearance */
+    press(SFB_CROSS); step(0, 0.7f);                 /* Appearance */
     render("11_flow_settings_appearance", 1280, 720);
+    render("11_flow_settings_appearance_4x3", 960, 720);
     press(SFB_CIRCLE); step(0, 0.2f);
     press(SFB_DOWN); step(0, 0.1f);
-    press(SFB_CROSS); step(0, 0.3f);                 /* Music & Sound */
+    press(SFB_CROSS); step(0, 0.7f);                 /* Music & Sound */
     render("11b_flow_settings_sound", 1280, 720);
     press(SFB_CIRCLE); step(0, 0.2f);
     press(SFB_CIRCLE); step(0, 0.4f);
@@ -564,6 +613,18 @@ int main(int argc, char **argv)
                         }
                         render("34_stage_ps2", 1280, 720);
                         render("34_stage_ps2_1080p", 1920, 1080);
+                        {   /* 0.8.0: the panels on the Stage, with case images */
+                            press(SFB_TRIANGLE); step(0, 0.8f);
+                            render("34c_stage_game_settings", 1280, 720);
+                            render("34c_stage_game_settings_1080p", 1920, 1080);
+                            press(SFB_CIRCLE); step(0, 0.5f);
+                            press(SFB_START); step(0, 0.8f);
+                            render("34d_stage_flow_settings", 1280, 720);
+                            press(SFB_CROSS); step(0, 0.8f);
+                            render("34e_stage_appearance_1080p", 1920, 1080);
+                            press(SFB_CIRCLE); step(0, 0.3f);
+                            press(SFB_CIRCLE); step(0, 0.5f);
+                        }
                         if (getenv("SF_PREVIEW_DISPLAY")) {   /* 0.7.2: display mode on the Stage */
                             g_app.display = 1; g_app.display_t = 1.0f;
                             render("34_stage_display", 1280, 720);
@@ -633,6 +694,22 @@ int main(int argc, char **argv)
                             }
                             g_app.intro = 1.0f; g_app.time = tsave; g_app.settings.background = BG_STAGE;
                         }
+                        if (getenv("SF_PREVIEW_THUMBS")) {   /* 0.8.0: each background alone, White UI color */
+                            int b, keepc = g_app.settings.ui_color;
+                            char p2[512];
+                            g_app.settings.ui_color = UI_COLOR_WHITE;
+                            for (b = 0; b < BG_COUNT; b++) {
+                                int fw;
+                                if (b == BG_CUSTOM) continue;
+                                for (fw = 0; fw < 30; fw++) ui_draw_background_only(&g_app, b);
+                                set_screen(1280, 720);
+                                ui_draw_background_only(&g_app, b);
+                                snprintf(p2, sizeof(p2), "%s/thumb_%d.ppm", g_outdir, b);
+                                soft_write_ppm(p2);
+                            }
+                            g_app.settings.ui_color = keepc;
+                            for (b = 0; b < 30; b++) ui_draw(&g_app);
+                        }
                         {   /* the background alone (no cases), to check its edges */
                             int keep = g_lib.tab[g_app.tab].count;
                             g_lib.tab[g_app.tab].count = 0;
@@ -646,7 +723,9 @@ int main(int argc, char **argv)
                         {
                             int uc;
                             for (uc = 0; uc < UI_COLOR_COUNT; uc++) {
+                                int fw;
                                 g_app.settings.ui_color = uc;
+                                for (fw = 0; fw < 30; fw++) ui_draw(&g_app);   /* 0.7.5: the new colour is made in steps */
                                 snprintf(nm, sizeof(nm), "35_stage_%d_%s", uc, settings_color_name(uc));
                                 render(nm, 1280, 720);
                             }

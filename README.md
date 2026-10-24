@@ -1,4 +1,4 @@
-# spookyflow — milestone 4
+# spookyflow — milestone 6
 
 A cover-flow game launcher for a jailbroken/CFW/HEN PS3, written in C with
 PSL1GHT and Tiny3D. Milestone 1 was the **look and feel**; milestone 2 added
@@ -440,6 +440,10 @@ To send me the log: open webMAN's file manager in a PC browser
 it to USB with a file manager (e.g. multiMAN / IRISMAN). Then paste its
 contents (or attach it) in our chat.
 
+## Planned
+
+Next: Download Missing Covers, sizes of folder games, release years.
+
 ## What to check (please report back)
 
 1. **Loading screen:** appears right away, animates smoothly, the status line
@@ -470,7 +474,37 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.7.4:** the loading screen of every background but Stage: the
+15. **Milestone 6 (0.8.0): new settings panels.**
+    - **Flow Settings** is a drawer that slides in from the right; the
+      cover flow (with its title and info) slides left and dims, so your
+      game stays in view. Breathing outline like the controls bar; the
+      selected row glows in the UI color; groups show a ›. Opening a group
+      slides its page in from the right (with "Flow Settings" above its
+      name), ◯ slides the groups back in from the left.
+    - **Game Settings** and **Choose Disc** sit beside the big case: the
+      selected case grows and moves to the left (as in display mode), the
+      other cases fade away, and the settings stand in a column on the right
+      under the title and the game's name. Works from display mode too.
+    - **Values you can see:** on/off switches (Show Game Info, Custom Cases,
+      Reflections, Shuffle, Auto-Play, Offline, Ignore "The", Pin to XMB
+      top), Default / On / Off choices for Auto-Play and Offline Mode,
+      Standard (or Default) / Netemu for Emulator, UI Color as a row of
+      dots, Background as a row of thumbnails, volume sliders. Knobs, the
+      chosen choice and the rings glide to the new value.
+    - **Rows cascade in** one after another whenever a page appears.
+    - The controls bar says **Select** on the Flow Settings first page.
+    The buttons work exactly as before.
+    **0.7.5 (from your 0.7.4 log):** **PS2 configs:** spookyflow now
+    keeps a list of the `<iso>.CONFIG` files it wrote and only ever deletes
+    those. A `.CONFIG` made by anything else (the PS2 Config app,
+    ManaGunZ, by hand) is never removed: choosing a config keeps it aside as
+    `.CONFIG.sfbak` and Auto puts it back. Copies written by older versions
+    are recognised when you switch a game's PS2 Config row away from the
+    config spookyflow set. **Stage:** a UI Color change no longer freezes
+    the screen for ~0.1 s: the new colours are made over a few frames while
+    the old ones stay on screen; and on any other background Stage is
+    prepared quietly after start, so choosing it doesn't freeze either.
+    **0.7.4:** the loading screen of every background but Stage: the
     kittens fade in (no reflection) and the letters of *spookyflow* drop in
     one by one from above with a little bounce, then the name settles into
     its glow. Quick L2/R2 jumps keep the A–Z rail fully up: it no longer
@@ -673,7 +707,10 @@ make -f Makefile.host test      # unit tests of the portable core (gcc, ASan/UBS
 make -f Makefile.host preview   # renders preview/*.png with the real UI code
 make pkg                        # PS3 build (needs PSL1GHT + Tiny3D, $PSL1GHT set)
 python3 tools/gen_font.py       # regenerate font atlases (src/core/font_data.c)
-python3 tools/gen_icons.py      # regenerate button badges (src/core/icons_data.c)
+python3 tools/gen_icons.py      # regenerate button badges + background thumbnails (src/core/icons_data.c)
+# new background thumbnails (art/bg_thumbs.png), from renders of each background alone:
+#   SF_PREVIEW_THUMBS=1 SF_PREVIEW_STAGE=<stage dumps> ./build-host/preview preview
+#   python3 tools/gen_icons.py --thumbs preview
 python3 tools/cutout_cats.py    # art/cats_source.png -> art/cats.png (transparent kittens)
 python3 tools/gen_cats.py       # art/cats.png -> src/core/cats_data.c + pkgfiles/ICON0.PNG
 ```

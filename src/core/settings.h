@@ -25,6 +25,7 @@ typedef struct {
     signed char ps2cfg;      /* PS2: PS2CFG_* (launch.h), 0 = Auto (webMAN picks) */
 } GameCfg;
 #define SET_PS2CFG_MAX   5   /* PS2CFG_COUNT - 1 */
+#define SET_MAX_CFG_COPIES 128   /* PS2 .CONFIG files spookyflow wrote itself */
 
 typedef struct {
     int autoplay;            /* global, 0/1, default 0 */
@@ -45,6 +46,11 @@ typedef struct {
     char last_key[PLAT_COUNT][SET_KEY_MAX];
     GameCfg games[SET_MAX_GAMES];
     int game_count;
+    /* 0.7.5: sf_hash() of each <iso>.CONFIG path spookyflow wrote; only
+     * those are ever deleted again (anything else is the user's or another
+     * tool's file: kept aside as .sfbak and put back) */
+    uint32_t cfg_copies[SET_MAX_CFG_COPIES];
+    int cfg_copy_count;
 } Settings;
 
 void settings_defaults(Settings *s);
@@ -57,6 +63,9 @@ void settings_parse_line(Settings *s, const char *line);
 
 /* Per-game access. get returns a default-valued record if absent. */
 GameCfg settings_game_get(const Settings *s, const char *key);
+int  settings_cfg_copy_has(const Settings *s, uint32_t h);
+void settings_cfg_copy_add(Settings *s, uint32_t h);
+void settings_cfg_copy_remove(Settings *s, uint32_t h);
 /* Store (or remove when all defaults). Returns 0, or -1 if the table is full. */
 int  settings_game_set(Settings *s, const GameCfg *cfg);
 

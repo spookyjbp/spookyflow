@@ -92,6 +92,11 @@ const Game *app_selected_game(const App *a, int tab)
 
 int app_tab_has_games(const App *a, int tab) { return a->lib->tab[tab].count > 0; }
 
+int app_panel_visible_rows(const App *a)
+{
+    return a->panel == PANEL_FLOW ? PANEL_VISIBLE_ROWS_FLOW : PANEL_VISIBLE_ROWS;
+}
+
 int app_main_context(const App *a)
 {
     return a->mode == MODE_FLOW && a->panel == PANEL_NONE && !a->exiting && !a->display;
@@ -532,6 +537,7 @@ void app_open_panel(App *a, int panel)
     a->row = 0;
     spring_snap(&a->row_hl, 0.0f);
     spring_snap(&a->list_scroll, 0.0f);
+    a->page_t = 0.0f; a->page_dir = 1;
     a->panel_plat = a->tab;
     a->panel_game = a->view[a->tab].sel;
     if (g) a->panel_cfg = settings_game_get(&a->settings, lib_key(a->lib, g));
@@ -663,6 +669,34 @@ static void ps2cfg_probe(App *a, const Game *g)
                a->ps2cfg_auto < 0 ? "none" : ps2cfg_name(a->ps2cfg_auto));
 }
 
+/* 0.7.5: copies written before spookyflow kept a list of them. Leaving a
+ * config that spookyflow set (old > 0): a .CONFIG next to the game's ISOs
+ * that is exactly that config is spookyflow's copy from a launch with it. */
+static void ps2cfg_adopt_old_copies(App *a, int old)
+{
+    const Game *g;
+    char src[COVER_PATH_MAX], cfg[COVER_PATH_MAX];
+    int i, n, m, nd;
+    if (old <= 0 || a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_plat].count) return;
+    g = &a->lib->tab[a->panel_plat].games[a->panel_game];
+    g_isfile_app = a;
+    if (!a->ps2cfg_gid[0] || !ps2cfg_find(old, a->ps2cfg_gid, host_is_file, NULL, src, sizeof(src))) return;
+    m = cfg_read(a, src, g_cfg_b, (int)sizeof(g_cfg_b));
+    if (m < 0) return;
+    nd = g->ndisc > 0 ? g->ndisc : 1;
+    for (i = 0; i < nd; i++) {
+        const Disc *d = lib_game_disc(a->lib, g, i);
+        const char *path = d ? lib_str(a->lib, d->path) : lib_path(a->lib, g);
+        snprintf(cfg, sizeof(cfg), "%s.CONFIG", path);
+        if (settings_cfg_copy_has(&a->settings, sf_hash(cfg))) continue;
+        n = cfg_read(a, cfg, g_cfg_a, (int)sizeof(g_cfg_a));
+        if (n == m && memcmp(g_cfg_a, g_cfg_b, (size_t)n) == 0) {
+            settings_cfg_copy_add(&a->settings, sf_hash(cfg));
+            log_printf("ps2 config: %s is spookyflow's %s copy (from before 0.7.5)", cfg, ps2cfg_name(old));
+        }
+    }
+}
+
 /* ←/→/✖ on the row: step through Auto and the configs that exist */
 static void ps2cfg_cycle(App *a, int dir)
 {
@@ -681,6 +715,7 @@ static void ps2cfg_cycle(App *a, int dir)
         if (a->ps2cfg_avail & (1u << cur)) break;
     }
     if (cur == a->panel_cfg.ps2cfg) return;
+    ps2cfg_adopt_old_copies(a, a->panel_cfg.ps2cfg);
     a->panel_cfg.ps2cfg = (signed char)cur;
     sound_play(SND_CHANGE);
     if (settings_game_set(&a->settings, &a->panel_cfg) != 0) log_printf("settings: per-game table full, change not stored");
@@ -726,7 +761,7 @@ static int cfg_copy(App *a, const char *src, const char *dst)
 static void ps2cfg_apply(App *a, const char *iso, const char *lib_id, int type)
 {
     char gid[16], cfg[COVER_PATH_MAX], bak[COVER_PATH_MAX], src[COVER_PATH_MAX];
-    int n;
+    int n, mine;
     if (!ps2cfg_is_iso(iso) || !a->host.is_file || !a->host.read_at || !a->host.write_file || !a->host.remove_file) return;
     if (!ps2_disc_id(a, iso, lib_id, gid, sizeof(gid))) { log_printf("ps2 config: no ID for %s, left to webMAN", iso); return; }
     g_isfile_app = a;
@@ -737,24 +772,40 @@ static void ps2cfg_apply(App *a, const char *iso, const char *lib_id, int type)
         type = PS2CFG_AUTO;
     }
     n = cfg_read(a, cfg, g_cfg_a, (int)sizeof(g_cfg_a));
+    mine = settings_cfg_copy_has(&a->settings, sf_hash(cfg));
     if (type == PS2CFG_AUTO) {
         if (host_is_file(NULL, bak)) {                       /* the user's own file comes back */
-            if (cfg_copy(a, bak, cfg) == 0) { a->host.remove_file(bak); log_printf("ps2 config: %s restored", cfg); }
-        } else if (n >= 0 && cfg_is_standard(a, gid, g_cfg_a, n)) {
-            if (a->host.remove_file(cfg) == 0) log_printf("ps2 config: Auto, removed the copy %s (webMAN picks)", cfg);
+            if (cfg_copy(a, bak, cfg) == 0) {
+                a->host.remove_file(bak);
+                settings_cfg_copy_remove(&a->settings, sf_hash(cfg));
+                log_printf("ps2 config: %s restored", cfg);
+            }
+        } else if (n >= 0 && mine) {
+            /* 0.7.5: only a copy spookyflow wrote itself is taken away */
+            if (a->host.remove_file(cfg) == 0) log_printf("ps2 config: Auto, removed spookyflow's copy %s (webMAN picks)", cfg);
+            settings_cfg_copy_remove(&a->settings, sf_hash(cfg));
+        } else if (n >= 0) {
+            log_printf("ps2 config: Auto, %s is not spookyflow's: left as it is", cfg);
         }
+        app_save(a);
         return;
     }
-    if (n >= 0 && !cfg_is_standard(a, gid, g_cfg_a, n) && !host_is_file(NULL, bak)) {
-        /* a config of the user's own (made in ManaGunZ, say): keep it aside */
+    if (n >= 0 && !mine && !host_is_file(NULL, bak)) {
+        /* a config that is not spookyflow's (the user's, the PS2 Config
+         * app's, ManaGunZ's...): keep it aside, it comes back with Auto */
         if (a->host.write_file(bak, g_cfg_a, (uint32_t)n) != 0) {
             log_printf("ps2 config: can't keep %s aside, not changing it", cfg);
             return;
         }
         log_printf("ps2 config: your %s kept as %s", cfg, bak);
     }
-    if (cfg_copy(a, src, cfg) == 0) log_printf("ps2 config: %s -> %s", src, cfg);
-    else log_printf("ps2 config: couldn't write %s", cfg);
+    if (cfg_copy(a, src, cfg) == 0) {
+        settings_cfg_copy_add(&a->settings, sf_hash(cfg));
+        log_printf("ps2 config: %s -> %s", src, cfg);
+    } else {
+        log_printf("ps2 config: couldn't write %s", cfg);
+    }
+    app_save(a);
 }
 
 /* Flow Settings groups: ✖ on a group opens its page, ◯ comes back */
@@ -766,6 +817,7 @@ static void flow_enter_group(App *a, RowKind g)
     a->row = 0;
     spring_snap(&a->row_hl, 0.0f);
     spring_snap(&a->list_scroll, 0.0f);
+    a->page_t = 0.0f; a->page_dir = 1;
     log_printf("panel: Flow Settings > %s", menu_label(g));
 }
 
@@ -776,6 +828,7 @@ static void flow_leave_group(App *a)
     a->row = sf_clampi(a->flow_top_row, 0, a->nrows - 1);
     spring_snap(&a->row_hl, (float)a->row);
     spring_snap(&a->list_scroll, 0.0f);
+    a->page_t = 0.0f; a->page_dir = -1;
     sound_play(SND_CLOSE);
 }
 
@@ -845,7 +898,7 @@ static void panel_input(App *a)
 {
     const Input *in = &a->input;
     RowKind k;
-    int vis = PANEL_VISIBLE_ROWS, first;
+    int vis = app_panel_visible_rows(a), first;
     if (!a->panel_open || a->nrows <= 0) return;
     if (in->pressed & SFB_CIRCLE) {
         if (a->panel == PANEL_FLOW && a->flow_group >= 0) { flow_leave_group(a); return; }   /* back to the groups */
@@ -1033,6 +1086,7 @@ static void animate(App *a, float dt)
     anim_approach(&a->intro, 1.0f, 1.0f / INTRO_TIME, dt);
     anim_approach(&a->panel_anim, a->panel_open ? 1.0f : 0.0f, 1.0f / PANEL_ANIM_TIME, dt);
     anim_approach(&a->display_t, a->display ? 1.0f : 0.0f, 1.0f / DISPLAY_TIME, dt);
+    if (a->page_t < 5.0f) a->page_t += dt;
     if (!a->panel_open && a->panel_anim <= 0.0f) a->panel = PANEL_NONE;
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;
     if (a->letter_in < 1.0f) a->letter_in += dt;

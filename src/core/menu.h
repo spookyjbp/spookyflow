@@ -52,6 +52,13 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
  * activate). Returns a MENU_FX_* code. */
 int  menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g);
 
+/* 0.8.0, for drawing the values: an on/off row (0 / 1), else -1 */
+int  menu_toggle(RowKind k, const Settings *s);
+/* a row shown as a few choices side by side (Default / On / Off ...):
+ * the number of choices (0 = not such a row), their names, and which one
+ * is chosen */
+int  menu_segments(RowKind k, int plat, const GameCfg *g, const char *const **names, int *cur);
+
 /* Slider value 0..1 for drawing. */
 float menu_slider_value(RowKind k, const Settings *s);
 

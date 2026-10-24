@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.7.4"
+#define APP_VERSION     "0.8.0"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -29,7 +29,8 @@
 #define MUSIC_CARD_TIME 4.50f
 #define MUSIC_SWAP_TIME 0.45f  /* the name change on the card */  /* the "now playing" card (top left) stays this long */
 #define EXIT_FADE_TIME  0.30f
-#define PANEL_VISIBLE_ROWS 6
+#define PANEL_VISIBLE_ROWS 6        /* Game Settings / Choose Disc (beside the big case) */
+#define PANEL_VISIBLE_ROWS_FLOW 7   /* the Flow Settings drawer (0.8.0) */
 #define SLEEP_TIME      300.0f  /* default idle time before the screen dims (Flow Settings > Sleep Mode) */
 #define SLEEP_DIM       0.72f   /* how dark sleep gets: the screen stays visible */
 #define SLEEP_FADE_TIME 1.5f
@@ -146,6 +147,8 @@ typedef struct {
     int panel;              /* PANEL_* currently shown (or closing) */
     int panel_open;         /* target state */
     float panel_anim;       /* 0..1 */
+    float page_t;           /* 0.8.0: seconds since this page of rows appeared (they cascade in) */
+    int   page_dir;         /* +1: the page comes in from the right (opened / a group entered), -1: from the left (back) */
     int   display;          /* 1 = display mode (Square): one big case, only Launch and Back */
     float display_t;        /* 0..1, follows display */
     RowKind rows[MENU_MAX_ROWS];
@@ -222,6 +225,8 @@ void app_save(App *a);
 const Game *app_selected_game(const App *a, int tab);
 int  app_tab_has_games(const App *a, int tab);
 int  app_main_context(const App *a);
+/* rows a panel shows at once (more scroll) */
+int  app_panel_visible_rows(const App *a);
 void app_select(App *a, int tab, int index, int animate);
 void app_open_panel(App *a, int panel);
 void app_close_panel(App *a);

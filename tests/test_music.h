@@ -1243,6 +1243,53 @@ static void test_ps2_config(void)
         tap(SFB_CIRCLE); run_frames(0, 0.4f);
     }
 
+    /* 0.7.5: a copy another tool made (here identical to the GX config, as
+     * the PS2 Config app would write it) is never deleted by Auto */
+    {
+        const char *key = lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2));
+        GameCfg c = settings_game_get(&g_app.settings, key);
+        c.ps2cfg = PS2CFG_AUTO; settings_game_set(&g_app.settings, &c);
+        cfg_remove(OKAMI_BAK);
+        memfs_put(OKAMI_CFG, "GXCFG", 5);
+        settings_cfg_copy_remove(&g_app.settings, sf_hash(OKAMI_CFG));
+        tap(SFB_CROSS);
+        CHECK(mf_is(OKAMI_CFG, "GXCFG"));                     /* kept */
+        relaunch_reset(); run_frames(0, 0.1f);
+        /* choosing NET keeps that file aside; Auto puts it back */
+        c.ps2cfg = PS2CFG_NET; settings_game_set(&g_app.settings, &c);
+        tap(SFB_CROSS);
+        CHECK(mf_is(OKAMI_CFG, "NETCFG") && mf_is(OKAMI_BAK, "GXCFG"));
+        CHECK(settings_cfg_copy_has(&g_app.settings, sf_hash(OKAMI_CFG)));
+        relaunch_reset(); run_frames(0, 0.1f);
+        c.ps2cfg = PS2CFG_AUTO; settings_game_set(&g_app.settings, &c);
+        tap(SFB_CROSS);
+        CHECK(mf_is(OKAMI_CFG, "GXCFG") && !memfs_find(OKAMI_BAK));
+        CHECK(!settings_cfg_copy_has(&g_app.settings, sf_hash(OKAMI_CFG)));
+        relaunch_reset(); run_frames(0, 0.1f);
+        /* a copy written before 0.7.5 (not on the list): switching the row
+         * away from that config adopts it, so Auto takes it away */
+        cfg_remove(OKAMI_CFG);
+        memfs_put(OKAMI_CFG, "NETCFG", 6);
+        c.ps2cfg = PS2CFG_NET; settings_game_set(&g_app.settings, &c);
+        cfg_open_row();
+        while (g_app.panel_cfg.ps2cfg != PS2CFG_AUTO) tap(SFB_LEFT);
+        CHECK(settings_cfg_copy_has(&g_app.settings, sf_hash(OKAMI_CFG)));
+        tap(SFB_CIRCLE); run_frames(0, 0.4f);
+        tap(SFB_CROSS);
+        CHECK(!memfs_find(OKAMI_CFG));
+        relaunch_reset(); run_frames(0, 0.1f);
+        /* the list survives a save and a load */
+        {
+            Settings s2;
+            settings_defaults(&s2);
+            settings_cfg_copy_add(&s2, 0x12abcdefu);
+            settings_parse_line(&s2, "ps2cfg_copy=0badf00d");
+            CHECK(settings_cfg_copy_has(&s2, 0x0badf00du) && settings_cfg_copy_has(&s2, 0x12abcdefu) && s2.cfg_copy_count == 2);
+            settings_cfg_copy_remove(&s2, 0x12abcdefu);
+            CHECK(s2.cfg_copy_count == 1 && !settings_cfg_copy_has(&s2, 0x12abcdefu));
+        }
+    }
+
     /* webMAN's own lookup turned off in its setup: Auto says so */
     memset(&g_fake_wm, 0, sizeof(g_fake_wm));
     g_fake_wm.valid = 1; g_fake_wm.ps2config_off = 1;
@@ -1379,9 +1426,33 @@ static void test_stage_bake(void)
     CHECK(g_null_updates == u0 + 2);                /* same color: nothing redone */
     g_app.settings.ui_color = UI_COLOR_RED;
     ui_draw(&g_app);
-    CHECK(g_null_updates == u0 + 4);                /* another color: redone */
-    /* the scene pixel: brightness 255 tinted red, then the white cores (0.35) on top */
+    CHECK(g_null_updates == u0 + 2);                /* 0.7.5: another color is made in steps... */
+    {
+        int f;
+        for (f = 0; f < 60 && g_null_updates == u0 + 2; f++) ui_draw(&g_app);
+        CHECK(f >= 3 && f < 30);                    /* ...over a few frames, the old one shown meanwhile */
+    }
+    CHECK(g_null_updates == u0 + 4);                /* then both textures at once */
     CHECK(g_null_update_tex == TEX_STAGE_RIB);
+    /* switching colours again mid-way restarts in the newest colour only */
+    g_app.settings.ui_color = UI_COLOR_GREEN;
+    ui_draw(&g_app); ui_draw(&g_app);
+    g_app.settings.ui_color = UI_COLOR_PURPLE;
+    {
+        int f;
+        for (f = 0; f < 60 && g_null_updates == u0 + 4; f++) ui_draw(&g_app);
+    }
+    CHECK(g_null_updates == u0 + 6);
+    ui_draw(&g_app); ui_draw(&g_app);
+    CHECK(g_null_updates == u0 + 6);                /* purple is done: nothing more */
+    /* on another background, Stage is made ready in steps (no stall when chosen) */
+    ui_set_stage_sources(base, 64, 36, rib, 32, 40, glow, 16, 16);
+    g_app.settings.background = BG_ANIMATED;
+    {
+        int f;
+        for (f = 0; f < 80 && !ui_stage_baked(); f++) ui_draw(&g_app);
+        CHECK(ui_stage_baked() && f > 3);
+    }
     g_app.settings.ui_color = UI_COLOR_BLUE;
     ui_set_stage_sources(NULL, 0, 0, NULL, 0, 0, NULL, 0, 0);
     ui_set_stage(-1, -1);
@@ -1600,4 +1671,81 @@ static void test_kitten_entrance(void)
     run_frames(0, LETTER_TIME + 0.2f);
     tap(SFB_L2);
     CHECK(g_app.letter_in < 0.1f);                   /* after it hid, it fades in again */
+}
+
+/* 0.8.0: the new settings panels (drawer, beside the big case, visual values) */
+static void test_panels_m6(void)
+{
+    AppHost host;
+    extern long g_null_vertices;
+    const char *const *names = NULL;
+    int cur = -1, i;
+    Settings s;
+    GameCfg gc;
+    BarLayout L;
+    printf("settings panels (milestone 6)\n");
+    settings_defaults(&s);
+    memset(&gc, 0, sizeof(gc));
+    s.shuffle = 1; s.reflections = 0;
+    CHECK(menu_toggle(ROW_F_SHUFFLE, &s) == 1 && menu_toggle(ROW_F_REFLECT, &s) == 0);
+    CHECK(menu_toggle(ROW_F_BACKGROUND, &s) == -1 && menu_toggle(ROW_F_VOLUME, &s) == -1 && menu_toggle(ROW_FG_LOOK, &s) == -1);
+    gc.autoplay = AP_OFF;
+    CHECK(menu_segments(ROW_G_AUTOPLAY, PLAT_PS2, &gc, &names, &cur) == 3 && cur == 2 && strcmp(names[0], "Default") == 0);
+    gc.emulator = 1;
+    CHECK(menu_segments(ROW_G_EMULATOR, PLAT_PS1, &gc, &names, &cur) == 2 && cur == 1 && strcmp(names[0], "Standard") == 0);
+    CHECK(menu_segments(ROW_G_PS2CFG, PLAT_PS2, &gc, &names, &cur) == 0);
+    CHECK(g_icons.count == ICON_COUNT && ICON_COUNT == ICON_THUMB0 + 7);
+    for (i = ICON_THUMB0; i < ICON_COUNT; i++) CHECK(icons_aspect(i) > 1.7f && icons_aspect(i) < 1.8f);   /* 16:9 */
+    ui_bar_layout(4, &L);
+    CHECK(L.n == 2 && strcmp(L.g[0].label, "Select") == 0);
+
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    g_app.tab = PLAT_PS2;
+    app_select(&g_app, PLAT_PS2, idx_of(PLAT_PS2, "Okami"), 0);
+    run_frames(0, 0.3f);
+    /* Flow Settings: the drawer; groups cascade in from the right, back comes from the left */
+    tap(SFB_START);
+    CHECK(g_app.panel == PANEL_FLOW && g_app.page_dir == 1 && g_app.page_t < 0.1f && app_panel_visible_rows(&g_app) == PANEL_VISIBLE_ROWS_FLOW);
+    for (i = 0; i < 20; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    tap(SFB_CROSS);                                  /* Appearance */
+    CHECK(g_app.flow_group == ROW_FG_LOOK && g_app.page_dir == 1 && g_app.page_t < 0.1f);
+    g_null_vertices = 0;
+    for (i = 0; i < 20; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    CHECK(g_null_vertices / 20 < 40000);             /* a frame with the drawer stays cheap */
+    tap(SFB_DOWN); tap(SFB_RIGHT);                   /* UI Color: the ring glides */
+    for (i = 0; i < 6; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    tap(SFB_LEFT);
+    tap(SFB_DOWN); tap(SFB_CROSS);                   /* Show Game Info: the switch slides */
+    for (i = 0; i < 6; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    tap(SFB_CROSS);
+    tap(SFB_CIRCLE);
+    CHECK(g_app.flow_group < 0 && g_app.page_dir == -1);
+    for (i = 0; i < 10; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    tap(SFB_CIRCLE);
+    for (i = 0; i < 10; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    CHECK(g_app.panel == PANEL_NONE);
+    /* Game Settings beside the big case, every row drawn while changing them */
+    tap(SFB_TRIANGLE);
+    CHECK(g_app.panel == PANEL_GAME && app_panel_visible_rows(&g_app) == PANEL_VISIBLE_ROWS);
+    for (i = 0; i < 4; i++) {
+        int f;
+        tap(SFB_RIGHT);
+        for (f = 0; f < 5; f++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+        tap(SFB_LEFT);
+        tap(SFB_DOWN);
+    }
+    tap(SFB_CIRCLE);
+    for (i = 0; i < 10; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    /* from display mode too */
+    tap(SFB_SQUARE); run_frames(0, DISPLAY_TIME + 0.1f);
+    tap(SFB_TRIANGLE);
+    for (i = 0; i < 10; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
+    CHECK(g_app.display == 1 && g_app.panel == PANEL_NONE);
+    tap(SFB_CIRCLE); run_frames(0, 0.5f);
+    ui_draw(&g_app);
 }

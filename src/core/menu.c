@@ -101,6 +101,33 @@ int menu_is_action(RowKind k)
 
 int menu_is_slider(RowKind k) { return k == ROW_F_VOLUME || k == ROW_F_SFX; }
 
+int menu_toggle(RowKind k, const Settings *s)
+{
+    switch (k) {
+    case ROW_F_AUTOPLAY: return s->autoplay != 0;
+    case ROW_F_OFFLINE: return s->offline != 0;
+    case ROW_F_SHUFFLE: return s->shuffle != 0;
+    case ROW_F_INFO: return s->show_info != 0;
+    case ROW_F_CASES: return s->cases != 0;
+    case ROW_F_REFLECT: return s->reflections != 0;
+    case ROW_F_IGNORE_THE: return s->ignore_the != 0;
+    case ROW_F_XMB_TOP: return s->xmb_top != 0;
+    default: return -1;
+    }
+}
+
+int menu_segments(RowKind k, int plat, const GameCfg *g, const char *const **names, int *cur)
+{
+    static const char *const tri[3] = { "Default", "On", "Off" };        /* AP_DEFAULT, AP_ON, AP_OFF */
+    static const char *const emu1[2] = { "Standard", "Netemu" }, *const emu2[2] = { "Default", "Netemu" };
+    switch (k) {
+    case ROW_G_AUTOPLAY: *names = tri; *cur = sf_clampi(g->autoplay, 0, 2); return 3;
+    case ROW_G_OFFLINE: *names = tri; *cur = sf_clampi(g->offline, 0, 2); return 3;
+    case ROW_G_EMULATOR: *names = plat == PLAT_PS1 ? emu1 : emu2; *cur = g->emulator ? 1 : 0; return 2;
+    default: return 0;
+    }
+}
+
 static const char *onoff(int v) { return v ? "On" : "Off"; }
 
 void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, char *out, size_t cap)

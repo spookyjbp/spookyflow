@@ -108,6 +108,7 @@ static uint32_t accent_or(uint32_t white_col, float color_alpha)
 static float W(void) { return d_screen()->W; }
 static float PA(void) { return d_screen()->pa; }   /* x units -> vertical units */
 static float H(void) { return d_screen()->H; }
+static float clamp01(float v) { return sf_clampf(v, 0.0f, 1.0f); }
 
 /* ------------------------------------------------------------------ */
 /* Background                                                          */
@@ -424,6 +425,7 @@ static unsigned char *g_bake_buf;
 static size_t g_bake_cap;
 static unsigned char *g_prep_glow;     /* bw x bh: 0.55 x glow over the scene */
 static unsigned char *g_prep_rib;      /* rw x rh/2 x 4: A, wg, wb, wc (0..255) */
+static int g_job_phase = -1, g_job_row, g_prepared;   /* the composite job (stage_job) */
 
 void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsigned char *rib, int rw, int rh,
                           const unsigned char *glow, int gw, int gh)
@@ -434,6 +436,8 @@ void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsig
     g_stage_baked = 0;
     free(g_prep_glow); free(g_prep_rib);
     g_prep_glow = g_prep_rib = NULL;
+    g_prepared = 0;
+    g_job_phase = -1;
 }
 
 int ui_stage_baked(void) { return g_stage_baked; }
@@ -441,10 +445,10 @@ int ui_stage_baked(void) { return g_stage_baked; }
 /* Upsample the glow map (bilinear, fixed point: no int<->float conversions,
  * which stall the PS3's PPU) from region gx0..gx0+gw_r, gy0..gy0+gh_r (in
  * 1/256 glow pixels) to w x h, scaled by k/256. */
-static void glow_resample(unsigned char *out, int w, int h, int gx0, int gw_r, int gy0, int gh_r, int k)
+static void glow_resample(unsigned char *out, int w, int h, int gx0, int gw_r, int gy0, int gh_r, int k, int y_from, int y_to)
 {
     int x, y;
-    for (y = 0; y < h; y++) {
+    for (y = y_from; y < y_to && y < h; y++) {
         int gy = gy0 + (int)(((long long)(2 * y + 1) * gh_r) / (2 * h)) - 128, y0, y1, fy;
         if (gy < 0) gy = 0;
         y0 = gy >> 8; fy = gy & 255;
@@ -466,117 +470,178 @@ static void glow_resample(unsigned char *out, int w, int h, int gx0, int gw_r, i
     }
 }
 
-/* Colour-independent part, done once: the glow over the scene (0.55) and,
- * per ribbon pixel, the weights of glow / body / core in one "over" layer. */
-static int stage_prepare(void)
+/* 0.7.5: the composite is made by a job in small steps (rows), so a UI
+ * Color change (or the first Stage composite after starting on another
+ * background) never stalls a frame: the old composite stays on screen
+ * until the new one is complete, then both textures are replaced at once.
+ *   phase 0  colour-independent: the glow over the scene (0.55)
+ *   phase 1  colour-independent: per ribbon pixel, the weights of glow /
+ *            body / core in one "over" layer
+ *   phase 2  the scene in the job's tint
+ *   phase 3  the ribbons in the job's tint, then both textures are updated */
+#define STAGE_JOB_STEPS 12          /* a phase takes about this many frames */
+static unsigned char *g_bake_rib, *g_gl_tmp;
+static uint32_t g_job_tint;
+static unsigned char g_job_lut[256][3];
+static int g_job_lite[3];
+
+static int stage_alloc(void)
 {
-    int rw = g_src_rw, rh = g_src_rh / 2, half = rw / 2, i, x, y;
-    unsigned char *gl;
-    if (g_prep_glow && g_prep_rib) return 1;
-    free(g_prep_glow); free(g_prep_rib);
-    g_prep_glow = (unsigned char *)malloc((size_t)g_src_bw * g_src_bh);
-    g_prep_rib = (unsigned char *)malloc((size_t)rw * rh * 4u);
-    gl = (unsigned char *)malloc((size_t)half * rh);
-    if (!g_prep_glow || !g_prep_rib || !gl) {
-        free(g_prep_glow); free(g_prep_rib); free(gl);
-        g_prep_glow = g_prep_rib = NULL;
-        return 0;
+    int rw = g_src_rw, rh = g_src_rh / 2, half = rw / 2;
+    size_t need_b = (size_t)g_src_bw * g_src_bh * 4u;
+    if (!g_prep_glow) g_prep_glow = (unsigned char *)malloc((size_t)g_src_bw * g_src_bh);
+    if (!g_prep_rib) g_prep_rib = (unsigned char *)malloc((size_t)rw * rh * 4u);
+    if (!g_gl_tmp) g_gl_tmp = (unsigned char *)malloc((size_t)half * rh * 2u);
+    if (!g_bake_rib) g_bake_rib = (unsigned char *)malloc((size_t)rw * rh * 4u);
+    if (g_bake_cap < need_b) {
+        free(g_bake_buf);
+        g_bake_buf = (unsigned char *)malloc(need_b);
+        g_bake_cap = g_bake_buf ? need_b : 0;
     }
-    {
-        int split = (int)((float)g_src_gh * STAGE_GLOW_SPLIT + 0.5f);   /* glow rows 0..split: the scene */
-        glow_resample(g_prep_glow, g_src_bw, g_src_bh, 0, g_src_gw * 256, 0, split * 256, 141);   /* 0.55 */
-        for (i = 0; i < 2; i++) {      /* left | right ribbon set: glow columns 0..gw/2 | gw/2..gw, rows split..gh */
-            glow_resample(gl, half, rh, i * (g_src_gw / 2) * 256, (g_src_gw / 2) * 256, split * 256, (g_src_gh - split) * 256, 141);
-            for (y = 0; y < rh; y++) {
-                const unsigned char *body = g_src_rib + (size_t)y * rw, *core = g_src_rib + (size_t)(y + rh) * rw;
-                for (x = 0; x < half; x++) {
-                    int c = i * half + x;
-                    int ag = gl[(size_t)y * half + x], ab = body[c], ac = (core[c] * 217) >> 8;   /* 0.85 */
-                    int qb = 255 - ab, qc = 255 - ac, qg = 255 - ag;
-                    int wg = ag * qb / 255 * qc / 255, wb = ab * qc / 255, wc = ac;
-                    int A = 255 - qg * qb / 255 * qc / 255;
-                    unsigned char *o = g_prep_rib + ((size_t)y * rw + c) * 4u;
-                    o[0] = (unsigned char)A; o[1] = (unsigned char)wg; o[2] = (unsigned char)wb; o[3] = (unsigned char)wc;
-                }
-            }
-        }
-    }
-    free(gl);
-    return 1;
+    return g_prep_glow && g_prep_rib && g_gl_tmp && g_bake_rib && g_bake_buf;
 }
 
-static void stage_bake(uint32_t tint)
+static void stage_job_tint(uint32_t tint)
 {
-    int tr = (int)(tint >> 24), tg = (int)((tint >> 16) & 255), tb = (int)((tint >> 8) & 255);
-    int lr = tr + (255 - tr) * 89 / 255, lg = tg + (255 - tg) * 89 / 255, lb = tb + (255 - tb) * 89 / 255;   /* lite: 35% white */
-    size_t need_b = (size_t)g_src_bw * g_src_bh * 4u, need_r = (size_t)g_src_rw * (g_src_rh / 2) * 4u;
-    int i, n, ok = 1;
-    unsigned char lut[256][3];
-    if (!g_src_base || !g_src_rib || !g_src_glow) return;
-    if (g_bake_cap < (need_b > need_r ? need_b : need_r)) {
-        free(g_bake_buf);
-        g_bake_cap = need_b > need_r ? need_b : need_r;
-        g_bake_buf = (unsigned char *)malloc(g_bake_cap);
-        if (!g_bake_buf) g_bake_cap = 0;
-    }
-    if (!g_bake_buf || !stage_prepare()) {   /* no memory: the layered drawing, from the brightness maps */
-        if (r_texture_upload_alpha(TEX_STAGE, g_src_bw, g_src_bh, g_src_base) == 0) g_stage_tex = TEX_STAGE;
-        g_stage_baked = 0;
-        g_src_base = NULL;
-        return;
-    }
-    /* scene: black -> base (tint x brightness) -> white-hot cores (0.35) -> glow (lite) */
+    int tr = (int)(tint >> 24), tg = (int)((tint >> 16) & 255), tb = (int)((tint >> 8) & 255), i;
+    g_job_tint = tint;
+    g_job_lite[0] = tr + (255 - tr) * 89 / 255;       /* lite: 35% white */
+    g_job_lite[1] = tg + (255 - tg) * 89 / 255;
+    g_job_lite[2] = tb + (255 - tb) * 89 / 255;
+    /* black -> base (tint x brightness) -> white-hot cores (0.35) */
     for (i = 0; i < 256; i++) {
         float v = (float)i / 255.0f, hx = (float)i - 150.0f, hi = 0.0f, a, c[3];
         int k;
         if (hx > 0.0f) { hi = hx * hx / (105.0f * 105.0f); if (hi > 1.0f) hi = 1.0f; }   /* = stage_highlight */
         a = 0.35f * hi;
         c[0] = (float)tr / 255.0f * v; c[1] = (float)tg / 255.0f * v; c[2] = (float)tb / 255.0f * v;
-        for (k = 0; k < 3; k++) lut[i][k] = (unsigned char)((c[k] + (1.0f - c[k]) * a) * 255.0f + 0.5f);
-    }
-    n = g_src_bw * g_src_bh;
-    for (i = 0; i < n; i++) {
-        const unsigned char *c = lut[g_src_base[i]];
-        int a = g_prep_glow[i];
-        unsigned char *o = g_bake_buf + (size_t)i * 4u;
-        o[0] = (unsigned char)(c[0] + ((lr - c[0]) * a) / 255);
-        o[1] = (unsigned char)(c[1] + ((lg - c[1]) * a) / 255);
-        o[2] = (unsigned char)(c[2] + ((lb - c[2]) * a) / 255);
-        o[3] = 255;
-    }
-    if (r_texture_update_rgba(TEX_STAGE, g_src_bw, g_src_bh, g_bake_buf) != 0) ok = 0;
-    /* ribbons: colour = (lite * wg + tint * wb + white * wc) / A */
-    if (ok) {
-        n = g_src_rw * (g_src_rh / 2);
-        for (i = 0; i < n; i++) {
-            const unsigned char *w = g_prep_rib + (size_t)i * 4u;
-            unsigned char *o = g_bake_buf + (size_t)i * 4u;
-            int A = w[0];
-            if (A > 0) {
-                int r = (lr * w[1] + tr * w[2] + 255 * w[3]) / A, g = (lg * w[1] + tg * w[2] + 255 * w[3]) / A,
-                    b = (lb * w[1] + tb * w[2] + 255 * w[3]) / A;
-                o[0] = (unsigned char)(r > 255 ? 255 : r); o[1] = (unsigned char)(g > 255 ? 255 : g); o[2] = (unsigned char)(b > 255 ? 255 : b);
-            } else {
-                o[0] = (unsigned char)lr; o[1] = (unsigned char)lg; o[2] = (unsigned char)lb;
-            }
-            o[3] = (unsigned char)A;
-        }
-        if (r_texture_update_rgba(TEX_STAGE_RIB, g_src_rw, g_src_rh / 2, g_bake_buf) != 0) ok = 0;
-    }
-    if (ok) {
-        g_stage_tex = TEX_STAGE;
-        g_stage_rib = TEX_STAGE_RIB;
-        g_stage_baked = 1;
-        g_baked_tint = tint;
+        for (k = 0; k < 3; k++) g_job_lut[i][k] = (unsigned char)((c[k] + (1.0f - c[k]) * a) * 255.0f + 0.5f);
     }
 }
+
+/* one step of the job (all of it when sync); returns 1 when the textures
+ * hold `tint` */
+static int stage_job(uint32_t tint, int sync)
+{
+    int rw = g_src_rw, rh = g_src_rh / 2, half = rw / 2;
+    int split = (int)((float)g_src_gh * STAGE_GLOW_SPLIT + 0.5f);   /* glow rows 0..split: the scene */
+    if (!g_src_base || !g_src_rib || !g_src_glow) return 0;
+    if (g_stage_baked && g_baked_tint == tint && g_job_phase < 0) return 1;
+    if (g_job_phase < 0 || (g_job_phase >= 2 && g_job_tint != tint)) {     /* start, or restart in the new tint */
+        if (!stage_alloc()) {        /* no memory: the layered drawing, from the brightness maps */
+            if (r_texture_upload_alpha(TEX_STAGE, g_src_bw, g_src_bh, g_src_base) == 0) g_stage_tex = TEX_STAGE;
+            g_stage_baked = 0;
+            g_src_base = NULL;
+            return 0;
+        }
+        g_job_phase = g_prepared ? 2 : 0;
+        g_job_row = 0;
+    }
+    if (g_job_tint != tint || g_job_phase < 2) stage_job_tint(tint);
+    do {
+        int rows, y1, y, x, i;
+        switch (g_job_phase) {
+        case 0:                  /* the glow over the scene */
+            rows = sync ? g_src_bh : (g_src_bh + STAGE_JOB_STEPS - 1) / STAGE_JOB_STEPS;
+            y1 = g_job_row + rows;
+            glow_resample(g_prep_glow, g_src_bw, g_src_bh, 0, g_src_gw * 256, 0, split * 256, 141, g_job_row, y1);
+            g_job_row = y1;
+            if (g_job_row >= g_src_bh) { g_job_phase = 1; g_job_row = 0; }
+            break;
+        case 1:                  /* ribbon weights: left | right set (glow columns 0..gw/2 | gw/2..gw, rows split..gh) */
+            rows = sync ? rh : (rh + STAGE_JOB_STEPS - 1) / STAGE_JOB_STEPS;
+            y1 = g_job_row + rows;
+            if (y1 > rh) y1 = rh;
+            for (i = 0; i < 2; i++)
+                glow_resample(g_gl_tmp + (size_t)i * half * rh, half, rh, i * (g_src_gw / 2) * 256, (g_src_gw / 2) * 256,
+                              split * 256, (g_src_gh - split) * 256, 141, g_job_row, y1);
+            for (y = g_job_row; y < y1; y++) {
+                const unsigned char *body = g_src_rib + (size_t)y * rw, *core = g_src_rib + (size_t)(y + rh) * rw;
+                for (i = 0; i < 2; i++) {
+                    const unsigned char *gl = g_gl_tmp + (size_t)i * half * rh + (size_t)y * half;
+                    for (x = 0; x < half; x++) {
+                        int c = i * half + x;
+                        int ag = gl[x], ab = body[c], ac = (core[c] * 217) >> 8;   /* 0.85 */
+                        int qb = 255 - ab, qc = 255 - ac, qg = 255 - ag;
+                        int wg = ag * qb / 255 * qc / 255, wb = ab * qc / 255, wc = ac;
+                        int A = 255 - qg * qb / 255 * qc / 255;
+                        unsigned char *o = g_prep_rib + ((size_t)y * rw + c) * 4u;
+                        o[0] = (unsigned char)A; o[1] = (unsigned char)wg; o[2] = (unsigned char)wb; o[3] = (unsigned char)wc;
+                    }
+                }
+            }
+            g_job_row = y1;
+            if (g_job_row >= rh) { g_job_phase = 2; g_job_row = 0; g_prepared = 1; }
+            break;
+        case 2: {                /* the scene in the tint, glow on top (lite) */
+            int lr = g_job_lite[0], lg = g_job_lite[1], lb = g_job_lite[2];
+            rows = sync ? g_src_bh : (g_src_bh + STAGE_JOB_STEPS - 1) / STAGE_JOB_STEPS;
+            y1 = g_job_row + rows;
+            if (y1 > g_src_bh) y1 = g_src_bh;
+            for (i = g_job_row * g_src_bw; i < y1 * g_src_bw; i++) {
+                const unsigned char *c = g_job_lut[g_src_base[i]];
+                int a = g_prep_glow[i];
+                unsigned char *o = g_bake_buf + (size_t)i * 4u;
+                o[0] = (unsigned char)(c[0] + ((lr - c[0]) * a) / 255);
+                o[1] = (unsigned char)(c[1] + ((lg - c[1]) * a) / 255);
+                o[2] = (unsigned char)(c[2] + ((lb - c[2]) * a) / 255);
+                o[3] = 255;
+            }
+            g_job_row = y1;
+            if (g_job_row >= g_src_bh) { g_job_phase = 3; g_job_row = 0; }
+            break;
+        }
+        case 3: {                /* ribbons: colour = (lite * wg + tint * wb + white * wc) / A */
+            int lr = g_job_lite[0], lg = g_job_lite[1], lb = g_job_lite[2];
+            int tr = (int)(g_job_tint >> 24), tg = (int)((g_job_tint >> 16) & 255), tb = (int)((g_job_tint >> 8) & 255);
+            rows = sync ? rh : (rh + STAGE_JOB_STEPS - 1) / STAGE_JOB_STEPS;
+            y1 = g_job_row + rows;
+            if (y1 > rh) y1 = rh;
+            for (i = g_job_row * rw; i < y1 * rw; i++) {
+                const unsigned char *w = g_prep_rib + (size_t)i * 4u;
+                unsigned char *o = g_bake_rib + (size_t)i * 4u;
+                int A = w[0];
+                if (A > 0) {
+                    int r = (lr * w[1] + tr * w[2] + 255 * w[3]) / A, g = (lg * w[1] + tg * w[2] + 255 * w[3]) / A,
+                        b = (lb * w[1] + tb * w[2] + 255 * w[3]) / A;
+                    o[0] = (unsigned char)(r > 255 ? 255 : r); o[1] = (unsigned char)(g > 255 ? 255 : g); o[2] = (unsigned char)(b > 255 ? 255 : b);
+                } else {
+                    o[0] = (unsigned char)lr; o[1] = (unsigned char)lg; o[2] = (unsigned char)lb;
+                }
+                o[3] = (unsigned char)A;
+            }
+            g_job_row = y1;
+            if (g_job_row >= rh) {
+                g_job_phase = -1;
+                if (r_texture_update_rgba(TEX_STAGE, g_src_bw, g_src_bh, g_bake_buf) == 0 &&
+                    r_texture_update_rgba(TEX_STAGE_RIB, g_src_rw, rh, g_bake_rib) == 0) {
+                    g_stage_tex = TEX_STAGE;
+                    g_stage_rib = TEX_STAGE_RIB;
+                    g_stage_baked = 1;
+                    g_baked_tint = g_job_tint;
+                }
+                return g_stage_baked && g_baked_tint == tint;
+            }
+            break;
+        }
+        default:
+            g_job_phase = -1;
+            return 0;
+        }
+    } while (sync);
+    return 0;
+}
+
+/* everything at once (loading screen, or Stage shown with nothing made yet) */
+static void stage_bake(uint32_t tint) { stage_job(tint, 1); }
 
 static void bg_stage(float t, float alpha)
 {
     uint32_t tint = stage_tint(), lite = sf_col_mix(tint, 0xFFFFFFFFu, 0.35f);
     float hy = H() * LY_HORIZON_Y;
     int i;
-    if (g_src_base && (!g_stage_baked || g_baked_tint != tint)) stage_bake(tint);
+    if (g_src_base && !g_stage_baked) stage_bake(tint);              /* nothing to show yet: now */
+    else if (g_src_base && g_baked_tint != tint) stage_job(tint, 0);  /* new colour: in steps, the old one meanwhile */
     if (g_stage_baked) {
         /* one opaque layer: no blending, so the RSX doesn't read the screen back */
         if (alpha >= 0.999f) r_set_blend(0);
@@ -704,6 +769,16 @@ static void draw_background_as(const App *a, float alpha, int animated, int bg)
     }
 }
 
+/* a background alone, full screen (tools/preview makes the Background
+ * thumbnails from these: tools/make_thumbs.py) */
+void ui_draw_background_only(App *a, int bg)
+{
+    ui_set_color(a->settings.ui_color);
+    set_glow(a->time);
+    layout_set_floor(bg == BG_STAGE);
+    draw_background_as(a, 1.0f, 1, bg);
+}
+
 /* ------------------------------------------------------------------ */
 /* Covers                                                              */
 
@@ -811,14 +886,16 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     const Screen *s = d_screen();
     /* display mode (Square): the selected case grows to DISPLAY_H of the
      * screen, centered; the others slide aside and dim */
-    float de = tab == a->tab ? ease_in_out(a->display_t) : 0.0f;
+    /* 0.8.0: Game Settings / Choose Disc show the big case on the left */
+    float pg = (tab == a->tab && (a->panel == PANEL_GAME || a->panel == PANEL_DISC)) ? ease_in_out(a->panel_anim) : 0.0f;
+    float de = tab == a->tab ? sf_maxf(ease_in_out(a->display_t), pg) : 0.0f;
     CoverPos big;
     layout_cover(s, tab, 0.0f, &big);
     {
         float sc = DISPLAY_H * H() / ((layout_floor() ? LY_SEL_H : LY_C_SEL_H) * H());
         big.h *= sc; big.w *= sc;
         big.cy = DISPLAY_CY * H();
-        big.cx += xoff;
+        big.cx = sf_lerp(big.cx, W() * 0.265f, pg) + xoff;
         big.bright = 1.0f;
     }
     if (gl->count <= 0) {
@@ -861,9 +938,10 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
                 p.w = sf_lerp(p.w, big.w, f);
                 p.cy = sf_lerp(p.cy, big.cy, f);
                 p.bright = sf_lerp(p.bright, 1.0f, f);
-                /* neighbours make room for the big case */
+                p.cx = sf_lerp(p.cx, p.cx + (big.cx - xoff - W() * 0.5f), f);       /* follows the big case */
+                /* neighbours make room for the big case (and go when the settings are beside it) */
                 p.cx += (dd < 0.0f ? -1.0f : 1.0f) * ad * de * ((big.w - w0) * 0.5f + big.w * 0.04f);
-                ra = sf_lerp(1.0f, DISPLAY_DIM, de * ad);
+                ra = sf_lerp(1.0f, DISPLAY_DIM, de * ad) * (1.0f - pg * ad);
             } else {
                 ra = 1.0f;
             }
@@ -967,6 +1045,10 @@ float ui_title_fit(const char *title, float maxw, float em, float *em_out, int *
     return maxw;
 }
 
+/* 0.8.0: the title and info line move with the cover flow (Flow Settings drawer) */
+static float g_info_dx;
+#define INFO_CX (W() * 0.5f + g_info_dx)
+
 static int chip_texts(const App *a, int tab, int idx, char out[4][32])
 {
     const GameList *gl = &a->lib->tab[tab];
@@ -995,7 +1077,7 @@ static void draw_chips(const App *a, int tab, int idx, float alpha, const UiMetr
         total += w[i];
     }
     total += (float)(n - 1) * d_xu(m->chip_gap);
-    x = W() * 0.5f - total * 0.5f;
+    x = INFO_CX - total * 0.5f;
     for (i = 0; i < n; i++) {
         d_rrect(x, m->chips_y - m->chip_h * 0.5f, w[i], m->chip_h, m->chip_h * 0.5f, sf_col_alpha(TH_CHIP, alpha));
         d_rrect_stroke(x, m->chips_y - m->chip_h * 0.5f, w[i], m->chip_h, m->chip_h * 0.5f, 0.0028f * H(),
@@ -1018,8 +1100,8 @@ static void draw_title_text(const char *t, float alpha, const UiMetrics *m, floa
     int trunc;
     if (!t[0] || alpha <= 0.0f) return;
     ui_title_fit(t, maxw, m->title_em, &em, &trunc);
-    if (trunc) d_text_fit(&g_font_main, W() * 0.5f, m->title_y, em, sf_col_alpha(TH_TEXT, alpha), t, ALIGN_CENTER, maxw);
-    else d_text(&g_font_main, W() * 0.5f, m->title_y, em, sf_col_alpha(TH_TEXT, alpha), t, ALIGN_CENTER);
+    if (trunc) d_text_fit(&g_font_main, INFO_CX, m->title_y, em, sf_col_alpha(TH_TEXT, alpha), t, ALIGN_CENTER, maxw);
+    else d_text(&g_font_main, INFO_CX, m->title_y, em, sf_col_alpha(TH_TEXT, alpha), t, ALIGN_CENTER);
 }
 
 void ui_update_targets(App *a)
@@ -1066,7 +1148,7 @@ static float info_line(const App *a, int tab, int idx, float y, float em, float 
     if (n == 0) return 0.0f;
     for (i = 0; i < n; i++) w += d_text_width(&g_font_main, em, p[i]) + (i ? sw : 0.0f);
     if (dry || alpha <= 0.0f) return w;
-    x = W() * 0.5f - w * 0.5f;
+    x = INFO_CX - w * 0.5f;
     for (i = 0; i < n; i++) {
         uint32_t c = (i == n - 1) ? TH_TEXT_FAINT : TH_TEXT_DIM;
         if (i) { d_text(&g_font_main, x, y, em, sf_col_alpha(sep, alpha), MIDDOT, ALIGN_LEFT); x += sw; }
@@ -1104,13 +1186,13 @@ static void draw_info_styled(App *a, float alpha, const UiMetrics *m, float ty, 
         if (al <= 0.003f || !title[0]) continue;
         if (g_info_style == 1 || g_info_style == 2) {
             float em = m->title_em * 1.25f;
-            shadow_text(&g_font_main, W() * 0.5f, ty, em, TH_TEXT, title, maxw, al);
+            shadow_text(&g_font_main, INFO_CX, ty, em, TH_TEXT, title, maxw, al);
             if (g_info_style == 2) {   /* tapered accent line under the title */
                 float tw = sf_minf(d_text_width(&g_font_main, em, title), maxw) + d_xu(H() * 0.06f);
                 float ly = ty + em * 0.75f, th = H() * 0.0030f;
                 uint32_t col = glow(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu), clear = col & 0xFFFFFF00u;
-                d_rect_hgrad(W() * 0.5f - tw * 0.5f, ly, tw * 0.5f, th, clear, sf_col_alpha(col, al));
-                d_rect_hgrad(W() * 0.5f, ly, tw * 0.5f, th, sf_col_alpha(col, al), clear);
+                d_rect_hgrad(INFO_CX - tw * 0.5f, ly, tw * 0.5f, th, clear, sf_col_alpha(col, al));
+                d_rect_hgrad(INFO_CX, ly, tw * 0.5f, th, sf_col_alpha(col, al), clear);
             }
             if (a->settings.show_info) info_line(a, tab, idx, cy, m->chip_em * 1.10f, al * g_info_fade, g_info_style == 2, 0);
         } else if (g_info_style == 3) {
@@ -1119,16 +1201,16 @@ static void draw_info_styled(App *a, float alpha, const UiMetrics *m, float ty, 
             float iw = a->settings.show_info ? info_line(a, tab, idx, 0, iem, 0, 1, 1) : 0.0f;
             float tw = sf_minf(d_text_width(&g_font_main, tem, title), maxw);
             float cw = sf_maxf(tw, iw) + d_xu(H() * 0.09f), ch = a->settings.show_info ? H() * 0.105f : H() * 0.068f;
-            float cx = W() * 0.5f - cw * 0.5f, ctop = cy - ch * 0.5f;
+            float cx = INFO_CX - cw * 0.5f, ctop = cy - ch * 0.5f;
             if (k == 1 || t < 1.0f) {
                 d_rrect(cx, ctop, cw, ch, H() * 0.022f, sf_col_alpha(TH_CHIP, al * 0.92f));
                 d_rrect_stroke(cx, ctop, cw, ch, H() * 0.022f, 0.0028f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), al));
             }
             if (a->settings.show_info) {
-                d_text_fit(&g_font_main, W() * 0.5f, ctop + ch * 0.36f, tem, sf_col_alpha(TH_TEXT, al), title, ALIGN_CENTER, maxw);
+                d_text_fit(&g_font_main, INFO_CX, ctop + ch * 0.36f, tem, sf_col_alpha(TH_TEXT, al), title, ALIGN_CENTER, maxw);
                 info_line(a, tab, idx, ctop + ch * 0.72f, iem, al, 1, 0);
             } else {
-                d_text_fit(&g_font_main, W() * 0.5f, cy, tem, sf_col_alpha(TH_TEXT, al), title, ALIGN_CENTER, maxw);
+                d_text_fit(&g_font_main, INFO_CX, cy, tem, sf_col_alpha(TH_TEXT, al), title, ALIGN_CENTER, maxw);
             }
         }
     }
@@ -1162,8 +1244,8 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
     ui_update_targets(a);
     pw = sf_clampf(a->title_w.x, d_xu(m->title_h), W() * m->title_max_w);
     if (cur[0]) {
-        d_rrect(W() * 0.5f - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f, sf_col_alpha(TH_CHIP, alpha));
-        d_rrect_stroke(W() * 0.5f - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f,
+        d_rrect(INFO_CX - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f, sf_col_alpha(TH_CHIP, alpha));
+        d_rrect_stroke(INFO_CX - pw * 0.5f, m->title_y - m->title_h * 0.5f, pw, m->title_h, m->title_h * 0.5f,
                        0.0028f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), alpha));
     }
     /* clip text to the (animating) pill so a wide old title never spills out */
@@ -1219,7 +1301,8 @@ void ui_bar_layout(int panel_mode, BarLayout *L)
         group_add_badge(&L->g[2], ICON_CIRCLE, L->icon);   L->g[2].label = "Back";
         L->n = 3;
     } else {
-        group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = panel_mode >= 2 ? "Launch" : "Change";
+        group_add_badge(&L->g[0], ICON_CROSS, L->icon);
+        L->g[0].label = panel_mode == 4 ? "Select" : panel_mode >= 2 ? "Launch" : "Change";
         group_add_badge(&L->g[1], ICON_CIRCLE, L->icon);   L->g[1].label = "Back";
         L->n = 2;
     }
@@ -1271,7 +1354,7 @@ static void draw_bar(const App *a, float alpha)
     BarLayout main_l, panel_l, disp_l;
     float pe = ease_out_cubic(a->panel_anim), de = ease_in_out(a->display_t);
     ui_bar_layout(0, &main_l);
-    ui_bar_layout(a->panel == PANEL_DISC ? 2 : 1, &panel_l);
+    ui_bar_layout(a->panel == PANEL_DISC ? 2 : (a->panel == PANEL_FLOW && a->flow_group < 0) ? 4 : 1, &panel_l);
     ui_bar_layout(3, &disp_l);
     d_rrect(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, sf_col_alpha(TH_BAR, alpha));
     d_rrect_stroke(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, 0.0028f * H(),
@@ -1305,119 +1388,303 @@ static void draw_value(float xr, float cy, float em, const char *val, int select
 }
 
 /* room one of draw_value's ‹ › takes */
-static float arrow_slot(float em) { return d_text_width(&g_font_main, em, "\xE2\x80\xBA") + d_xu(em * 0.45f); }
-static float value_width(float em, const char *val, int arrows)
+
+/* ---- Settings panels (0.8.0) ----------------------------------------
+ * Flow Settings is a drawer on the right (the cover flow slides left and
+ * dims); Game Settings and Choose Disc sit in a column beside the big case
+ * (the display-mode case, moved to the left). Values are shown as what
+ * they are: switches, Default / On / Off choices, colour dots, background
+ * thumbnails, sliders. Rows cascade in when a page appears. */
+typedef struct {
+    float x, w;            /* the rows' left edge and width (x units) */
+    float title_y, crumb_y, sub_y, line_y, list_y, bottom;
+    float rh, rg, em, alpha, slide;   /* slide: x offset of the whole panel while it opens */
+    int vis, drawer;
+} PanelGeo;
+
+#define PANEL_BG_ROW_K 1.80f     /* the Background row is this much taller (thumbnails) */
+
+static void panel_geo(const App *a, PanelGeo *g)
 {
-    return d_text_width(&g_font_main, em, val) + (arrows ? 2.0f * arrow_slot(em) : 0.0f);
+    float e = ease_out_cubic(a->panel_anim);
+    memset(g, 0, sizeof(*g));
+    g->vis = app_panel_visible_rows(a);
+    g->alpha = clamp01(a->panel_anim * 1.6f);
+    if (a->panel == PANEL_FLOW) {
+        float dw = sf_minf(d_xu(0.645f * H()), W() * 0.56f), pad = d_xu(0.047f * H());   /* 0.36 W at 16:9, wider share at 4:3 */
+        float x0 = W() - dw * e;
+        g->drawer = 1;
+        g->x = x0 + pad; g->w = dw - 2.0f * pad;
+        g->crumb_y = 0.072f * H(); g->title_y = a->flow_group >= 0 ? 0.112f * H() : 0.088f * H();
+        g->line_y = g->title_y + 0.042f * H();
+        g->list_y = g->line_y + 0.040f * H();
+        g->bottom = 0.885f * H();
+        g->rh = 0.072f * H(); g->rg = 0.014f * H(); g->em = 0.0275f * H();
+    } else {
+        g->x = W() * 0.535f; g->w = W() * 0.435f;
+        g->slide = (1.0f - e) * W() * 0.06f;
+        g->x += g->slide;
+        g->title_y = 0.170f * H(); g->sub_y = 0.218f * H(); g->line_y = 0.250f * H();
+        g->list_y = 0.292f * H();
+        g->bottom = 0.880f * H();
+        g->rh = 0.078f * H(); g->rg = 0.019f * H(); g->em = 0.029f * H();
+    }
+}
+
+static float panel_row_h(const App *a, const PanelGeo *g, int i)
+{
+    return (i >= 0 && i < a->nrows && a->rows[i] == ROW_F_BACKGROUND) ? g->rh * PANEL_BG_ROW_K : g->rh;
+}
+
+/* top of row position fi (fractional: the highlight glides between rows) */
+static float panel_row_y(const App *a, const PanelGeo *g, float fi)
+{
+    int i, n = (int)floorf(fi);
+    float y = 0.0f, f = fi - (float)n;
+    for (i = 0; i < n; i++) y += panel_row_h(a, g, i) + g->rg;
+    if (n >= 0) y += f * (panel_row_h(a, g, n) + g->rg);
+    return y;
+}
+
+/* per-row animated values (switch knobs, the chosen choice, the ring) */
+static float g_row_anim[MENU_MAX_ROWS];
+static int g_row_anim_page = -1;
+static double g_row_anim_time;
+
+static float approach_now(float *v, float target, float rate, float dt, int snap)
+{
+    if (snap) *v = target;
+    else *v += (target - *v) * sf_minf(1.0f, dt * rate);
+    return *v;
+}
+
+static void draw_switch(float xr, float cy, float on_t, int sel, float al)
+{
+    float h = 0.034f * H(), w = d_xu(0.064f * H()), x = xr - w;
+    uint32_t off = 0x464A58FFu, onc = accent_white() ? 0xD8DCE6FFu : (accent() | 0xFFu);
+    uint32_t track = sf_col_mix(off, onc, on_t);
+    float kx = x + d_xu(h * 0.5f) + (w - d_xu(h)) * on_t;
+    d_rrect(x, cy - h * 0.5f, w, h, h * 0.5f, sf_col_alpha(track, al));
+    if (sel) d_rrect_stroke(x, cy - h * 0.5f, w, h, h * 0.5f, 0.0022f * H(), sf_col_alpha(0xFFFFFF55u, al));
+    d_disc(kx, cy, h * 0.38f, sf_col_alpha(0xFAFAFCFFu, al));
+}
+
+static void draw_segments(float xr, float cy, float em, const char *const *names, int n, float pos, int sel, float al)
+{
+    float ws[4], total = 0.0f, h = 0.040f * H(), x, pad = d_xu(em * 0.85f);
+    int i;
+    float hx, hw;
+    for (i = 0; i < n && i < 4; i++) { ws[i] = d_text_width(&g_font_main, em * 0.82f, names[i]) + 2.0f * pad; total += ws[i]; }
+    x = xr - total;
+    d_rrect(x, cy - h * 0.5f, total, h, h * 0.5f, sf_col_alpha(0x0C0E14C0u, al));
+    /* the chosen one: a pill that glides between the choices */
+    {
+        int i0 = sf_clampi((int)floorf(pos), 0, n - 1), i1 = i0 + 1 < n ? i0 + 1 : i0;
+        float f = clamp01(pos - (float)i0), x0 = x;
+        for (i = 0; i < i0; i++) x0 += ws[i];
+        hx = x0 + f * ws[i0];
+        hw = sf_lerp(ws[i0], ws[i1], f);
+    }
+    d_rrect(hx, cy - h * 0.5f, hw, h, h * 0.5f,
+            sf_col_alpha(sel ? (accent_white() ? 0xD8DCE6FFu : (accent() | 0xFFu)) : 0x505668FFu, al));
+    for (i = 0; i < n && i < 4; i++) {
+        float d = sf_absf(pos - (float)i), on = 1.0f - sf_minf(1.0f, d);
+        uint32_t c = sf_col_mix(TH_TEXT_DIM, (sel && accent_white()) ? 0x101218FFu : TH_TEXT, on);
+        d_text(&g_font_main, x + ws[i] * 0.5f, cy, em * 0.82f, sf_col_alpha(c, al), names[i], ALIGN_CENTER);
+        x += ws[i];
+    }
+}
+
+static void draw_color_dots(float xr, float cy, float ring, float al)
+{
+    float r = 0.0125f * H(), step = d_xu(0.040f * H()), x0 = xr - step * (float)(UI_COLOR_COUNT - 1) - d_xu(r);
+    int i;
+    for (i = 0; i < UI_COLOR_COUNT; i++) d_disc(x0 + step * (float)i, cy, r, sf_col_alpha(k_accent[i] | 0xFFu, al));
+    d_arc(x0 + step * ring, cy, r * 1.62f, 0.0028f * H(), 0.0f, 2.0f * PI_F, sf_col_alpha(0xFFFFFFE6u, al));
+}
+
+/* the background choices, in Flow Settings order; Picture only with pictures */
+static int bg_choices(const App *a, int *out)
+{
+    int n = 0, b;
+    for (b = 0; b < BG_COUNT; b++) {
+        if (b == BG_CUSTOM && a->nbg_files <= 0) continue;
+        out[n++] = b;
+    }
+    return n;
+}
+
+static void draw_bg_thumbs(const App *a, float x, float y, float w, float ring, float al)
+{
+    int ch[BG_COUNT], n = bg_choices(a, ch), i;
+    float gap = d_xu(0.010f * H()), tw = (w - gap * (float)(n - 1)) / (float)n;
+    float th = sf_minf(d_xu(1.0f) > 0.0f ? (tw / d_xu(1.0f)) * 9.0f / 16.0f : 0.0f, 0.060f * H());
+    uint32_t tint = sf_col_mix(bg_tint(), 0xFFFFFFFFu, 0.40f);
+    tw = d_xu(th * 16.0f / 9.0f);
+    x += (w - (tw * (float)n + gap * (float)(n - 1))) * 0.5f;
+    for (i = 0; i < n; i++) {
+        float tx = x + (tw + gap) * (float)i;
+        int b = ch[i];
+        if (b == BG_CUSTOM) {
+            if (g_bg_tex >= 0) d_image(g_bg_tex, tx, y, tw, th, sf_col_alpha(0xFFFFFFFFu, al));
+            else {
+                d_rrect(tx, y, tw, th, th * 0.14f, sf_col_alpha(0x2A2E3AFFu, al));
+                d_disc(tx + tw * 0.68f, y + th * 0.34f, th * 0.12f, sf_col_alpha(0xC8CCD8FFu, al));
+                d_rect(tx + tw * 0.12f, y + th * 0.66f, tw * 0.76f, th * 0.06f, sf_col_alpha(0x8A90A0FFu, al));
+            }
+        } else {
+            int icon = ICON_THUMB0 + (b == BG_ANIMATED ? 0 : b - 1);
+            float cx = tx + tw * 0.5f, cy = y + th * 0.5f;
+            /* the stage thumb carries its own colours only when baked: tint all alike */
+            if (icon >= ICON_THUMB0 && icon < ICON_COUNT) d_badge(icon, cx, cy, th, sf_col_alpha(tint, al));
+        }
+    }
+    /* the chosen one: a ring that glides */
+    {
+        float rx = x + (tw + gap) * ring - d_xu(0.004f * H());
+        d_rrect_stroke(rx, y - 0.004f * H(), tw + d_xu(0.008f * H()), th + 0.008f * H(), th * 0.20f, 0.0030f * H(),
+                       sf_col_alpha(0xFFFFFFF0u, al));
+    }
 }
 
 static void draw_panel(App *a)
 {
-    float e = ease_out_cubic(a->panel_anim);
-    float sc = 0.92f + 0.08f * e;
-    int vis = a->nrows < PANEL_VISIBLE_ROWS ? a->nrows : PANEL_VISIBLE_ROWS, i;
-    float pad = 0.032f * H() * sc, th = 0.082f * H() * sc, rh = 0.064f * H() * sc, rg = 0.010f * H() * sc;
-    float pw = sf_minf(d_xu(1.02f * H()), W() * 0.9f) * sc;
-    float ph = pad + th + (float)vis * (rh + rg) - rg + pad;
-    float px = W() * 0.5f - pw * 0.5f, py = H() * 0.49f - ph * 0.5f;
-    float em = 0.026f * H() * sc;
-    float list_y = py + pad + th, ix = px + d_xu(pad), iw = pw - 2.0f * d_xu(pad);
-    float sbw = 0.0f;
-    int per_game = a->panel == PANEL_GAME || a->panel == PANEL_DISC;
+    PanelGeo g;
+    const Game *game = NULL;
+    int per_game = a->panel == PANEL_GAME || a->panel == PANEL_DISC, i;
+    float dt, scroll_y, clip_top, clip_bot;
+    uint32_t hot = accent_white() ? 0xFFFFFFFFu : (accent() | 0xFFu);
     char gtitle[64];
     const char *ptitle = a->panel == PANEL_GAME ? "Game Settings" : a->panel == PANEL_DISC ? "Choose Disc" : "Flow Settings";
+    const char *crumb = NULL;
+    int page_key = a->panel * 64 + a->flow_group + 1, snap;
+    if (a->panel_anim <= 0.0f) return;
+    if (per_game) {
+        if (a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_plat].count) return;
+        game = &a->lib->tab[a->panel_plat].games[a->panel_game];
+    }
     if (a->panel == PANEL_FLOW && a->flow_group >= 0) {
-        snprintf(gtitle, sizeof(gtitle), "Flow Settings \xE2\x80\xBA %s", menu_label((RowKind)a->flow_group));
+        sf_strlcpy(gtitle, menu_label((RowKind)a->flow_group), sizeof(gtitle));
         ptitle = gtitle;
+        crumb = "Flow Settings";
     }
-    const Game *g;
-    if (e <= 0.0f) return;
-    if (per_game && (a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_plat].count)) return;
-    g = per_game ? &a->lib->tab[a->panel_plat].games[a->panel_game] : NULL;
+    panel_geo(a, &g);
+    /* per-row animations: snap on a new page */
+    dt = (float)(a->time - g_row_anim_time);
+    if (dt < 0.0f || dt > 0.2f) dt = 0.0f;
+    g_row_anim_time = a->time;
+    snap = page_key != g_row_anim_page || a->page_t < 0.02f;
+    g_row_anim_page = page_key;
 
-    d_rrect(px, py, pw, ph, 0.05f * H(), sf_col_alpha(TH_PANEL, e));
-    d_rrect_stroke(px, py, pw, ph, 0.05f * H(), 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), e));
-    /* 0.7.3: everything centered, no summaries */
-    d_text_fit(&g_font_main, px + pw * 0.5f, py + pad + th * 0.45f, 0.034f * H() * sc, sf_col_alpha(TH_TEXT, e),
-               ptitle, ALIGN_CENTER, iw);
-    if (a->nrows > vis) sbw = d_xu(0.022f * H());
-    /* rows */
-    for (i = 0; i < a->nrows; i++) {
-        float rel = (float)i - a->list_scroll.x;
-        float ry = list_y + rel * (rh + rg);
-        float fa = 1.0f;
-        if (rel < -0.98f || rel > (float)vis - 0.02f) continue;
-        if (rel < 0.0f) fa = 1.0f + rel;                       /* fade partially scrolled rows */
-        else if (rel > (float)vis - 1.0f) fa = (float)vis - rel;
-        fa = sf_clampf(fa, 0.0f, 1.0f) * e;
-        d_rrect(ix, ry, iw - sbw, rh, rh * 0.5f, sf_col_alpha(TH_ROW, fa));
+    if (g.drawer) {
+        /* the drawer: shadow, body (running off the top and the right), breathing outline */
+        float x0 = g.x - d_xu(0.047f * H()), sh = d_xu(0.06f * H());
+        d_rect_hgrad(x0 - sh, 0.0f, sh, g.bottom, 0x00000000u, sf_col_alpha(0x000000FFu, 0.45f * g.alpha));
+        d_rrect(x0, -0.06f * H(), W() - x0 + d_xu(0.06f * H()), g.bottom + 0.06f * H(), 0.045f * H(), sf_col_alpha(TH_PANEL | 0xFFu, 0.985f * g.alpha));
+        d_rrect_stroke(x0, -0.06f * H(), W() - x0 + d_xu(0.06f * H()), g.bottom + 0.06f * H(), 0.045f * H(), 0.0035f * H(),
+                       sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), g.alpha));
+    } else {
+        /* beside the big case: darken the right side a little so the rows read */
+        d_rect_hgrad(W() * 0.42f, 0.0f, W() * 0.58f, H(), 0x00000000u, sf_col_alpha(0x000000FFu, 0.50f * g.alpha));
     }
-    /* gliding highlight */
+
+    /* title (cascades in first) */
     {
-        float rel = a->row_hl.x - a->list_scroll.x;
-        float ry = list_y + rel * (rh + rg);
-        if (rel > -1.0f && rel < (float)vis)
-            d_rrect(ix, ry, iw - sbw, rh, rh * 0.5f, sf_col_alpha(accent_or(TH_ROW_HI, 0.50f), e));
+        float rt = clamp01((a->page_t - 0.02f) / 0.24f), re = ease_out_cubic(rt);
+        float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.05f * H()), al = g.alpha * re;
+        float tem = g.drawer ? 0.040f * H() : 0.043f * H();
+        if (crumb) d_text(&g_font_main, g.x + ox, g.crumb_y, 0.021f * H(), sf_col_alpha(TH_TEXT_DIM, al), crumb, ALIGN_LEFT);
+        d_text_fit(&g_font_main, g.x + ox, g.title_y, tem, sf_col_alpha(TH_TEXT, al), ptitle, ALIGN_LEFT, g.w);
+        if (game) d_text_fit(&g_font_main, g.x + ox, g.sub_y, 0.026f * H(), sf_col_alpha(TH_TEXT_DIM, al), lib_title(a->lib, game), ALIGN_LEFT, g.w);
+        {
+            float lw = d_xu(0.055f * H()), lt = 0.0042f * H();
+            d_rrect(g.x + ox, g.line_y - lt * 0.5f, lw, lt, lt * 0.5f, sf_col_alpha(hot, al));
+            d_blob_ellipse(g.x + ox + lw * 0.5f, g.line_y, lw * 0.9f, 0.012f * H(), sf_col_alpha(hot, 0.25f * al * (0.6f + 0.4f * g_glow)));
+        }
+    }
+
+    scroll_y = panel_row_y(a, &g, a->list_scroll.x);
+    clip_top = g.list_y - g.rh * 0.6f;
+    clip_bot = g.bottom - 0.01f * H();
+    /* the gliding highlight, glowing in the UI colour */
+    {
+        float hy = g.list_y + panel_row_y(a, &g, a->row_hl.x) - scroll_y;
+        int r0 = (int)floorf(a->row_hl.x + 0.5f);
+        float hh = panel_row_h(a, &g, sf_clampi(r0, 0, a->nrows - 1));
+        float rt = clamp01((a->page_t - 0.04f - (float)(r0 + 1) * 0.035f) / 0.24f), re = ease_out_cubic(rt);
+        float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.06f * H()), al = g.alpha * re;
+        float grow = d_xu(0.004f * H());
+        if (hy + hh > clip_top && hy < clip_bot && al > 0.0f) {
+            d_rrect_glow(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.022f * H(),
+                         sf_col_alpha(hot, 0.30f * al * (0.75f + 0.25f * g_glow)));
+            d_rrect(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f,
+                    sf_col_alpha(accent_white() ? 0x5A5E6CFFu : sf_col_mix(accent() | 0xFFu, 0x101420FFu, 0.42f), al));
+        }
     }
     for (i = 0; i < a->nrows; i++) {
-        float rel = (float)i - a->list_scroll.x;
-        float ry = list_y + rel * (rh + rg), cy = ry + rh * 0.5f;
-        float fa = 1.0f, mid = ix + (iw - sbw) * 0.5f, gap = d_xu(em * 0.9f);
-        float lmax = (iw - sbw) * 0.5f - gap - d_xu(rh * 0.42f);
         RowKind k = a->rows[i];
+        float ry = g.list_y + panel_row_y(a, &g, (float)i) - scroll_y, rh = panel_row_h(a, &g, i);
+        float rt = clamp01((a->page_t - 0.04f - (float)(i + 1) * 0.035f) / 0.24f), re = ease_out_cubic(rt);
+        float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.06f * H());
+        float fa = g.alpha * re, cy = ry + g.rh * 0.5f, xl, xr;
         int sel = i == a->row;
-        char val[48];
-        if (rel < -0.98f || rel > (float)vis - 0.02f) continue;
-        if (rel < 0.0f) fa = 1.0f + rel;
-        else if (rel > (float)vis - 1.0f) fa = (float)vis - rel;
-        fa = sf_clampf(fa, 0.0f, 1.0f) * e;
+        uint32_t tc;
+        char val[64];
+        if (ry + rh < clip_top || ry > clip_bot) continue;
+        if (ry < g.list_y - 0.002f * H()) fa *= clamp01(1.0f - (g.list_y - ry) / (g.rh * 0.6f));   /* scrolled off the top */
+        if (ry + rh > clip_bot - g.rh * 0.6f) fa *= clamp01((clip_bot - ry - rh) / (g.rh * 0.6f) + 1.0f);
+        if (fa <= 0.003f) continue;
+        xl = g.x + ox + d_xu(g.rh * 0.36f);
+        xr = g.x + ox + g.w - d_xu(g.rh * 0.34f) - (a->nrows > g.vis ? d_xu(0.016f * H()) : 0.0f);
+        if (!sel) d_rrect(g.x + ox, ry, g.w, rh, g.rh * 0.5f, sf_col_alpha(g.drawer ? 0x22252EFFu : 0x161922D8u, fa));
+        tc = sel ? TH_TEXT : TH_TEXT_DIM;
         if (k == ROW_D_DISC) {
-            const Disc *dd = lib_game_disc(a->lib, g, i);
+            const Disc *dd = lib_game_disc(a->lib, game, i);
             char lab[TITLE_MAX];
             lib_disc_name(a->lib, dd, i, lab, sizeof(lab));
             val[0] = '\0';
             if (dd && dd->size) sf_format_size(dd->size, val, sizeof(val));
-            if (!val[0]) {
-                d_text_fit(&g_font_main, mid, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), lab, ALIGN_CENTER, lmax * 2.0f);
-            } else {
-                d_text_fit(&g_font_main, mid - gap, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), lab, ALIGN_RIGHT, lmax);
-                draw_value(mid + gap + value_width(em, val, 0), cy, em, val, sel, 0, fa);
-            }
+            d_text_fit(&g_font_main, xl, cy, g.em, sf_col_alpha(tc, fa), lab, ALIGN_LEFT, (xr - xl) * (val[0] ? 0.68f : 1.0f));
+            if (val[0]) d_text(&g_font_main, xr, cy, g.em * 0.9f, sf_col_alpha(TH_TEXT_DIM, fa), val, ALIGN_RIGHT);
             continue;
         }
+        d_text_fit(&g_font_main, xl, cy, g.em, sf_col_alpha(tc, fa), menu_label(k), ALIGN_LEFT, (xr - xl) * 0.55f);
         app_row_value(a, k, val, sizeof(val));
-        if (!val[0] && !menu_is_slider(k)) {
-            /* groups and actions: the name, centered */
-            d_text_fit(&g_font_main, mid, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), menu_label(k), ALIGN_CENTER, lmax * 2.0f);
-            continue;
-        }
-        /* name | value, lined up on the middle of the panel */
-        d_text_fit(&g_font_main, mid - gap, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), menu_label(k), ALIGN_RIGHT, lmax);
-        if (menu_is_slider(k)) {
-            float tw = d_xu(0.16f * H() * sc), th2 = 0.008f * H(), tx;
-            float v = menu_slider_value(k, &a->settings);
-            float vw = d_text_width(&g_font_main, em, val), left = mid + gap + arrow_slot(em);
-            draw_value(left + vw + (sel ? arrow_slot(em) : 0.0f), cy, em, val, sel, sel, fa);
-            tx = left + sf_maxf(vw, d_text_width(&g_font_main, em, "100%")) + arrow_slot(em) + d_xu(em * 0.6f);   /* fixed spot */
-            d_rrect(tx, cy - th2 * 0.5f, tw, th2, th2 * 0.5f, sf_col_alpha(TH_SLIDER_TRACK, fa));
-            d_rrect(tx, cy - th2 * 0.5f, tw * v, th2, th2 * 0.5f, sf_col_alpha(accent_or(TH_SLIDER_FILL, 1.0f), fa));
-            d_disc(tx + tw * v, cy, th2 * 1.3f, sf_col_alpha(TH_TEXT, fa));
-        } else {
-            /* the value starts at the same x whether or not its ‹ › show */
-            int can = !menu_is_action(k), arrows = sel && can;
-            float left = mid + gap + (can ? arrow_slot(em) : 0.0f);
-            draw_value(left + d_text_width(&g_font_main, em, val) + (arrows ? arrow_slot(em) : 0.0f), cy, em, val, sel, arrows, fa);
+        if (menu_is_group(k)) {
+            d_text(&g_font_main, xr, cy, g.em * 1.25f, sf_col_alpha(tc, fa), "\xE2\x80\xBA", ALIGN_RIGHT);
+        } else if (k == ROW_F_BACKGROUND) {
+            int ch[BG_COUNT], n = bg_choices(a, ch), j, cur = 0;
+            for (j = 0; j < n; j++) if (ch[j] == a->settings.background) cur = j;
+            draw_value(xr, cy, g.em, val, sel, sel, fa);
+            approach_now(&g_row_anim[i], (float)cur, 14.0f, dt, snap);
+            draw_bg_thumbs(a, xl, ry + g.rh * 0.86f, xr - xl, g_row_anim[i], fa);
+        } else if (k == ROW_F_UI_COLOR) {
+            draw_color_dots(xr, cy, approach_now(&g_row_anim[i], (float)a->settings.ui_color, 14.0f, dt, snap), fa);
+        } else if (menu_toggle(k, &a->settings) >= 0) {
+            draw_switch(xr, cy, approach_now(&g_row_anim[i], (float)menu_toggle(k, &a->settings), 16.0f, dt, snap), sel, fa);
+        } else if (per_game && k != ROW_G_PS2CFG) {
+            const char *const *names = NULL;
+            int cur = 0, n = menu_segments(k, a->panel_plat, &a->panel_cfg, &names, &cur);
+            if (n > 0) draw_segments(xr, cy, g.em, names, n, approach_now(&g_row_anim[i], (float)cur, 14.0f, dt, snap), sel, fa);
+            else if (val[0]) draw_value(xr, cy, g.em, val, sel, sel, fa);
+        } else if (menu_is_slider(k)) {
+            float tw = d_xu(0.15f * H()), th2 = 0.0075f * H(), tx = xr - tw;
+            float v = approach_now(&g_row_anim[i], menu_slider_value(k, &a->settings), 16.0f, dt, snap);
+            d_rrect(tx, cy - th2 * 0.5f, tw, th2, th2 * 0.5f, sf_col_alpha(0x464A58FFu, fa));
+            d_rrect(tx, cy - th2 * 0.5f, tw * v, th2, th2 * 0.5f, sf_col_alpha(hot, fa));
+            d_disc(tx + tw * v, cy, 0.0125f * H(), sf_col_alpha(0xFAFAFCFFu, fa));
+            draw_value(tx - d_xu(g.em * 0.6f), cy, g.em, val, sel, 0, fa);
+        } else if (val[0]) {
+            draw_value(xr, cy, g.em, val, sel, sel && !menu_is_action(k), fa);
         }
     }
     /* scrollbar */
-    if (a->nrows > vis) {
-        float tx = ix + iw - sbw * 0.35f, ty = list_y, thh = (float)vis * (rh + rg) - rg;
-        float frac = (float)vis / (float)a->nrows;
-        float pos = a->list_scroll.x / (float)(a->nrows - vis);
-        float bw = d_xu(0.005f * H());
-        d_rrect(tx - bw * 0.5f, ty, bw, thh, 0.0025f * H(), sf_col_alpha(TH_SCROLL_TRACK, e));
-        d_rrect(tx - bw * 0.5f, ty + (thh * (1.0f - frac)) * sf_clampf(pos, 0.0f, 1.0f), bw, thh * frac, 0.0025f * H(),
-                sf_col_alpha(accent_or(TH_SCROLL_THUMB, 0.85f), e));
+    if (a->nrows > g.vis) {
+        float top = g.list_y, span = panel_row_y(a, &g, (float)g.vis) - g.rg, total = panel_row_y(a, &g, (float)a->nrows) - g.rg;
+        float frac = span / total, pos = scroll_y / sf_maxf(1.0f, total - span), bw = d_xu(0.005f * H());
+        float tx = g.x + g.w - bw;
+        d_rrect(tx, top, bw, span, 0.0025f * H(), sf_col_alpha(TH_SCROLL_TRACK, g.alpha));
+        d_rrect(tx, top + (span * (1.0f - frac)) * clamp01(pos), bw, span * frac, 0.0025f * H(), sf_col_alpha(accent_or(TH_SCROLL_THUMB, 0.85f), g.alpha));
     }
 }
 
@@ -1570,7 +1837,6 @@ static void draw_toast(const App *a)
 /* ------------------------------------------------------------------ */
 /* Loading screen                                                      */
 
-static float clamp01(float v) { return sf_clampf(v, 0.0f, 1.0f); }
 
 /* the "spookyflow" wordmark with its ghostly glow */
 static void draw_wordmark(const App *a, float wy, float em, float alpha)
@@ -1790,6 +2056,9 @@ static void draw_loading(const App *a, float alpha)
 static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
 {
     UiMetrics m = *mm;
+    /* 0.8.0: the Flow Settings drawer pushes the cover flow to the left */
+    float flow_dx = a->panel == PANEL_FLOW ? -W() * 0.15f * ease_in_out(a->panel_anim) : 0.0f;
+    float pgame = (a->panel == PANEL_GAME || a->panel == PANEL_DISC) ? ease_in_out(a->panel_anim) : 0.0f;
     /* tabs */
     draw_tabs(a, ia, -(1.0f - intro) * 0.05f * H());
     /* cover rows (tab switch: old slides out, new slides in) */
@@ -1799,12 +2068,17 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
         draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist, e * ia);
     } else {
         /* after the kittens' loading screens the selected case appears where they stood */
-        draw_flow_row(a, a->tab, a->reveal_start > -999.0f ? 0.0f : (1.0f - intro) * W() * 0.12f, ia);
+        draw_flow_row(a, a->tab, (a->reveal_start > -999.0f ? 0.0f : (1.0f - intro) * W() * 0.12f) + flow_dx, ia);
     }
-    if (a->display_t < 1.0f) draw_info(a, ia * (1.0f - ease_in_out(a->display_t)), &m);   /* display mode: title and info fade out */
+    {   /* display mode / Game Settings: the title and info fade out; Flow Settings: they move with the row */
+        float fade = 1.0f - sf_maxf(ease_in_out(a->display_t), pgame);
+        g_info_dx = flow_dx;
+        if (fade > 0.0f) draw_info(a, ia * fade, &m);
+        g_info_dx = 0.0f;
+    }
     if (a->panel != PANEL_NONE) {
-        float pe = ease_out_cubic(a->panel_anim);
-        d_rect(0, 0, W(), H(), sf_col_alpha(TH_DIM_OVERLAY, TH_DIM_MAX * pe));
+        if (a->panel == PANEL_FLOW)        /* the cover flow dims under the drawer */
+            d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.40f * ease_in_out(a->panel_anim)));
         draw_panel(a);
     }
     draw_bar(a, ia);
@@ -1824,6 +2098,11 @@ void ui_draw(App *a)
     if (a->mode == MODE_LOADING && a->settings_ready && a->settings.background == BG_STAGE && g_src_base &&
         (!g_stage_baked || g_baked_tint != stage_tint()))
         stage_bake(stage_tint());
+    /* 0.7.5: on another background, Stage is made ready in small steps, so
+     * choosing it later doesn't stall a frame */
+    else if (a->mode != MODE_LOADING && a->settings_ready && a->settings.background != BG_STAGE && g_src_base &&
+             a->intro >= 1.0f && (!g_stage_baked || g_baked_tint != stage_tint()))
+        stage_job(stage_tint(), 0);
     layout_use_case_images(a->settings.cases);
     layout_set_floor(a->settings.background == BG_STAGE);   /* Stage: on its floor; others: centered */
     layout_ui(d_screen(), &m);

@@ -79,9 +79,12 @@ typedef struct {
 
 /* panel_mode = 0: main bar (Launch, Game settings, L1 R1 A-Z, Flow settings, Exit)
  * panel_mode = 1: panel bar (Change, Back); 2: Choose Disc (Launch, Back);
- * 3: display mode, Square (Launch, Game Settings, Back).
+ * 3: display mode, Square (Launch, Game Settings, Back);
+ * 4: the Flow Settings first page (Select, Back).
  * Uses the current d_screen(). */
 void ui_bar_layout(int panel_mode, BarLayout *out);
+/* one background alone, full screen (for the thumbnails; tools/preview) */
+void ui_draw_background_only(App *a, int bg);
 
 /* Title pill fitting: returns the text width; *em_out = font size used and
  * *truncated = 1 if the text needs an ellipsis at that size. */

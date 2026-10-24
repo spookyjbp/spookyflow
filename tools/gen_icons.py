@@ -9,6 +9,11 @@ rendered at 2x and downsampled.
   4..7 L1 R1 L2 R2 - black rounded shoulder buttons, white label
   8 select   - black flat rounded-rectangle button, like the DualShock 3's SELECT
   9 square   - black round button, pink outline square
+  10..16     - 0.8.0: Background thumbnails (Drift, Aurora, Fireflies, Ribbons,
+               Halo, Twilight, Stage), gray: drawn tinted with the UI color.
+               From art/bg_thumbs.png; rebuild that with
+               `gen_icons.py --thumbs <preview dir>` after
+               `SF_PREVIEW_THUMBS=1 ./build-host/preview <dir>` (see README).
 Every button has the same near-black body and the same thin gray rim, so they
 read as one family and stay visible on the dark UI.
 Stored as planar R,G,B,A in one RLE stream (same codec as the fonts), with a
@@ -134,7 +139,45 @@ def badge(kind):
     alpha = alpha.resize((OUT, OUT), Image.LANCZOS)
     return rgb, alpha
 
+THUMB_BGS = [0, 2, 3, 4, 5, 6, 7]      # BG_* ids, in icon order (no BG_CUSTOM)
+THUMB_W = 114                          # 16:9 at the atlas height
+
+
+def make_thumbs(prev_dir):
+    """the thumbnail strip from the preview's thumb_<bg>.ppm renders: gray, levels stretched"""
+    import numpy as np
+    strip = Image.new("RGBA", (THUMB_W * len(THUMB_BGS), OUT), (0, 0, 0, 255))
+    for i, b in enumerate(THUMB_BGS):
+        im = Image.open(os.path.join(prev_dir, "thumb_%d.ppm" % b)).convert("L")
+        im = im.resize((THUMB_W * 4, OUT * 4), Image.LANCZOS).resize((THUMB_W, OUT), Image.LANCZOS)
+        a = np.asarray(im).astype(np.float32)
+        lo, hi = np.percentile(a, 2), np.percentile(a, 99.5)
+        a = np.clip((a - lo) / max(8.0, hi - lo), 0, 1) ** 0.85 * 235 + 12
+        g = Image.fromarray(a.astype(np.uint8), "L")
+        strip.paste(Image.merge("RGBA", (g, g, g, Image.new("L", g.size, 255))), (i * THUMB_W, 0))
+    strip.save(os.path.join(ROOT, "art", "bg_thumbs.png"))
+    print("wrote art/bg_thumbs.png")
+
+
+def thumbs():
+    p = os.path.join(ROOT, "art", "bg_thumbs.png")
+    if not os.path.exists(p):
+        return []
+    s = Image.open(p).convert("RGBA")
+    out = []
+    for i in range(len(THUMB_BGS)):
+        t = s.crop((i * THUMB_W, 0, (i + 1) * THUMB_W, OUT))
+        # rounded corners
+        m = Image.new("L", (THUMB_W * SS, OUT * SS), 0)
+        ImageDraw.Draw(m).rounded_rectangle([0, 0, THUMB_W * SS - 1, OUT * SS - 1], radius=9 * SS, fill=255)
+        m = m.resize((THUMB_W, OUT), Image.LANCZOS)
+        out.append((t.convert("RGB"), m))
+    return out
+
+
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--thumbs":
+        make_thumbs(sys.argv[2])
     imgs = []
     for kind in BADGES:
         if kind == "start":
@@ -145,6 +188,7 @@ def main():
             imgs.append(pill(kind, SHOULDER_W, 0.42))
         else:
             imgs.append(badge(kind))
+    imgs += thumbs()
     gap = 2
     total = sum(im[0].size[0] + gap for im in imgs)
     W = 1
@@ -177,7 +221,7 @@ def main():
     for x0, w in rects:
         L.append("  {%d, %d}," % (x0, w))
     L.append("};")
-    L.append("const IconAtlas g_icons = { %d, %d, %d, icons_rects, icons_rle, %d };" % (W, H, len(BADGES), len(comp)))
+    L.append("const IconAtlas g_icons = { %d, %d, %d, icons_rects, icons_rle, %d };" % (W, H, len(imgs), len(comp)))
     with open(os.path.join(ROOT, "src", "core", "icons_data.c"), "w") as f:
         f.write("\n".join(L) + "\n")
     print("icons: %dx%d, rle %d bytes (raw %d)" % (W, H, len(comp), len(planar)))

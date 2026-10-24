@@ -22,6 +22,34 @@ const char *settings_color_name(int c)
     return (c >= 0 && c < UI_COLOR_COUNT) ? names[c] : "";
 }
 
+int settings_cfg_copy_has(const Settings *s, uint32_t h)
+{
+    int i;
+    for (i = 0; i < s->cfg_copy_count; i++) if (s->cfg_copies[i] == h) return 1;
+    return 0;
+}
+
+void settings_cfg_copy_add(Settings *s, uint32_t h)
+{
+    if (settings_cfg_copy_has(s, h)) return;
+    if (s->cfg_copy_count == SET_MAX_CFG_COPIES) {          /* full: forget the oldest */
+        memmove(s->cfg_copies, s->cfg_copies + 1, sizeof(s->cfg_copies[0]) * (SET_MAX_CFG_COPIES - 1));
+        s->cfg_copy_count--;
+    }
+    s->cfg_copies[s->cfg_copy_count++] = h;
+}
+
+void settings_cfg_copy_remove(Settings *s, uint32_t h)
+{
+    int i;
+    for (i = 0; i < s->cfg_copy_count; i++) {
+        if (s->cfg_copies[i] != h) continue;
+        memmove(s->cfg_copies + i, s->cfg_copies + i + 1, sizeof(s->cfg_copies[0]) * (size_t)(s->cfg_copy_count - i - 1));
+        s->cfg_copy_count--;
+        return;
+    }
+}
+
 void settings_defaults(Settings *s)
 {
     memset(s, 0, sizeof(*s));
@@ -102,6 +130,7 @@ void settings_parse_line(Settings *s, const char *line_in)
         s->background = parse_int(val, 0, BG_COUNT - 1, BG_STAGE);   /* 1 = a picture: the app checks it exists */
     }
     else if (strcmp(key, "background_image") == 0) sf_strlcpy(s->bg_image, val, sizeof(s->bg_image));
+    else if (strcmp(key, "ps2cfg_copy") == 0) settings_cfg_copy_add(s, (uint32_t)strtoul(val, NULL, 16));
     else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_BLUE);
     else if (strcmp(key, "reflections") == 0) s->reflections = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "custom_cases") == 0) s->cases = parse_int(val, 0, 1, 1);
@@ -158,6 +187,7 @@ int settings_save(const Settings *s, const char *path)
     for (p = 0; p < PLAT_COUNT; p++)
         if (s->last_key[p][0] && !strchr(s->last_key[p], '\n'))
             fprintf(f, "last_key_%s=%s\n", k_plat_suffix[p], s->last_key[p]);
+    for (i = 0; i < s->cfg_copy_count; i++) fprintf(f, "ps2cfg_copy=%08x\n", (unsigned)s->cfg_copies[i]);
     fprintf(f, "# game <autoplay 0=default 1=on 2=off> <emulator> <offline 0=default 1=on 2=off> <ps2 config: 0=auto, 100+n> <key>\n");
     for (i = 0; i < s->game_count; i++) {
         const GameCfg *g = &s->games[i];

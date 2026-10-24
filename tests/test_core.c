@@ -328,7 +328,7 @@ static void test_bar_layout(void)
     scr[2] = screen_direct(1280, 720); scr[3] = screen_direct(1920, 1080);
     for (k = 0; k < 4; k++) {
         d_set_screen(&scr[k]);
-        for (mode = 0; mode < 4; mode++) {
+        for (mode = 0; mode < 5; mode++) {
             BarLayout L;
             float px_x = scr[k].px * scr[k].pa;   /* physical px per logical x unit */
             float gaps[BAR_MAX_GROUPS + 1];
@@ -1312,6 +1312,7 @@ int main(void)
     test_rescan_fade();
     test_display_mode();
     test_kitten_entrance();
+    test_panels_m6();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }
