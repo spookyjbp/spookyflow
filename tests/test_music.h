@@ -1045,6 +1045,11 @@ static void test_music_app(void)
     music_mix(buf, 256);
     run_frames(0, 0.05f);
     CHECK(music_current(NULL, 0) == gen + 1);
+    /* 0.6.9: the card was showing, so the name changes smoothly */
+    CHECK(g_app.music_prev_name[0] && strcmp(g_app.music_prev_name, g_app.music_name) != 0 && g_app.music_swap_t < 0.5f);
+    ui_draw(&g_app);
+    run_frames(0, MUSIC_SWAP_TIME + 0.05f);
+    CHECK(g_app.music_swap_t >= 1.0f);
     run_frames(0, MUSIC_CARD_TIME + 0.1f);
     CHECK(g_app.music_card_t >= g_app.music_card_len);  /* the card goes away */
     /* a name that doesn't fit keeps the card up until it has scrolled to the end */

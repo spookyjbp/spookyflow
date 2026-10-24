@@ -76,7 +76,9 @@ void app_init(App *a, Library *lib, const AppHost *host)
     a->toast_t = TOAST_TIME;
     a->music_card_t = MUSIC_CARD_TIME;
     a->music_card_len = MUSIC_CARD_TIME;
+    a->music_swap_t = 1.0f;
     a->perf_phase = -1;
+    a->reveal_start = -1000.0f;
     sf_strlcpy(a->load_status, "Starting\xE2\x80\xA6", sizeof(a->load_status));
 }
 
@@ -162,6 +164,7 @@ static void start_loading(App *a, int rescan)
     a->load_shown = 0.0f;
     a->rescan = rescan;
     a->intro = 0.0f;
+    a->reveal_start = -1000.0f;     /* ui.c starts the Stage reveal when it can */
     drop_covers(a);
     /* "Rescan Library" also refreshes covers (new art, a new cover pack) */
     if (rescan && a->host.covers) cover_wipe_cache(a->host.covers);
@@ -283,9 +286,17 @@ static void music_tick(App *a)
     if (gen != a->music_gen) {
         a->music_gen = gen;
         if (gen && a->mode == MODE_FLOW && !a->exiting && !a->asleep && name[0]) {
-            /* a card that's still showing just swaps the name (no second slide-in) */
-            if (a->music_card_t >= a->music_card_len - 0.5f) a->music_card_t = 0.0f;
-            else if (a->music_card_t > 0.6f) a->music_card_t = 0.6f;
+            /* a card that's still showing swaps the name smoothly (no second slide-in) */
+            if (a->music_card_t >= a->music_card_len - 0.5f || !a->music_name[0]) {
+                a->music_card_t = 0.0f;
+                a->music_swap_t = 1.0f;
+            } else {
+                sf_strlcpy(a->music_prev_name, a->music_name, sizeof(a->music_prev_name));
+                a->music_prev_off = a->music_cur_off;
+                a->music_prev_w = a->music_cur_w;
+                a->music_swap_t = 0.0f;
+                if (a->music_card_t > 0.6f) a->music_card_t = 0.6f;
+            }
             a->music_card_len = MUSIC_CARD_TIME;          /* ui.c lengthens it for a name that scrolls */
             sf_strlcpy(a->music_name, name, sizeof(a->music_name));
         }
@@ -954,6 +965,7 @@ static void animate(App *a, float dt)
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;
     if (a->toast_t < TOAST_TIME) a->toast_t += dt;
     if (a->music_card_t < a->music_card_len) a->music_card_t += dt;
+    if (a->music_swap_t < 1.0f) a->music_swap_t = sf_minf(1.0f, a->music_swap_t + dt / MUSIC_SWAP_TIME);
     /* title/chips cross-fade on selection change */
     {
         int cur = a->view[a->tab].sel;

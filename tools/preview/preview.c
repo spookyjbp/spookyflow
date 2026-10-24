@@ -236,6 +236,23 @@ int main(int argc, char **argv)
     sf_strlcpy(g_app.music_name, "A Very Long Song Title From Some Album (Extended Remix Version)", sizeof(g_app.music_name));
     g_app.music_card_t = 1.0f;
     render("03e_music_long_name", 1280, 720);
+    if (getenv("SF_PREVIEW_SWAP")) {   /* 0.6.9: SELECT while the card shows: the name changes smoothly */
+        int fr;
+        char nm[64];
+        sf_strlcpy(g_app.music_name, "Dreams of the Midnight Arcade", sizeof(g_app.music_name));
+        g_app.music_card_t = 1.0f; g_app.music_swap_t = 1.0f;
+        for (fr = 0; fr < 6; fr++) { snprintf(nm, sizeof(nm), "anim_swap_%03d", fr); render(nm, 1280, 720); }
+        sf_strlcpy(g_app.music_prev_name, g_app.music_name, sizeof(g_app.music_prev_name));
+        g_app.music_prev_off = g_app.music_cur_off; g_app.music_prev_w = g_app.music_cur_w;
+        sf_strlcpy(g_app.music_name, "Tic Tac", sizeof(g_app.music_name));
+        for (g_app.music_swap_t = 0.0f; fr < 30; fr++) {
+            snprintf(nm, sizeof(nm), "anim_swap_%03d", fr);
+            render(nm, 1280, 720);
+            g_app.music_swap_t = sf_minf(1.0f, g_app.music_swap_t + 0.05f / MUSIC_SWAP_TIME);
+            g_app.time += 0.05;
+        }
+        g_app.music_swap_t = 1.0f;
+    }
     if (getenv("SF_PREVIEW_MUSIC_ANIM")) {   /* frames of the whole card, for a GIF */
         int fr = 0;
         char nm[64];
@@ -530,6 +547,28 @@ int main(int argc, char **argv)
                         }
                         render("34_stage_ps2", 1280, 720);
                         render("34_stage_ps2_1080p", 1920, 1080);
+                        if (getenv("SF_PREVIEW_REVEAL")) {   /* 0.6.9: the Stage reveal loading screen, frame by frame */
+                            int fr;
+                            char nm2[64];
+                            double tsave = g_app.time;
+                            float lt;
+                            g_app.mode = MODE_LOADING; g_app.rescan = 0; g_app.reveal_start = -1000.0f;
+                            g_app.load_step = LOAD_SCAN;
+                            for (fr = 0, lt = 0.0f; lt < 5.2f; lt += 0.1f, fr++) {
+                                g_app.load_t = lt; g_app.time = tsave + lt;
+                                g_app.load_shown = sf_clampf((lt - 0.8f) / 3.8f, 0.0f, 1.0f);
+                                sf_strlcpy(g_app.load_status, lt < 3.0f ? "Scanning PS2 games\xE2\x80\xA6" : "Doing the Heavy Lifting", sizeof(g_app.load_status));
+                                snprintf(nm2, sizeof(nm2), "anim_reveal_%03d", fr);
+                                render(nm2, 1280, 720);
+                            }
+                            g_app.mode = MODE_FLOW;
+                            for (lt = 0.0f; lt <= 1.0f; lt += 0.1f, fr++) {   /* and into the cover flow */
+                                g_app.intro = lt; g_app.time += 0.11;
+                                snprintf(nm2, sizeof(nm2), "anim_reveal_%03d", fr);
+                                render(nm2, 1280, 720);
+                            }
+                            g_app.intro = 1.0f; g_app.time = tsave;
+                        }
                         {   /* the background alone (no cases), to check its edges */
                             int keep = g_lib.tab[g_app.tab].count;
                             g_lib.tab[g_app.tab].count = 0;

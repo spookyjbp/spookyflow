@@ -453,7 +453,16 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.6.8:** the floating particles are plain dots of one even color
+15. **0.6.9 — Stage reveal:** with the Stage background, the start-up
+    screen opens from black: the horizon line draws itself out from the
+    middle, the scene opens up from it, the shapes and particles drift in,
+    then the name and the kittens (standing on the horizon, mirrored in the
+    floor) appear, with the progress as a glowing line; the cover flow then
+    comes in over the same scene. Other backgrounds keep the classic screen.
+    Skipping a song while the Now Playing card shows changes the name
+    smoothly (the old one rises away, the new one comes up, the card eases
+    to the new width).
+    **0.6.8:** the floating particles are plain dots of one even color
     with a soft edge (the sprites from the particle pack had specks and rings
     inside them).
     **0.6.7:** the floating △ ○ ✕ □ shapes are whole: some of the source

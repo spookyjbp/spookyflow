@@ -416,6 +416,7 @@ static uint32_t stage_tint(void)
 static const unsigned char *g_src_base, *g_src_rib, *g_src_glow;
 static int g_src_bw, g_src_bh, g_src_rw, g_src_rh, g_src_gw, g_src_gh;
 static int g_stage_baked;          /* 1: TEX_STAGE / TEX_STAGE_RIB hold the composites */
+static float g_intro_shapes = 1.0f, g_intro_parts = 1.0f;   /* loading reveal: shapes / particles fading in */
 static uint32_t g_baked_tint;
 static unsigned char *g_bake_buf;
 static size_t g_bake_cap;
@@ -629,7 +630,7 @@ static void bg_stage(float t, float alpha)
                 stage_fx(STAGE_FX_GLOW, W() * lx[i] - fw * 0.5f, hy - fh * 0.5f, fw, fh, sf_col_alpha(lite, alpha * 0.75f * p));
             }
         }
-        stage_particles(t, alpha, hy, lite);
+        stage_particles(t, alpha * g_intro_parts, hy, lite);
         /* fog hugging the floor: three seamless layers at different depths drifting
          * at their own slow pace (near = bigger, faster), each thickening and
          * thinning over time; a far, thin veil also lies across the horizon */
@@ -657,10 +658,10 @@ static void bg_stage(float t, float alpha)
         float p = (float)i * 1.7f, k = 0.5f + s->size * 2.5f;                 /* big = near: moves more */
         float sz = s->size * H();
         float cx = W() * (s->x + 0.012f * k * sinf(t * 0.11f + p) + 0.005f * sinf(t * 0.29f + p * 2.1f));
-        float cy = H() * (s->y + 0.018f * k * sinf(t * 0.15f + p * 1.3f));
+        float cy = H() * (s->y + 0.018f * k * sinf(t * 0.15f + p * 1.3f) + 0.08f * (1.0f - g_intro_shapes));   /* drift in from below */
         float ang = 0.14f * sinf(t * 0.09f + p) + 0.04f * sinf(t * 0.23f + p * 0.7f);
         float sc = 1.0f + 0.05f * sinf(t * 0.19f + p * 1.9f);
-        float al = s->alpha * (0.82f + 0.18f * sinf(t * 0.35f + p * 2.7f)) * alpha;
+        float al = s->alpha * (0.82f + 0.18f * sinf(t * 0.35f + p * 2.7f)) * alpha * g_intro_shapes;
         float u0 = (float)s->kind * 0.25f, u1 = u0 + 0.25f, v0 = (float)s->angle * 0.5f;
         /* cells are 256x224: keep that shape */
         float w = sz * sc * (256.0f / 224.0f), h = sz * sc;
@@ -1380,7 +1381,7 @@ static void draw_letter(const App *a)
 
 static void draw_music_card(App *a, float ia)
 {
-    float t = a->music_card_t, len, in, out, al, slide, over, speed, off = 0.0f;
+    float t = a->music_card_t, len, in, out, al, slide, over, speed, off = 0.0f, swap, ny;
     float h = 0.112f * H(), r = h * 0.5f, x, y = 0.028f * H(), w;
     float kh, kw, kx, ky, tx, em_l = 0.017f * H(), em_n = 0.027f * H(), maxw, namew, tw, fade;
     float now = (float)a->time;
@@ -1406,6 +1407,10 @@ static void draw_music_card(App *a, float ia)
     namew = sf_minf(tw, maxw);
     namew = sf_maxf(namew, d_text_width(&g_font_main, em_l, "NOW PLAYING") + d_xu(0.05f * H()));
     w = d_xu(h * 0.30f) + kw + d_xu(h * 0.22f) + namew + d_xu(h * 0.38f);
+    swap = a->music_swap_t < 1.0f && a->music_prev_name[0] ? ease_in_out(a->music_swap_t) : 1.0f;
+    if (swap < 1.0f && a->music_prev_w > 0.0f) w = sf_lerp(a->music_prev_w, w, swap);   /* the card eases to the new width */
+    a->music_cur_w = w;
+    a->music_cur_off = off;
     slide = (1.0f - in) + out;
     x = 0.022f * W() - slide * (w + 0.03f * W());
     d_rrect(x, y, w, h, r, sf_col_alpha(TH_BAR, al));
@@ -1426,12 +1431,21 @@ static void draw_music_card(App *a, float ia)
             d_rect(bx + (float)i * (bw + gap), base - bh, bw, bh, sf_col_alpha(accent_or(TH_TEXT_DIM, 1.0f), al));
         }
     }
+    fade = d_xu(0.016f * H());
+    ny = y + h * 0.68f;
+    if (swap < 1.0f) {
+        /* the old name rises and fades out, then the new one comes up into place */
+        float st = a->music_swap_t, go = ease_in_out(sf_clampf(st * 1.8f, 0.0f, 1.0f));
+        d_text_window(&g_font_main, tx - a->music_prev_off, ny - go * h * 0.16f, em_n, sf_col_alpha(TH_TEXT, al * (1.0f - go)),
+                      a->music_prev_name, tx - fade + sf_minf(a->music_prev_off, fade), tx + maxw + fade * 0.5f, fade);
+        swap = ease_in_out(sf_clampf((st - 0.4f) / 0.6f, 0.0f, 1.0f));
+        ny += (1.0f - swap) * h * 0.16f;
+    }
     if (over <= 0.0f) {
-        d_text(&g_font_main, tx, y + h * 0.68f, em_n, sf_col_alpha(TH_TEXT, al), a->music_name, ALIGN_LEFT);
+        d_text(&g_font_main, tx, ny, em_n, sf_col_alpha(TH_TEXT, al * swap), a->music_name, ALIGN_LEFT);
     } else {
         /* too long: scrolls left until the end shows; the letters fade at the edges */
-        fade = d_xu(0.016f * H());
-        d_text_window(&g_font_main, tx - off, y + h * 0.68f, em_n, sf_col_alpha(TH_TEXT, al), a->music_name,
+        d_text_window(&g_font_main, tx - off, ny, em_n, sf_col_alpha(TH_TEXT, al * swap), a->music_name,
                       tx - fade + sf_minf(off, fade), tx + maxw + fade * 0.5f, fade);   /* no left fade before it moves */
     }
 }
@@ -1451,6 +1465,118 @@ static void draw_toast(const App *a)
 
 /* ------------------------------------------------------------------ */
 /* Loading screen                                                      */
+
+static float clamp01(float v) { return sf_clampf(v, 0.0f, 1.0f); }
+
+/* the "spookyflow" wordmark with its ghostly glow */
+static void draw_wordmark(const App *a, float wy, float em, float alpha)
+{
+    float t = (float)a->time, breathe = 0.75f + 0.25f * sinf(t * 1.6f);
+    int i;
+    d_blob(W() * 0.5f, wy, 3.2f * em, sf_col_alpha(TH_WORDMARK_GLOW, 0.09f * alpha * breathe));
+    {
+        static const float rr[2] = { 0.008f, 0.017f }, aa[2] = { 0.030f, 0.016f };
+        int ring;
+        for (ring = 0; ring < 2; ring++) {
+            for (i = 0; i < 12; i++) {
+                float ang = (float)i * PI_F / 6.0f + t * 0.25f + (float)ring * 0.26f, r = rr[ring] * H();
+                d_text(&g_font_big, W() * 0.5f + d_xu(cosf(ang) * r), wy + sinf(ang) * r, em,
+                       sf_col_alpha(TH_WORDMARK_GLOW, aa[ring] * alpha * breathe), APP_NAME, ALIGN_CENTER);
+            }
+        }
+    }
+    d_text(&g_font_big, W() * 0.5f, wy, em, sf_col_alpha(TH_WORDMARK, alpha), APP_NAME, ALIGN_CENTER);
+}
+
+/* ---- Stage reveal (0.6.9): the opening when the background is Stage -----
+ * From black, the horizon line draws itself out from the middle, the scene
+ * opens up from it, the shapes and particles drift in, then the name and the
+ * kittens (standing on the horizon, mirrored in the floor) appear. The cover
+ * flow then comes in over the same scene. rt = seconds since it started. */
+#define REVEAL_LINE_T0   0.15f
+#define REVEAL_LINE_T    1.10f
+#define REVEAL_OPEN_T0   0.90f
+#define REVEAL_OPEN_T    1.70f
+#define REVEAL_ITEMS_T0  2.00f
+#define REVEAL_ITEMS_T   0.90f
+
+static void stage_reveal_overlay(float rt)
+{
+    float hy = H() * LY_HORIZON_Y;
+    float open = ease_in_out(clamp01((rt - REVEAL_OPEN_T0) / REVEAL_OPEN_T));
+    uint32_t lite = sf_col_mix(stage_tint(), 0xFFFFFFFFu, 0.45f), clear = lite & 0xFFFFFF00u;
+    if (open < 1.0f) {
+        float g = 0.22f * H(), hb = open * (sf_maxf(hy, H() - hy) + g), gw = sf_minf(g, hb);
+        float top = hy - hb, bot = hy + hb;
+        if (top > 0.0f) d_rect(0, 0, W(), top, 0x000000FFu);
+        if (gw > 0.0f) {
+            d_rect_grad(0, top, W(), gw, 0x000000FFu, 0x00000000u);
+            d_rect_grad(0, bot - gw, W(), gw, 0x00000000u, 0x000000FFu);
+        }
+        if (bot < H()) d_rect(0, bot, W(), H() - bot, 0x000000FFu);
+        if (hb <= 0.0f) d_rect(0, 0, W(), H(), 0x000000FFu);
+    }
+    /* the line drawing itself across, then handing over to the scene's own */
+    {
+        float grow = ease_out_cubic(clamp01((rt - REVEAL_LINE_T0) / REVEAL_LINE_T));
+        float la = 1.0f - ease_in_out(clamp01((rt - 1.8f) / 1.0f));
+        if (grow > 0.0f && la > 0.0f) {
+            float hw = W() * 0.5f * grow, th = 0.0035f * H(), gh = 0.030f * H();
+            uint32_t core = sf_col_alpha(lite, la), haze = sf_col_alpha(lite, 0.30f * la);
+            d_rect_hgrad(W() * 0.5f - hw, hy - gh * 0.5f, hw, gh, clear, haze);
+            d_rect_hgrad(W() * 0.5f, hy - gh * 0.5f, hw, gh, haze, clear);
+            d_rect_hgrad(W() * 0.5f - hw, hy - th * 0.5f, hw, th, clear, core);
+            d_rect_hgrad(W() * 0.5f, hy - th * 0.5f, hw, th, core, clear);
+            d_blob_ellipse(W() * 0.5f, hy, (0.06f + 0.22f * grow) * W() * PA(), 0.030f * H(), sf_col_alpha(lite, 0.40f * la));
+        }
+    }
+}
+
+/* name, kittens, status and progress over the Stage */
+static void draw_loading_stage(const App *a, float alpha, float rt)
+{
+    float t = (float)a->time, hy = H() * LY_HORIZON_Y;
+    float ea = alpha * ease_in_out(clamp01((rt - REVEAL_ITEMS_T0) / REVEAL_ITEMS_T));
+    float rise = 1.0f - ease_out_cubic(clamp01((rt - REVEAL_ITEMS_T0) / (REVEAL_ITEMS_T * 1.3f)));
+    if (ea <= 0.002f) return;
+    draw_wordmark(a, H() * (0.205f + 0.02f * rise), 0.105f * H(), ea);
+    /* the kittens stand on the horizon, mirrored in the floor */
+    {
+        float breath = 1.0f + 0.010f * sinf(t * 2.1f);
+        float kh = 0.29f * H() * breath, kw = d_xu(kh * (float)g_cats_w / (float)g_cats_h);
+        float kx = W() * 0.5f - kw * 0.5f, ky = hy - kh + 0.006f * H() + rise * 0.03f * H();
+        d_image_v(TEX_CATS, kx, hy + 0.004f * H(), kw, kh * 0.45f, 1.0f, 0.55f,
+                  sf_col_alpha(0xFFFFFFFFu, 0.22f * ea), sf_col_alpha(0xFFFFFFFFu, 0.0f));
+        d_image(TEX_CATS, kx, ky, kw, kh, sf_col_alpha(0xFFFFFFFFu, ea));
+    }
+    d_text(&g_font_main, W() * 0.5f, H() * 0.815f, 0.024f * H(), sf_col_alpha(TH_TEXT_DIM, ea), a->load_status, ALIGN_CENTER);
+    /* progress: a glowing line that grows out from the middle */
+    {
+        uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
+        float full = d_xu(0.50f * H()), hw = full * 0.5f * clamp01(a->load_shown), y = H() * 0.855f;
+        float th = 0.0045f * H(), gh = 0.022f * H();
+        uint32_t track = sf_col_alpha(0xFFFFFFFFu, 0.10f * ea), core = sf_col_alpha(sf_col_mix(glow(col), 0xFFFFFFFFu, 0.35f), ea),
+                 haze = sf_col_alpha(glow(col), 0.35f * ea);
+        d_rect_hgrad(W() * 0.5f - full * 0.5f, y - th * 0.5f, full * 0.5f, th, track & 0xFFFFFF00u, track);
+        d_rect_hgrad(W() * 0.5f, y - th * 0.5f, full * 0.5f, th, track, track & 0xFFFFFF00u);
+        if (hw > 0.0f) {
+            d_rect_hgrad(W() * 0.5f - hw, y - gh * 0.5f, hw, gh, clear, haze);
+            d_rect_hgrad(W() * 0.5f, y - gh * 0.5f, hw, gh, haze, clear);
+            d_rect_hgrad(W() * 0.5f - hw, y - th * 0.5f, hw, th, clear, core);
+            d_rect_hgrad(W() * 0.5f, y - th * 0.5f, hw, th, core, clear);
+        }
+    }
+}
+
+/* 1: the loading screen is the Stage reveal; 0: the classic one; -1: black (waiting for Stage) */
+static int loading_style(const App *a)
+{
+    int stage_ok = g_stage_tex >= 0 || g_src_base != NULL;
+    if (!a->settings_ready) return -1;
+    if (a->settings.background != BG_STAGE) return 0;
+    if (stage_ok) return 1;
+    return a->load_step <= LOAD_PREPARE ? -1 : 0;        /* Stage failed to load: the classic one */
+}
 
 static void draw_loading(const App *a, float alpha)
 {
@@ -1507,11 +1633,28 @@ void ui_draw(App *a)
     layout_use_case_images(a->settings.cases && !(a->perf_flags & PERF_NO_CASES));
     layout_set_floor(a->settings.background == BG_STAGE);   /* Stage: on its floor; others: centered */
     layout_ui(d_screen(), &m);
+    g_intro_shapes = g_intro_parts = 1.0f;
     if (a->perf_flags & PERF_NO_BG) d_rect(0, 0, W(), H(), 0x000000FFu);
-    else draw_background(a, 1.0f, animated);
+    else if (a->mode != MODE_LOADING) draw_background(a, 1.0f, animated);
 
     if (a->mode == MODE_LOADING) {
-        draw_loading(a, 1.0f);
+        int style = loading_style(a);
+        if (style == 1) {
+            float rt;
+            if (a->reveal_start <= -999.0f) a->reveal_start = a->rescan ? -100.0f : sf_maxf(a->load_t, 0.5f);
+            rt = a->load_t - a->reveal_start;
+            g_intro_shapes = ease_in_out(clamp01((rt - 1.6f) / 1.6f));
+            g_intro_parts = ease_in_out(clamp01((rt - 1.2f) / 1.6f));
+            draw_background_as(a, 1.0f, 1, BG_STAGE);
+            g_intro_shapes = g_intro_parts = 1.0f;
+            stage_reveal_overlay(rt);
+            draw_loading_stage(a, 1.0f, rt);
+        } else if (style == 0) {
+            draw_background(a, 1.0f, animated);
+            draw_loading(a, 1.0f);
+        } else {
+            d_rect(0, 0, W(), H(), 0x000000FFu);
+        }
     } else {
         intro = ease_out_cubic(a->intro);
         ia = ease_in_out(sf_clampf(a->intro * 1.4f - 0.25f, 0.0f, 1.0f));   /* UI fades in as the loading screen fades out */
@@ -1545,7 +1688,11 @@ void ui_draw(App *a)
         if (a->intro < 1.0f) {
             /* the loading screen (with its own background) cross-fades out on top */
             float la = 1.0f - ease_in_out(sf_clampf(a->intro * 1.25f, 0.0f, 1.0f));
-            if (la > 0.0f) {
+            if (la > 0.0f && a->reveal_start > -999.0f && a->settings.background == BG_STAGE &&
+                (g_stage_tex >= 0 || g_src_base)) {
+                /* Stage reveal: same scene underneath, only the name and kittens fade */
+                draw_loading_stage(a, la, 100.0f);
+            } else if (la > 0.0f) {
                 draw_background_as(a, la, 1, BG_ANIMATED);
                 draw_loading(a, la);
             }

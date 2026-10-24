@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.6.8"
+#define APP_VERSION     "0.6.9"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -24,7 +24,8 @@
 #define XFADE_TIME      0.18f
 #define LETTER_TIME     1.00f
 #define TOAST_TIME      2.20f
-#define MUSIC_CARD_TIME 4.50f  /* the "now playing" card (top left) stays this long */
+#define MUSIC_CARD_TIME 4.50f
+#define MUSIC_SWAP_TIME 0.45f  /* the name change on the card */  /* the "now playing" card (top left) stays this long */
 #define EXIT_FADE_TIME  0.30f
 #define PANEL_VISIBLE_ROWS 6
 #define SLEEP_TIME      300.0f  /* default idle time before the screen dims (Flow Settings > Sleep Mode) */
@@ -164,7 +165,13 @@ typedef struct {
     int music_scanned;      /* the music folder has been read */
     char music_name[128];   /* song shown on the now-playing card */
     float music_card_t;     /* time since the card appeared (>= music_card_len: hidden) */
-    float music_card_len;   /* how long it stays: longer while a long name scrolls (set by ui.c) */
+    float music_card_len;
+    /* song change while the card shows: the old name fades out as the new one comes in */
+    char music_prev_name[128];
+    float music_swap_t;     /* 0..1 (>= 1: no change going on) */
+    float music_prev_off, music_prev_w;   /* the old name's scroll offset and the card's width then */
+    float music_cur_off, music_cur_w;     /* written by ui.c each frame */
+    float reveal_start;     /* load_t when the Stage reveal started (-1000 = not used) */   /* how long it stays: longer while a long name scrolls (set by ui.c) */
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
     char toast[160];
     volatile int ntfs_busy;  /* 1 while webMAN re-indexes the NTFS drives (Rescan) */
