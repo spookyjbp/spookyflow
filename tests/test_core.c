@@ -1264,6 +1264,7 @@ int main(void)
     test_ps2_config();
     test_panel_back();
     test_perf_test();
+    test_stage_bake();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

@@ -1,3 +1,4 @@
+#include <string.h>
 /* null_render.c - render.h backend that only counts calls (unit tests). */
 #include "render.h"
 
@@ -16,3 +17,13 @@ static uint16_t g_null_cover[R_COVER_SLOTS][R_COVER_SLOT_BYTES / 2];
 int g_null_cover_defined[R_COVER_SLOTS];
 uint16_t *r_cover_pixels(int slot) { return (slot >= 0 && slot < R_COVER_SLOTS) ? g_null_cover[slot] : 0; }
 void r_cover_define(int slot, int w, int h) { if (slot >= 0 && slot < R_COVER_SLOTS && w > 0 && h > 0) g_null_cover_defined[slot]++; }
+int g_null_blend_off;
+int g_null_updates, g_null_update_tex, g_null_update_w, g_null_update_h;
+unsigned char g_null_update_px[4];
+int r_texture_update_rgba(int tex, int w, int h, const unsigned char *rgba)
+{
+    g_null_updates++; g_null_update_tex = tex; g_null_update_w = w; g_null_update_h = h;
+    memcpy(g_null_update_px, rgba, 4);
+    return 0;
+}
+void r_set_blend(int on) { if (!on) g_null_blend_off++; }

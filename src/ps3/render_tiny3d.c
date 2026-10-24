@@ -15,7 +15,7 @@
 #include "render.h"
 #include "ps3_platform.h"
 
-typedef struct { u32 offset; int w, h, valid; u32 fmt, bpp; } T3Tex;
+typedef struct { u32 offset; int w, h, valid; u32 fmt, bpp; u32 *ptr; } T3Tex;
 
 static T3Tex g_tex[TEX_COUNT_ALL];
 static u16 *g_cover_mem[R_COVER_SLOTS];   /* RSX memory, R_COVER_SLOT_BYTES each */
@@ -27,7 +27,7 @@ static int g_open;                /* SetPolygon issued for this batch */
 static int g_cur_tex = -1;
 
 /* performance test (Flow Settings > Performance Test): variants + counters */
-static unsigned g_perf;                 /* PERF_* flags (app.h) */
+static unsigned g_perf;                 /* PERF_* flags (render.h; ui.c acts on them) */
 static int g_bound_tex = -1;            /* texture last given to the RSX this frame */
 static int g_last_kind = -1;            /* 0 = color triangles, 1 = textured quads (Tiny3D shader) */
 R3Stats g_r3_stats;
@@ -90,8 +90,10 @@ void ps3_render_frame_begin(void)
     g_bound_tex = -1;
     g_last_kind = -1;
     memset(&g_r3_stats, 0, sizeof(g_r3_stats));
-    if (g_perf & PERF_NO_DEPTH) {
-        /* after tiny3d_Clear (which turns it on): painter's order needs no depth */
+    {
+        /* after tiny3d_Clear (which turns it on): painter's order needs no
+         * depth, and the test/write cost a third of the frame at 1080p
+         * (performance test, 0.6.4: 20 -> 30 fps) */
         void *ctx = tiny3d_Get_GCM_Context();
         rsxtiny_DepthTestEnable(ctx, 0);
         rsxtiny_DepthWriteEnable(ctx, 0);
@@ -122,6 +124,7 @@ int r_texture_upload_alpha(int tex, int w, int h, const unsigned char *alpha)
     dst = pool_take((u32)n * 4u);
     if (!dst) return -1;
     for (i = 0; i < n; i++) dst[i] = ((u32)alpha[i] << 24) | 0x00FFFFFFu;   /* A8R8G8B8, white */
+    g_tex[tex].ptr = dst;
     g_tex[tex].offset = tiny3d_TextureOffset(dst);
     g_tex[tex].w = w; g_tex[tex].h = h; g_tex[tex].valid = 1;
     g_tex[tex].fmt = TINY3D_TEX_FORMAT_A8R8G8B8; g_tex[tex].bpp = 4;
@@ -139,6 +142,7 @@ int r_texture_upload_rgba(int tex, int w, int h, const unsigned char *rgba)
         const unsigned char *p = rgba + (size_t)i * 4u;
         dst[i] = ((u32)p[3] << 24) | ((u32)p[0] << 16) | ((u32)p[1] << 8) | (u32)p[2];
     }
+    g_tex[tex].ptr = dst;
     g_tex[tex].offset = tiny3d_TextureOffset(dst);
     g_tex[tex].w = w; g_tex[tex].h = h; g_tex[tex].valid = 1;
     g_tex[tex].fmt = TINY3D_TEX_FORMAT_A8R8G8B8; g_tex[tex].bpp = 4;
@@ -156,7 +160,7 @@ static void open_if_needed(void)
         if (kind != g_last_kind) g_r3_stats.shader_switches++;
         g_last_kind = kind;
     }
-    if (g_cur_tex >= 0 && !((g_perf & PERF_TEX_CACHE) && g_cur_tex == g_bound_tex)) {
+    if (g_cur_tex >= 0 && g_cur_tex != g_bound_tex) {   /* a texture already bound isn't sent again */
         const T3Tex *t = &g_tex[g_cur_tex];
         g_r3_stats.tex_binds++;
         g_bound_tex = g_cur_tex;
@@ -218,4 +222,30 @@ void r_quads_end(void)
     g_open = 0;
     g_pending_type = -1;
     g_cur_tex = -1;
+}
+
+int r_texture_update_rgba(int tex, int w, int h, const unsigned char *rgba)
+{
+    T3Tex *t;
+    int i, n = w * h;
+    if (tex < 0 || tex >= TEX_COUNT_FIXED || w <= 0 || h <= 0) return -1;
+    t = &g_tex[tex];
+    if (!t->valid || !t->ptr || t->w != w || t->h != h || t->bpp != 4) return r_texture_upload_rgba(tex, w, h, rgba);
+    for (i = 0; i < n; i++) {           /* same size: overwrite (no pool space used) */
+        const unsigned char *p = rgba + (size_t)i * 4u;
+        t->ptr[i] = ((u32)p[3] << 24) | ((u32)p[0] << 16) | ((u32)p[1] << 8) | (u32)p[2];
+    }
+    return 0;
+}
+
+void r_set_blend(int on)
+{
+    if (on)
+        tiny3d_BlendFunc(1, TINY3D_BLEND_FUNC_SRC_RGB_SRC_ALPHA | TINY3D_BLEND_FUNC_SRC_ALPHA_SRC_ALPHA,
+                         TINY3D_BLEND_FUNC_DST_RGB_ONE_MINUS_SRC_ALPHA | TINY3D_BLEND_FUNC_DST_ALPHA_ZERO,
+                         TINY3D_BLEND_RGB_FUNC_ADD | TINY3D_BLEND_ALPHA_FUNC_ADD);
+    else
+        tiny3d_BlendFunc(0, TINY3D_BLEND_FUNC_SRC_RGB_SRC_ALPHA | TINY3D_BLEND_FUNC_SRC_ALPHA_SRC_ALPHA,
+                         TINY3D_BLEND_FUNC_DST_RGB_ONE_MINUS_SRC_ALPHA | TINY3D_BLEND_FUNC_DST_ALPHA_ZERO,
+                         TINY3D_BLEND_RGB_FUNC_ADD | TINY3D_BLEND_ALPHA_FUNC_ADD);
 }

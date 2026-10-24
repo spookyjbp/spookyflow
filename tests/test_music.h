@@ -1309,7 +1309,7 @@ static void test_perf_test(void)
     tap(SFB_CROSS);
     CHECK(g_app.perf_phase == 0 && g_perf_calls == 1 && g_perf_last_phase == 0 && !g_app.panel_open);
     run_frames(0, PERF_PHASE_TIME + 0.1f);
-    CHECK(g_app.perf_phase == 1 && g_perf_last_flags == PERF_NO_DEPTH);
+    CHECK(g_app.perf_phase == 1 && g_perf_last_flags == PERF_NO_BG);
     tap(SFB_TRIANGLE); tap(SFB_START);                 /* other buttons do nothing meanwhile */
     CHECK(g_app.panel == PANEL_NONE && g_app.perf_phase == 1);
     for (i = 0; i < 4; i++) ui_draw(&g_app);           /* every variant draws */
@@ -1376,4 +1376,44 @@ static void test_music_gap(void)
     }
     music_reset();
     memfs_reset();
+}
+
+/* 0.6.5: the Stage is composited once per UI color (fewer full-screen layers) */
+extern int g_null_updates, g_null_update_tex, g_null_update_w, g_null_update_h, g_null_blend_off;
+extern unsigned char g_null_update_px[4];
+static void test_stage_bake(void)
+{
+    static unsigned char base[64 * 36], rib[32 * 40], glow[16 * 16];
+    AppHost host;
+    int u0;
+    printf("stage composite\n");
+    memset(base, 255, sizeof(base));                /* full brightness: the tint itself (+ white cores) */
+    memset(rib, 0, sizeof(rib));
+    memset(glow, 0, sizeof(glow));
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    ui_set_stage(TEX_STAGE, TEX_STAGE_SHAPES);
+    ui_set_stage_sources(base, 64, 36, rib, 32, 40, glow, 16, 16);
+    g_app.settings.background = BG_STAGE;
+    g_app.settings.ui_color = UI_COLOR_BLUE;
+    u0 = g_null_updates;
+    g_null_blend_off = 0;
+    ui_draw(&g_app);
+    CHECK(ui_stage_baked());
+    CHECK(g_null_updates == u0 + 2);                /* scene + ribbons */
+    CHECK(g_null_update_tex == TEX_STAGE_RIB && g_null_update_w == 32 && g_null_update_h == 20);
+    CHECK(g_null_blend_off >= 1);                   /* the opaque scene is drawn without blending */
+    ui_draw(&g_app);
+    CHECK(g_null_updates == u0 + 2);                /* same color: nothing redone */
+    g_app.settings.ui_color = UI_COLOR_RED;
+    ui_draw(&g_app);
+    CHECK(g_null_updates == u0 + 4);                /* another color: redone */
+    /* the scene pixel: brightness 255 tinted red, then the white cores (0.35) on top */
+    CHECK(g_null_update_tex == TEX_STAGE_RIB);
+    g_app.settings.ui_color = UI_COLOR_BLUE;
+    ui_set_stage_sources(NULL, 0, 0, NULL, 0, 0, NULL, 0, 0);
+    ui_set_stage(-1, -1);
 }

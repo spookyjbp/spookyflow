@@ -453,7 +453,13 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.6.4:** a 2-second pause between songs; the Now Playing card now
+15. **0.6.5 — faster drawing:** from the performance test: the depth test
+    is off (2D needs none; 20 → 30 fps alone), textures already bound aren't
+    sent again, and Stage's scene, glow and ribbons are combined once per UI
+    color into two textures (5 full-screen layers → 1, drawn without
+    blending; 6 ribbon layers → 2). Changing the UI color with Stage on takes
+    a moment. The Performance Test now has 7 steps; please run it again.
+    **0.6.4:** a 2-second pause between songs; the Now Playing card now
     appears when the song is actually heard (it used to show up to 2 s early).
     **0.6.3 — Performance Test:** Flow Settings → **Performance Test** (✖)
     runs 10 steps of 5 s each (under a minute) while you leave the pad

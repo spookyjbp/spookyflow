@@ -662,16 +662,14 @@ static void ps2cfg_apply(App *a, const char *iso, const char *lib_id, int type)
  * frame times of each step (src/ps3/main.c) */
 
 static const struct { unsigned flags; const char *name; } k_perf[] = {
+    /* depth off and the texture-bind cache are permanent since 0.6.5 */
     { 0,                                                   "as is" },
-    { PERF_NO_DEPTH,                                       "depth test off" },
-    { PERF_TEX_CACHE,                                      "texture binds cached" },
-    { PERF_NO_DEPTH | PERF_TEX_CACHE,                      "depth off + texture cache" },
-    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_BG,         "  ...without the background" },
-    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_FLOW,       "  ...without the cover row" },
-    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_REFLECT,    "  ...without reflections" },
-    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_CASES,      "  ...without case images" },
-    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_UI,         "  ...without tabs/title/bar" },
-    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_BG | PERF_NO_FLOW | PERF_NO_UI, "  ...nothing drawn (floor)" },
+    { PERF_NO_BG,                                          "without the background" },
+    { PERF_NO_FLOW,                                        "without the cover row" },
+    { PERF_NO_REFLECT,                                     "without reflections" },
+    { PERF_NO_CASES,                                       "without case images" },
+    { PERF_NO_UI,                                          "without tabs/title/bar" },
+    { PERF_NO_BG | PERF_NO_FLOW | PERF_NO_UI,              "nothing drawn (floor)" },
 };
 int app_perf_phase_count(void) { return (int)(sizeof(k_perf) / sizeof(k_perf[0])); }
 unsigned app_perf_phase_flags(int phase) { return (phase >= 0 && phase < app_perf_phase_count()) ? k_perf[phase].flags : 0u; }

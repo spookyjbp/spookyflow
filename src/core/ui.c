@@ -8,6 +8,7 @@
 #include "title.h"
 #include "util.h"
 #include <math.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -406,17 +407,136 @@ static uint32_t stage_tint(void)
     return sf_rgba(r * 255 / m, g * 255 / m, b * 255 / m, 255);
 }
 
+/* ---- Stage, pre-composited (0.6.5) ------------------------------------
+ * The base scene, its white-hot cores and its glow were three full-screen
+ * blended layers, and each ribbon set three big ones; at 1080p that was
+ * more than the RSX can fill in a frame. They are now combined on the CPU
+ * into one opaque scene texture and one RGBA texture for both ribbon sets,
+ * redone when the UI color changes (the tint is baked in). */
+static const unsigned char *g_src_base, *g_src_rib, *g_src_glow;
+static int g_src_bw, g_src_bh, g_src_rw, g_src_rh, g_src_gw, g_src_gh;
+static int g_stage_baked;          /* 1: TEX_STAGE / TEX_STAGE_RIB hold the composites */
+static uint32_t g_baked_tint;
+static unsigned char *g_bake_buf;
+static size_t g_bake_cap;
+
+void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsigned char *rib, int rw, int rh,
+                          const unsigned char *glow, int gw, int gh)
+{
+    g_src_base = base; g_src_bw = bw; g_src_bh = bh;
+    g_src_rib = rib; g_src_rw = rw; g_src_rh = rh;
+    g_src_glow = glow; g_src_gw = gw; g_src_gh = gh;
+    g_stage_baked = 0;
+}
+
+int ui_stage_baked(void) { return g_stage_baked; }
+
+static float glow_at(float gx, float gy)            /* bilinear, in glow pixels */
+{
+    int x0, y0, x1, y1;
+    float fx, fy, a, b;
+    if (gx < 0.0f) gx = 0.0f;
+    if (gy < 0.0f) gy = 0.0f;
+    if (gx > (float)(g_src_gw - 1)) gx = (float)(g_src_gw - 1);
+    if (gy > (float)(g_src_gh - 1)) gy = (float)(g_src_gh - 1);
+    x0 = (int)gx; y0 = (int)gy; x1 = x0 + 1 < g_src_gw ? x0 + 1 : x0; y1 = y0 + 1 < g_src_gh ? y0 + 1 : y0;
+    fx = gx - (float)x0; fy = gy - (float)y0;
+    a = sf_lerp(g_src_glow[y0 * g_src_gw + x0], g_src_glow[y0 * g_src_gw + x1], fx);
+    b = sf_lerp(g_src_glow[y1 * g_src_gw + x0], g_src_glow[y1 * g_src_gw + x1], fx);
+    return sf_lerp(a, b, fy) * (1.0f / 255.0f);
+}
+
+static unsigned char u8c(float v) { v = v * 255.0f + 0.5f; return (unsigned char)(v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v)); }
+
+static void stage_bake(uint32_t tint)
+{
+    float tr = (float)(tint >> 24) / 255.0f, tg = (float)((tint >> 16) & 255) / 255.0f, tb = (float)((tint >> 8) & 255) / 255.0f;
+    float lr = sf_lerp(tr, 1.0f, 0.35f), lg = sf_lerp(tg, 1.0f, 0.35f), lb = sf_lerp(tb, 1.0f, 0.35f);
+    size_t need_b = (size_t)g_src_bw * g_src_bh * 4u, need_r = (size_t)g_src_rw * (g_src_rh / 2) * 4u;
+    int x, y, ok = 1;
+    if (!g_src_base || !g_src_rib || !g_src_glow) return;
+    if (g_bake_cap < (need_b > need_r ? need_b : need_r)) {
+        free(g_bake_buf);
+        g_bake_cap = need_b > need_r ? need_b : need_r;
+        g_bake_buf = (unsigned char *)malloc(g_bake_cap);
+        if (!g_bake_buf) g_bake_cap = 0;
+    }
+    if (!g_bake_buf) {             /* no memory: the layered drawing, from the brightness maps */
+        if (r_texture_upload_alpha(TEX_STAGE, g_src_bw, g_src_bh, g_src_base) == 0) g_stage_tex = TEX_STAGE;
+        g_stage_baked = 0;
+        g_src_base = NULL;
+        return;
+    }
+    /* scene: black -> base (tint, alpha = brightness) -> cores (white, 0.35) -> glow (lite, 0.55) */
+    {
+        float sgx = (float)g_src_gw / (float)g_src_bw, sgy = (float)g_src_gh * STAGE_GLOW_SPLIT / (float)g_src_bh;
+        for (y = 0; y < g_src_bh; y++) {
+            const unsigned char *row = g_src_base + (size_t)y * g_src_bw;
+            unsigned char *o = g_bake_buf + (size_t)y * g_src_bw * 4u;
+            for (x = 0; x < g_src_bw; x++, o += 4) {
+                float v = (float)row[x] / 255.0f, r, g, b, a, hx = (float)row[x] - 150.0f, hi = 0.0f;
+                if (hx > 0.0f) { hi = hx * hx / (105.0f * 105.0f); if (hi > 1.0f) hi = 1.0f; }   /* = stage_highlight */
+                r = tr * v; g = tg * v; b = tb * v;
+                a = 0.35f * hi;          r += (1.0f - r) * a; g += (1.0f - g) * a; b += (1.0f - b) * a;
+                a = 0.55f * glow_at(((float)x + 0.5f) * sgx - 0.5f, ((float)y + 0.5f) * sgy - 0.5f);
+                r += (lr - r) * a; g += (lg - g) * a; b += (lb - b) * a;
+                o[0] = u8c(r); o[1] = u8c(g); o[2] = u8c(b); o[3] = 255;
+            }
+        }
+        if (r_texture_update_rgba(TEX_STAGE, g_src_bw, g_src_bh, g_bake_buf) != 0) ok = 0;
+    }
+    /* ribbons, both sets side by side: glow (lite, 0.55) under the body (tint)
+     * under the white-hot core (white, 0.85), as one "over" layer */
+    if (ok) {
+        int rw = g_src_rw, rh = g_src_rh / 2, half = rw / 2;
+        float g0 = (float)g_src_gh * STAGE_GLOW_SPLIT, gspan = (float)g_src_gh - g0;
+        for (y = 0; y < rh; y++) {
+            const unsigned char *body = g_src_rib + (size_t)y * rw, *core = g_src_rib + (size_t)(y + rh) * rw;
+            unsigned char *o = g_bake_buf + (size_t)y * rw * 4u;
+            float gy = g0 + ((float)y + 0.5f) / (float)rh * gspan - 0.5f;
+            for (x = 0; x < rw; x++, o += 4) {
+                int s = x >= half;
+                float u = ((float)(x - s * half) + 0.5f) / (float)half;
+                float ag = 0.55f * glow_at(((float)s * 0.5f + u * 0.5f) * (float)g_src_gw - 0.5f, gy);
+                float ab = (float)body[x] / 255.0f, ac = 0.85f * (float)core[x] / 255.0f;
+                float A = 1.0f - (1.0f - ag) * (1.0f - ab) * (1.0f - ac);
+                float pr = lr * ag * (1.0f - ab) * (1.0f - ac) + tr * ab * (1.0f - ac) + ac;
+                float pg = lg * ag * (1.0f - ab) * (1.0f - ac) + tg * ab * (1.0f - ac) + ac;
+                float pb = lb * ag * (1.0f - ab) * (1.0f - ac) + tb * ab * (1.0f - ac) + ac;
+                if (A > 0.0015f) { o[0] = u8c(pr / A); o[1] = u8c(pg / A); o[2] = u8c(pb / A); }
+                else { o[0] = u8c(lr); o[1] = u8c(lg); o[2] = u8c(lb); }
+                o[3] = u8c(A);
+            }
+        }
+        if (r_texture_update_rgba(TEX_STAGE_RIB, rw, rh, g_bake_buf) != 0) ok = 0;
+    }
+    if (ok) {
+        g_stage_tex = TEX_STAGE;
+        g_stage_rib = TEX_STAGE_RIB;
+        g_stage_baked = 1;
+        g_baked_tint = tint;
+    }
+}
+
 static void bg_stage(float t, float alpha)
 {
     uint32_t tint = stage_tint(), lite = sf_col_mix(tint, 0xFFFFFFFFu, 0.35f);
     float hy = H() * LY_HORIZON_Y;
     int i;
+    if (g_src_base && (!g_stage_baked || g_baked_tint != tint)) stage_bake(tint);
+    if (g_stage_baked) {
+        /* one opaque layer: no blending, so the RSX doesn't read the screen back */
+        if (alpha >= 0.999f) r_set_blend(0);
+        d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, alpha));
+        if (alpha >= 0.999f) r_set_blend(1);
+    } else {
     /* base scene: brightness tinted with the UI color, white-hot cores on top */
     d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, alpha));
     d_image(g_stage_tex, 0, 0, W(), H(), sf_col_alpha(tint, alpha));
     if (g_stage_hi >= 0) d_image(g_stage_hi, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, 0.35f * alpha));
+    }
     /* glow: soft halos around the lights, breathing slowly */
-    if (g_stage_glow >= 0)
+    if (g_stage_glow >= 0 && !g_stage_baked)
         d_image_rot(g_stage_glow, W() * 0.5f, H() * 0.5f, W() * PA(), H(), 0.0f, 0.0f, 1.0f, 0.0f, STAGE_GLOW_SPLIT,
                     sf_col_alpha(lite, alpha * (0.55f + 0.15f * sinf(t * 0.45f))));
     /* light ribbons: the left and right wave sets sway, tilt and breathe on
@@ -435,6 +555,10 @@ static void bg_stage(float t, float alpha)
             float ang = sgn * 0.015f * sinf(t * 0.07f + ph);
             float al = alpha * (0.80f + 0.20f * sinf(t * 0.21f + ph));
             float u0 = (float)i * 0.5f;
+            if (g_stage_baked) {      /* glow, body and core in one texture */
+                d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al));
+                continue;
+            }
             if (g_stage_glow >= 0)    /* the ribbons' own glow moves with them */
                 d_image_rot(g_stage_glow, cx, cy, w, h, ang, u0, u0 + 0.5f, STAGE_GLOW_SPLIT, 1.0f, sf_col_alpha(lite, al * 0.55f));
             d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 0.5f, sf_col_alpha(tint, al));
@@ -504,8 +628,9 @@ static void draw_background(const App *a, float alpha, int animated)
 static void draw_background_as(const App *a, float alpha, int animated, int bg)
 {
     float t = animated ? (float)a->time : 0.0f;
+    if (bg == BG_STAGE && (g_stage_tex >= 0 || g_src_base) && alpha >= 0.999f) { bg_stage(t, alpha); return; }   /* covers the screen */
     d_rect_grad(0, 0, W(), H(), sf_col_alpha(TH_BG_TOP, alpha), sf_col_alpha(TH_BG_BOTTOM, alpha));
-    if (bg == BG_STAGE && g_stage_tex >= 0) { bg_stage(t, alpha); return; }
+    if (bg == BG_STAGE && (g_stage_tex >= 0 || g_src_base)) { bg_stage(t, alpha); return; }
     switch (bg) {
     case BG_AURORA:    bg_aurora(t, alpha); break;
     case BG_FIREFLIES: bg_fireflies(t, alpha); break;
@@ -1325,6 +1450,10 @@ void ui_draw(App *a)
     int animated = 1;
     ui_set_color(a->settings.ui_color);
     set_glow(a->time);
+    /* composite the Stage during loading, so the cover flow doesn't start with a hitch */
+    if (a->mode == MODE_LOADING && a->settings_ready && a->settings.background == BG_STAGE && g_src_base &&
+        (!g_stage_baked || g_baked_tint != stage_tint()))
+        stage_bake(stage_tint());
     layout_use_case_images(a->settings.cases && !(a->perf_flags & PERF_NO_CASES));
     layout_set_floor(a->settings.background == BG_STAGE);   /* Stage: on its floor; others: centered */
     layout_ui(d_screen(), &m);

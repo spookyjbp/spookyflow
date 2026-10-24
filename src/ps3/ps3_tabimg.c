@@ -221,8 +221,8 @@ static int upload_png_buffer(int tex, const unsigned char *buf, unsigned size, i
     return rc;
 }
 
-/* decode a brightness-only JPEG (R = G = B) into an alpha texture */
-static int upload_gray_jpg(int tex, const unsigned char *buf, unsigned int size)
+/* decode a brightness-only JPEG (R = G = B): one byte per pixel (malloc'd) */
+static unsigned char *decode_gray_jpg(const unsigned char *buf, unsigned int size, int *ow, int *oh)
 {
     jpgData j;
     int rc;
@@ -232,18 +232,20 @@ static int upload_gray_jpg(int tex, const unsigned char *buf, unsigned int size)
     ps3_decode_lock();
     rc = jpgLoadFromBuffer(buf, size, &j);
     ps3_decode_unlock();
-    if (rc != 0 || !j.bmp_out) return -1;
+    if (rc != 0 || !j.bmp_out) return NULL;
     a8 = (unsigned char *)malloc((size_t)j.width * j.height);
-    if (!a8) { free(j.bmp_out); return -1; }
+    if (!a8) { free(j.bmp_out); return NULL; }
     for (y = 0; y < j.height; y++) {
         const unsigned char *row = (const unsigned char *)j.bmp_out + (size_t)y * j.pitch;
         for (x = 0; x < j.width; x++) a8[(size_t)y * j.width + x] = row[x * 4u + 1u];
     }
+    *ow = (int)j.width; *oh = (int)j.height;
     free(j.bmp_out);
-    rc = r_texture_upload_alpha(tex, (int)j.width, (int)j.height, a8);
-    free(a8);
-    return rc;
+    return a8;
 }
+
+static unsigned char *g_src_base;     /* the Stage scene's brightness, kept for ui.c */
+static int g_src_bw, g_src_bh;
 
 static void load_stage(void)
 {
@@ -258,23 +260,16 @@ static void load_stage(void)
     ps3_decode_unlock();
     if (rc != 0 || !jpg.bmp_out) { log_printf("stage: background could not be decoded (%d)", rc); return; }
     /* the JPEG is brightness only: R = G = B; keep one byte per pixel */
-    rgba = (unsigned char *)malloc((size_t)jpg.width * jpg.height * 2u);
+    rgba = (unsigned char *)malloc((size_t)jpg.width * jpg.height);
     if (!rgba) { free(jpg.bmp_out); return; }
     for (y = 0; y < jpg.height; y++) {
         const unsigned char *row = (const unsigned char *)jpg.bmp_out + (size_t)y * jpg.pitch;
         for (x = 0; x < jpg.width; x++) rgba[(size_t)y * jpg.width + x] = row[x * 4u + 1u];
     }
     free(jpg.bmp_out);
-    {
-        int n = (int)(jpg.width * jpg.height);
-        unsigned char *hi = rgba + n;
-        stage_highlight(rgba, n, hi);
-        rc = r_texture_upload_alpha(TEX_STAGE, (int)jpg.width, (int)jpg.height, rgba);
-        if (rc == 0 && r_texture_upload_alpha(TEX_STAGE_HI, (int)jpg.width, (int)jpg.height, hi) == 0)
-            ui_set_stage_highlight(TEX_STAGE_HI);
-    }
-    free(rgba);
-    if (rc != 0) { log_printf("stage: no texture memory"); return; }
+    /* 0.6.5: the brightness maps stay in memory; ui.c composites them with
+     * the UI color into two textures (ui_set_stage_sources) */
+    g_src_base = rgba; g_src_bw = (int)jpg.width; g_src_bh = (int)jpg.height;
     /* ribbons / flare / stars atlas: a grayscale PNG -> alpha texture */
     {
         pngData fx;
@@ -298,11 +293,20 @@ static void load_stage(void)
             log_printf("stage: effects could not be decoded (%d)", frc);
         }
     }
-    /* light ribbons and glow halos: grayscale JPEGs -> alpha textures */
-    if (upload_gray_jpg(TEX_STAGE_RIB, g_stage_rib_jpg, g_stage_rib_jpg_size) == 0) ui_set_stage_ribbons(TEX_STAGE_RIB);
-    else log_printf("stage: ribbons could not be decoded");
-    if (upload_gray_jpg(TEX_STAGE_GLOW, g_stage_glow_jpg, g_stage_glow_jpg_size) == 0) ui_set_stage_glow(TEX_STAGE_GLOW);
-    else log_printf("stage: glow could not be decoded");
+    /* light ribbons and glow halos: grayscale JPEGs, kept for the composite */
+    {
+        unsigned char *rib, *glow;
+        int rw = 0, rh = 0, gw = 0, gh = 0;
+        rib = decode_gray_jpg(g_stage_rib_jpg, g_stage_rib_jpg_size, &rw, &rh);
+        glow = decode_gray_jpg(g_stage_glow_jpg, g_stage_glow_jpg_size, &gw, &gh);
+        if (!rib || !glow) {
+            log_printf("stage: ribbons / glow could not be decoded");
+            free(rib); free(glow);
+            if (r_texture_upload_alpha(TEX_STAGE, g_src_bw, g_src_bh, g_src_base) != 0) { log_printf("stage: no texture memory"); return; }
+        } else {
+            ui_set_stage_sources(g_src_base, g_src_bw, g_src_bh, rib, rw, rh, glow, gw, gh);
+        }
+    }
     if (upload_png_buffer(TEX_STAGE_SHAPES, g_stage_shapes_png, g_stage_shapes_png_size, &w, &h) != 0) {
         log_printf("stage: shapes could not be decoded");
         ui_set_stage(TEX_STAGE, -1);

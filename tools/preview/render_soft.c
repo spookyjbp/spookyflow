@@ -226,3 +226,6 @@ void r_cover_define(int slot, int w, int h)
         t->rgba[i * 4 + 3] = (p & 0x8000) ? 255 : 0;
     }
 }
+
+int r_texture_update_rgba(int tex, int w, int h, const unsigned char *rgba) { return r_texture_upload_rgba(tex, w, h, rgba); }
+void r_set_blend(int on) { (void)on; }   /* opaque layers look the same either way */

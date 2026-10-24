@@ -155,6 +155,21 @@ static int load_raw(const char *path, int tex, int *ow, int *oh)
     return ok;
 }
 
+/* a brightness dump kept in memory (the Stage sources) */
+static unsigned char *read_raw_gray(const char *path, int *ow, int *oh)
+{
+    FILE *f = path ? fopen(path, "rb") : NULL;
+    unsigned char *px = NULL;
+    int w = 0, h = 0;
+    if (f && fscanf(f, "%d %d", &w, &h) == 2 && fgetc(f) == '\n' && w > 0 && h > 0) {
+        px = (unsigned char *)malloc((size_t)w * h);
+        if (px && fread(px, 1, (size_t)w * h, f) != (size_t)w * h) { free(px); px = NULL; }
+    }
+    if (f) fclose(f);
+    *ow = w; *oh = h;
+    return px;
+}
+
 /* raw dump of an alpha (brightness) image: "w h\n" + w*h bytes */
 static int load_raw_alpha(const char *path, int tex, int hi_tex)
 {
@@ -504,6 +519,15 @@ int main(int argc, char **argv)
                         double t0 = g_app.time;
                         ui_set_stage(TEX_STAGE, TEX_STAGE_SHAPES);
                         g_app.settings.background = BG_STAGE;
+                        render("34_stage_ps2_layered", 1280, 720);   /* the old layered drawing, to compare */
+                        {   /* 0.6.5: the composited Stage (what the PS3 draws) */
+                            static unsigned char *sb, *sr, *sg;
+                            int bw = 0, bh = 0, rw = 0, rh = 0, gw = 0, gh = 0;
+                            sb = read_raw_gray(a1, &bw, &bh);
+                            snprintf(a3, sizeof(a3), "%s/rib.rgba", sdir); sr = read_raw_gray(a3, &rw, &rh);
+                            snprintf(a3, sizeof(a3), "%s/glow.rgba", sdir); sg = read_raw_gray(a3, &gw, &gh);
+                            if (sb && sr && sg) ui_set_stage_sources(sb, bw, bh, sr, rw, rh, sg, gw, gh);
+                        }
                         render("34_stage_ps2", 1280, 720);
                         render("34_stage_ps2_1080p", 1920, 1080);
                         {   /* the background alone (no cases), to check its edges */

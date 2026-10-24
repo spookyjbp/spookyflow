@@ -29,6 +29,13 @@ void ui_set_stage_highlight(int tex);
 void ui_set_stage_fx(int tex);
 void ui_set_stage_ribbons(int tex);
 void ui_set_stage_glow(int tex);
+/* 0.6.5: give the Stage brightness maps instead (kept by the caller): ui.c
+ * composites them into TEX_STAGE (opaque scene) and TEX_STAGE_RIB (both
+ * ribbon sets, RGBA, 1024 x rib_h/2) with the UI color, and redoes it when
+ * the color changes. */
+void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsigned char *rib, int rw, int rh,
+                          const unsigned char *glow, int gw, int gh);
+int  ui_stage_baked(void);
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */
 void ui_set_color(int idx);

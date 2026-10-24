@@ -51,6 +51,12 @@ void r_quads_end(void);
 int r_texture_upload_alpha(int tex, int w, int h, const unsigned char *alpha);
 /* Upload an RGBA (byte order R,G,B,A) image into texture slot `tex`. */
 int r_texture_upload_rgba(int tex, int w, int h, const unsigned char *rgba);
+/* Replace a texture's pixels (in place when the size is the same; used when
+ * the Stage composite is redone for another UI color). */
+int r_texture_update_rgba(int tex, int w, int h, const unsigned char *rgba);
+/* Blending on (default) / off for the next batches: an opaque full-screen
+ * layer drawn without blending costs the RSX much less. */
+void r_set_blend(int on);
 
 /* Pixel memory of cover slot `slot` (R_COVER_SLOT_BYTES), NULL if the backend
  * has none. Width*2 must be a multiple of 64 bytes (RSX pitch). */
