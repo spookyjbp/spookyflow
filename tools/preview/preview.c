@@ -264,9 +264,9 @@ int main(int argc, char **argv)
         press(SFB_LEFT); step(0, 0.3f);
         for (k = 0; k < 30; k++) ui_draw(&g_app);
         press(SFB_DOWN); step(0, 0.2f);
-        press(SFB_CROSS);                                   /* Show Game Info: the switch slides */
+        press(SFB_LEFT);                                    /* Show Game Info: the switch slides */
         for (k = 0; k < 6; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
-        press(SFB_CROSS); step(0, 0.3f);
+        press(SFB_RIGHT); step(0, 0.3f);
         press(SFB_CIRCLE);                                  /* back to the groups */
         for (k = 0; k < 12; k++) { snprintf(nm, sizeof(nm), "anim_panel_%03d", fr++); render(nm, 1280, 720); step(0, 0.05f); }
         press(SFB_CIRCLE);
@@ -424,7 +424,13 @@ int main(int argc, char **argv)
     press(SFB_DOWN); press(SFB_DOWN); step(0, 0.3f);
     render("11c_flow_settings_games", 1280, 720);
     press(SFB_CIRCLE); step(0, 0.2f);
-    press(SFB_UP); step(0, 0.1f);
+    press(SFB_DOWN); press(SFB_DOWN); step(0, 0.3f);
+    render("11d_flow_settings_about_row", 1280, 720);
+    press(SFB_CROSS); step(0, 0.5f);                 /* 0.8.2: About spookyflow */
+    render("11e_about", 1280, 720);
+    render("11e_about_4x3", 960, 720);
+    press(SFB_CIRCLE); step(0, 0.4f);
+    press(SFB_UP); press(SFB_UP); press(SFB_UP); step(0, 0.1f);
     press(SFB_CROSS); step(0, 0.7f);
     press(SFB_CIRCLE); step(0, 0.2f);
     press(SFB_CIRCLE); step(0, 0.4f);

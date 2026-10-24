@@ -1295,6 +1295,13 @@ void ui_bar_layout(int panel_mode, BarLayout *L)
         group_add_badge(&L->g[5], ICON_START, L->icon);    L->g[5].label = "Flow Settings";
         group_add_badge(&L->g[6], ICON_CIRCLE, L->icon);   L->g[6].label = "Exit (Hold)";
         L->n = 7;
+    } else if (panel_mode == 1) {        /* 0.8.2: a value row: <- / -> change it */
+        group_add_badge(&L->g[0], ICON_DPAD_LR, L->icon);  L->g[0].label = "Change";
+        group_add_badge(&L->g[1], ICON_CIRCLE, L->icon);   L->g[1].label = "Back";
+        L->n = 2;
+    } else if (panel_mode == 5) {        /* the About card */
+        group_add_badge(&L->g[0], ICON_CIRCLE, L->icon);   L->g[0].label = "Back";
+        L->n = 1;
     } else if (panel_mode == 3) {
         group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = "Launch";
         group_add_badge(&L->g[1], ICON_TRIANGLE, L->icon); L->g[1].label = "Game Settings";
@@ -1351,11 +1358,21 @@ static void draw_bar_groups(const App *a, const BarLayout *L, float alpha, int s
 
 static void draw_bar(const App *a, float alpha)
 {
-    BarLayout main_l, panel_l, disp_l;
-    float pe = ease_out_cubic(a->panel_anim), de = ease_in_out(a->display_t);
+    BarLayout main_l, panel_l, sel_l, disp_l, about_l;
+    float pe = ease_out_cubic(a->panel_anim), de = ease_in_out(a->display_t), ab = ease_in_out(a->about_t);
+    static float g_bar_sel = 0.0f;      /* 0: "Change" (a value row), 1: "Select" (a group or an action) */
+    static double g_bar_time;
+    int want_sel = a->panel != PANEL_NONE && a->row >= 0 && a->row < a->nrows && menu_is_action(a->rows[a->row]);
+    float dt = (float)(a->time - g_bar_time);
+    int jump = dt < 0.0f || dt > 0.2f;         /* not drawn for a while: no animation to catch up on */
+    g_bar_time = a->time;
+    if (a->panel_anim < 0.05f || jump) g_bar_sel = (float)want_sel;
+    else anim_approach(&g_bar_sel, (float)want_sel, 1.0f / 0.15f, dt);
     ui_bar_layout(0, &main_l);
-    ui_bar_layout(a->panel == PANEL_DISC ? 2 : (a->panel == PANEL_FLOW && a->flow_group < 0) ? 4 : 1, &panel_l);
+    ui_bar_layout(1, &panel_l);
+    ui_bar_layout(a->panel == PANEL_DISC ? 2 : 4, &sel_l);
     ui_bar_layout(3, &disp_l);
+    ui_bar_layout(5, &about_l);
     d_rrect(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, sf_col_alpha(TH_BAR, alpha));
     d_rrect_stroke(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, 0.0028f * H(),
                    sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), alpha));
@@ -1365,7 +1382,13 @@ static void draw_bar(const App *a, float alpha)
         if (pe < 1.0f && mo > 0.0f) draw_bar_groups(a, &main_l, alpha * (1.0f - pe) * mo, 1);
         if (pe < 1.0f && di > 0.0f) draw_bar_groups(a, &disp_l, alpha * (1.0f - pe) * di, 0);
     }
-    if (pe > 0.0f) draw_bar_groups(a, &panel_l, alpha * pe, 0);
+    if (pe > 0.0f) {
+        /* the panel's controls follow the selected row (crossfade); the About card has only Back */
+        float pa = alpha * pe * (1.0f - ab);
+        if (g_bar_sel < 1.0f && pa > 0.0f) draw_bar_groups(a, &panel_l, pa * (1.0f - g_bar_sel), 0);
+        if (g_bar_sel > 0.0f && pa > 0.0f) draw_bar_groups(a, &sel_l, pa * g_bar_sel, 0);
+        if (ab > 0.0f) draw_bar_groups(a, &about_l, alpha * pe * ab, 0);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1585,7 +1608,8 @@ static float row_value_w(const App *a, RowKind k, const char *val, float em, int
         return w;
     }
     if (!val[0]) return 0.0f;
-    return d_text_width(&g_font_main, em, val) + (sel && !menu_is_action(k) ? arrows : 0.0f);
+    (void)sel;      /* the arrows' room is kept when not selected too: nothing moves when the highlight comes */
+    return d_text_width(&g_font_main, em, val) + (!menu_is_action(k) ? arrows : 0.0f);
 }
 
 static void draw_panel(App *a)
@@ -1610,9 +1634,8 @@ static void draw_panel(App *a)
     panel_geo(a, &g);
     /* per-row animations: snap on a new page */
     dt = (float)(a->time - g_row_anim_time);
-    if (dt < 0.0f || dt > 0.2f) dt = 0.0f;
     g_row_anim_time = a->time;
-    snap = page_key != g_row_anim_page || a->page_t < 0.02f;
+    snap = page_key != g_row_anim_page || a->page_t < 0.02f || dt < 0.0f || dt > 0.2f;
     g_row_anim_page = page_key;
 
     if (g.drawer) {
@@ -1633,7 +1656,7 @@ static void draw_panel(App *a)
         float rt = clamp01((a->page_t - 0.02f) / 0.24f), re = ease_out_cubic(rt);
         float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.05f * H()), al = g.alpha * re;
         float tem = g.drawer ? 0.040f * H() : 0.045f * H();
-        d_text_fit(&g_font_main, g.x + ox, g.title_y, tem, sf_col_alpha(TH_TEXT, al), ptitle, ALIGN_LEFT, g.w);
+        d_text_fit(&g_font_main, g.x + ox + g.w * 0.5f, g.title_y, tem, sf_col_alpha(TH_TEXT, al), ptitle, ALIGN_CENTER, g.w);   /* 0.8.2: centered */
         {   /* 0.8.1: a full glowing line under the title, bright in the middle, fading at both ends
              * (like the line under the selected case) */
             uint32_t col = glow(hot), clear = col & 0xFFFFFF00u;
@@ -1662,6 +1685,9 @@ static void draw_panel(App *a)
                          sf_col_alpha(hot, 0.30f * al * (0.75f + 0.25f * g_glow)));
             d_rrect(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f,
                     sf_col_alpha(accent_white() ? 0x5A5E6CFFu : sf_col_mix(accent() | 0xFFu, 0x101420FFu, 0.42f), al));
+            /* 0.8.2: the glowing outline the selected console tab has */
+            d_rrect_stroke(g.x + ox - grow, hy - 0.004f * H(), g.w + 2.0f * grow, hh + 0.008f * H(), g.rh * 0.5f, 0.0040f * H(),
+                           sf_col_alpha(glow(accent_or(TH_TAB_ACTIVE, 1.0f)), al));
         }
     }
     for (i = 0; i < a->nrows; i++) {        /* 0.8.1: every row's animation, drawn or not */
@@ -1673,7 +1699,8 @@ static void draw_panel(App *a)
         float ry = g.list_y + panel_row_y(a, &g, (float)i) - scroll_y, rh = panel_row_h(a, &g, i);
         float rt = clamp01((a->page_t - 0.04f - (float)(i + 1) * 0.035f) / 0.24f), re = ease_out_cubic(rt);
         float ox = (1.0f - re) * (float)a->page_dir * d_xu(0.06f * H());
-        float fa = g.alpha * re, cy = ry + g.rh * 0.5f, xl, xr;
+        float fa = g.alpha * re, cy = ry + g.rh * 0.5f, xl, xr, xl0, xr0;
+        float slot = d_text_width(&g_font_main, g.em, "\xE2\x80\xBA") + d_xu(g.em * 0.45f);   /* one of the ‹ › */
         int sel = i == a->row;
         uint32_t tc;
         char val[64];
@@ -1691,22 +1718,34 @@ static void draw_panel(App *a)
             lib_disc_name(a->lib, dd, i, lab, sizeof(lab));
             val[0] = '\0';
             if (dd && dd->size) sf_format_size(dd->size, val, sizeof(val));
-            d_text_fit(&g_font_main, xl, cy, g.em, sf_col_alpha(tc, fa), lab, ALIGN_LEFT, (xr - xl) * (val[0] ? 0.68f : 1.0f));
-            if (val[0]) d_text(&g_font_main, xr, cy, g.em * 0.9f, sf_col_alpha(TH_TEXT_DIM, fa), val, ALIGN_RIGHT);
+            {   /* 0.8.2: name and size centered together */
+                float gap = d_xu(g.em * 1.4f), vw = val[0] ? d_text_width(&g_font_main, g.em * 0.9f, val) : 0.0f;
+                float lw = sf_minf(d_text_width(&g_font_main, g.em, lab), xr - xl - vw - (val[0] ? gap : 0.0f));
+                float x0 = (xl + xr) * 0.5f - (lw + (val[0] ? gap + vw : 0.0f)) * 0.5f;
+                d_text_fit(&g_font_main, x0, cy, g.em, sf_col_alpha(tc, fa), lab, ALIGN_LEFT, lw);
+                if (val[0]) d_text(&g_font_main, x0 + lw + gap + vw, cy, g.em * 0.9f, sf_col_alpha(TH_TEXT_DIM, fa), val, ALIGN_RIGHT);
+            }
             continue;
         }
         app_row_value(a, k, val, sizeof(val));
-        /* 0.8.1: the name gets all the room its value leaves */
-        d_text_fit(&g_font_main, xl, cy, g.em, sf_col_alpha(tc, fa), menu_label(k), ALIGN_LEFT,
-                   sf_maxf(xr - xl - row_value_w(a, k, val, g.em, sel) - d_xu(g.em * 0.9f), (xr - xl) * 0.30f));
+        xl0 = xl; xr0 = xr;
+        {   /* 0.8.2: the name and its value centered together in the row (the
+             * name gets all the room the value leaves); the value is drawn
+             * ending at xr */
+            float vw = row_value_w(a, k, val, g.em, sel), gap = vw > 0.0f ? d_xu(g.em * (menu_is_group(k) ? 0.7f : 1.4f)) : 0.0f;
+            float lw = sf_minf(d_text_width(&g_font_main, g.em, menu_label(k)), sf_maxf(xr - xl - vw - gap, (xr - xl) * 0.30f));
+            float x0 = (xl + xr) * 0.5f - (lw + gap + vw) * 0.5f;
+            d_text_fit(&g_font_main, x0, cy, g.em, sf_col_alpha(tc, fa), menu_label(k), ALIGN_LEFT, lw);
+            xr = x0 + lw + gap + vw;
+        }
         if (menu_is_group(k)) {
             d_text(&g_font_main, xr, cy, g.em * 1.25f, sf_col_alpha(tc, fa), "\xE2\x80\xBA", ALIGN_RIGHT);
         } else if (k == ROW_F_BACKGROUND) {
             int ch[BG_COUNT], n = bg_choices(a, ch), j, cur = 0;
             for (j = 0; j < n; j++) if (ch[j] == a->settings.background) cur = j;
             (void)cur;
-            draw_value(xr, cy, g.em, val, sel, sel, fa);
-            draw_bg_thumbs(a, xl, ry + g.rh * 0.86f, xr - xl, g_row_anim[i], fa);
+            draw_value(sel ? xr : xr - slot, cy, g.em, val, sel, sel, fa);
+            draw_bg_thumbs(a, xl0, ry + g.rh * 0.86f, xr0 - xl0, g_row_anim[i], fa);
         } else if (k == ROW_F_UI_COLOR) {
             draw_color_dots(xr, cy, g_row_anim[i], fa);
         } else if (menu_toggle(k, &a->settings) >= 0) {
@@ -1715,7 +1754,7 @@ static void draw_panel(App *a)
             const char *const *names = NULL;
             int cur = 0, n = menu_segments(k, a->panel_plat, &a->panel_cfg, &names, &cur);
             if (n > 0) draw_segments(xr, cy, g.em, names, n, g_row_anim[i], sel, fa);
-            else if (val[0]) draw_value(xr, cy, g.em, val, sel, sel, fa);
+            else if (val[0]) draw_value(sel ? xr : xr - slot, cy, g.em, val, sel, sel, fa);
         } else if (menu_is_slider(k)) {
             float tw = d_xu(0.15f * H()), th2 = 0.0075f * H(), tx = xr - tw;
             float v = g_row_anim[i];
@@ -1724,7 +1763,7 @@ static void draw_panel(App *a)
             d_disc(tx + tw * v, cy, 0.0125f * H(), sf_col_alpha(0xFAFAFCFFu, fa));
             draw_value(tx - d_xu(g.em * 0.6f), cy, g.em, val, sel, 0, fa);
         } else if (val[0]) {
-            draw_value(xr, cy, g.em, val, sel, sel && !menu_is_action(k), fa);
+            draw_value((sel || menu_is_action(k)) ? xr : xr - slot, cy, g.em, val, sel, sel && !menu_is_action(k), fa);
         }
     }
     /* scrollbar */
@@ -1734,6 +1773,73 @@ static void draw_panel(App *a)
         float tx = g.x + g.w - bw;
         d_rrect(tx, top, bw, span, 0.0025f * H(), sf_col_alpha(TH_SCROLL_TRACK, g.alpha));
         d_rrect(tx, top + (span * (1.0f - frac)) * clamp01(pos), bw, span * frac, 0.0025f * H(), sf_col_alpha(accent_or(TH_SCROLL_THUMB, 0.85f), g.alpha));
+    }
+}
+
+/* ---- About spookyflow (0.8.2): a centered card over Flow Settings ---- */
+static const char *const k_about_features[] = {
+    "Your PS1, PS2 and PS3 games in one cover flow, with covers and case images",
+    "Games on the internal drive and on NTFS / exFAT drives",
+    "Launched through webMAN MOD, with Auto-Play, emulator and offline options",
+    "PS2 configs, multi-disc games, display mode and the A\xE2\x80\x93Z jump",
+    "Background music, eight backgrounds and your own pictures",
+};
+static const char *const k_about_tools[] = {
+    "PSL1GHT SDK  \xC2\xB7  Tiny3D  \xC2\xB7  webMAN MOD",
+    "minimp3 by lieff  \xC2\xB7  DejaVu fonts",
+    "Written with Claude by Anthropic",
+};
+
+static void title_line(float lx, float lw, float y, uint32_t hot, float al)
+{
+    uint32_t col = glow(hot), clear = col & 0xFFFFFF00u;
+    float th = 0.0036f * H(), gh = 0.016f * H();
+    uint32_t core = sf_col_alpha(col, al), haze = sf_col_alpha(col, al * 0.24f);
+    d_rect_hgrad(lx, y - gh * 0.5f, lw * 0.5f, gh, clear, haze);
+    d_rect_hgrad(lx + lw * 0.5f, y - gh * 0.5f, lw * 0.5f, gh, haze, clear);
+    d_rect_hgrad(lx, y - th * 0.5f, lw * 0.5f, th, clear, core);
+    d_rect_hgrad(lx + lw * 0.5f, y - th * 0.5f, lw * 0.5f, th, core, clear);
+}
+
+static void draw_about(const App *a)
+{
+    float e = ease_out_cubic(a->about_t), al = ease_in_out(a->about_t), sc = 0.94f + 0.06f * e;
+    float w = sf_minf(d_xu(1.22f * H()), W() * 0.90f) * sc, h = 0.80f * H() * sc;
+    float x = W() * 0.5f - w * 0.5f, y = 0.462f * H() - h * 0.5f, cx = W() * 0.5f, r = 0.040f * H();
+    float iw = w * 0.86f, yy;
+    uint32_t hot = accent_white() ? 0xFFFFFFFFu : (accent() | 0xFFu);
+    char ver[64];
+    int i;
+    if (al <= 0.003f) return;
+    d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.55f * al));
+    d_rrect_glow(x, y, w, h, r, 0.040f * H(), sf_col_alpha(0x000000FFu, 0.6f * al));
+    d_rrect(x, y, w, h, r, sf_col_alpha(TH_PANEL | 0xFFu, 0.985f * al));
+    d_rrect_glow(x, y, w, h, r, 0.014f * H(), sf_col_alpha(hot, 0.22f * al * (0.6f + 0.4f * g_glow)));
+    d_rrect_stroke(x, y, w, h, r, 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), al));
+    yy = y + 0.075f * h / 0.80f;
+    d_text(&g_font_big, cx, yy, 0.068f * H() * sc, sf_col_alpha(TH_WORDMARK, al), APP_NAME, ALIGN_CENTER);
+    snprintf(ver, sizeof(ver), "Version %s", APP_VERSION);
+    yy += 0.058f * H() * sc;
+    d_text(&g_font_main, cx, yy, 0.022f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), ver, ALIGN_CENTER);
+    yy += 0.036f * H() * sc;
+    title_line(cx - iw * 0.5f, iw, yy, hot, al);
+    yy += 0.068f * H() * sc;
+    d_text_box(&g_font_main, cx, yy, iw, 0.025f * H() * sc, 3, sf_col_alpha(TH_TEXT, al),
+               "A cover-flow launcher for the PlayStation 3. Browse your games with their real covers and cases, "
+               "change how each one starts, and launch it in a press.");
+    yy += 0.082f * H() * sc;
+    d_text(&g_font_main, cx, yy, 0.027f * H() * sc, sf_col_alpha(sf_col_mix(hot, 0xFFFFFFFFu, 0.45f), al), "Features", ALIGN_CENTER);
+    yy += 0.044f * H() * sc;
+    for (i = 0; i < (int)(sizeof(k_about_features) / sizeof(k_about_features[0])); i++) {
+        d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), k_about_features[i], ALIGN_CENTER, iw);
+        yy += 0.037f * H() * sc;
+    }
+    yy += 0.022f * H() * sc;
+    d_text(&g_font_main, cx, yy, 0.027f * H() * sc, sf_col_alpha(sf_col_mix(hot, 0xFFFFFFFFu, 0.45f), al), "Made with", ALIGN_CENTER);
+    yy += 0.044f * H() * sc;
+    for (i = 0; i < (int)(sizeof(k_about_tools) / sizeof(k_about_tools[0])); i++) {
+        d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), k_about_tools[i], ALIGN_CENTER, iw);
+        yy += 0.037f * H() * sc;
     }
 }
 
@@ -1781,7 +1887,7 @@ static void draw_letter(const App *a)
     d_blob(x0 + pos * step, y, H() * 0.045f, sf_col_alpha(acc, 0.35f * al));
     for (b = 0; b < LIB_BUCKETS; b++) {
         char c[2];
-        float d = (float)b - pos, f = expf(-d * d / 1.8f), em = H() * (0.019f + 0.027f * f);
+        float d = (float)b - pos, f = clamp01(1.0f - sf_absf(d)), em = H() * (0.019f + 0.027f * f);   /* 0.8.2: neighbours stay small */
         int has = gl->first[b] >= 0;
         uint32_t col;
         c[0] = title_bucket_char(b); c[1] = '\0';
@@ -1888,22 +1994,10 @@ static void draw_toast(const App *a)
 
 
 /* the "spookyflow" wordmark with its ghostly glow */
+/* the name on the loading screens (0.8.2: plain, no glow) */
 static void draw_wordmark(const App *a, float wy, float em, float alpha)
 {
-    float t = (float)a->time, breathe = 0.75f + 0.25f * sinf(t * 1.6f);
-    int i;
-    d_blob(W() * 0.5f, wy, 3.2f * em, sf_col_alpha(TH_WORDMARK_GLOW, 0.09f * alpha * breathe));
-    {
-        static const float rr[2] = { 0.008f, 0.017f }, aa[2] = { 0.030f, 0.016f };
-        int ring;
-        for (ring = 0; ring < 2; ring++) {
-            for (i = 0; i < 12; i++) {
-                float ang = (float)i * PI_F / 6.0f + t * 0.25f + (float)ring * 0.26f, r = rr[ring] * H();
-                d_text(&g_font_big, W() * 0.5f + d_xu(cosf(ang) * r), wy + sinf(ang) * r, em,
-                       sf_col_alpha(TH_WORDMARK_GLOW, aa[ring] * alpha * breathe), APP_NAME, ALIGN_CENTER);
-            }
-        }
-    }
+    (void)a;
     d_text(&g_font_big, W() * 0.5f, wy, em, sf_col_alpha(TH_WORDMARK, alpha), APP_NAME, ALIGN_CENTER);
 }
 
@@ -2133,6 +2227,7 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
         if (a->panel == PANEL_FLOW)        /* the cover flow dims under the drawer */
             d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, 0.40f * ease_in_out(a->panel_anim)));
         draw_panel(a);
+        if (a->about_t > 0.0f) draw_about(a);
     }
     draw_bar(a, ia);
     draw_letter(a);

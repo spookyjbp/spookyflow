@@ -9,6 +9,7 @@ rendered at 2x and downsampled.
   4..7 L1 R1 L2 R2 - black rounded shoulder buttons, white label
   8 select   - black flat rounded-rectangle button, like the DualShock 3's SELECT
   9 square   - black round button, pink outline square
+  17 dpad-lr - 0.8.2: the D-pad's left / right buttons ("Change")
   10..16     - 0.8.0: Background thumbnails (Drift, Aurora, Fireflies, Ribbons,
                Halo, Twilight, Stage), gray: drawn tinted with the UI color.
                From art/bg_thumbs.png; rebuild that with
@@ -103,6 +104,24 @@ def select_button():
     return rgb.resize((OUT, OUT), Image.LANCZOS), alpha.resize((OUT, OUT), Image.LANCZOS)
 
 
+def dpad_lr():
+    """0.8.2: the D-pad's left and right buttons (a black pill with two arrows): "<- -> Change" """
+    WS = 96 * SS
+    rim = round(S * 0.045)
+    pad = 2 * SS
+    alpha = Image.new("L", (WS, S), 0)
+    ImageDraw.Draw(alpha).rounded_rectangle([pad, S * 0.16, WS - pad - 1, S * 0.84], radius=int(S * 0.22), fill=255)
+    rgb = Image.new("RGB", (WS, S), RIM)
+    d = ImageDraw.Draw(rgb)
+    d.rounded_rectangle([pad + rim, S * 0.16 + rim, WS - pad - 1 - rim, S * 0.84 - rim], radius=int(S * 0.22) - rim, fill=BODY)
+    c, h = S / 2, S * 0.17
+    for sx, dirn in ((WS * 0.28, -1), (WS * 0.72, 1)):    # two filled arrowheads
+        tip = sx + dirn * h * 0.9
+        back = sx - dirn * h * 0.6
+        d.polygon([(tip, c), (back, c - h), (back, c + h)], fill=(235, 236, 240))
+    return rgb.resize((96, OUT), Image.LANCZOS), alpha.resize((96, OUT), Image.LANCZOS)
+
+
 def badge(kind):
     pad = 2 * SS
     stroke = round(S * 0.085)
@@ -189,6 +208,7 @@ def main():
         else:
             imgs.append(badge(kind))
     imgs += thumbs()
+    imgs.append(dpad_lr())       # 17: after the thumbnails (their numbers stay)
     gap = 2
     total = sum(im[0].size[0] + gap for im in imgs)
     W = 1

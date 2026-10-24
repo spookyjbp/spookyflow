@@ -1224,10 +1224,10 @@ static void test_bg_and_reflect(void)
     CHECK(s.background == BG_STAGE);                            /* fix 13: Stage is the default */
     for (i = 0; i < 6; i++) { menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g); CHECK(s.background != BG_CUSTOM && s.background != BG_STAGE); }
     CHECK(s.background == BG_TWILIGHT);
-    menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g);
-    CHECK(s.background == BG_STAGE);
-    menu_change(ROW_F_BACKGROUND, 0, -1, &s, &g);
+    CHECK(menu_change(ROW_F_BACKGROUND, 0, 1, &s, &g) == MENU_FX_NONE);   /* 0.8.2: the last one: no wrap */
     CHECK(s.background == BG_TWILIGHT);
+    menu_change(ROW_F_BACKGROUND, 0, -1, &s, &g);
+    CHECK(s.background == BG_HALO);
     settings_parse_line(&s, "background2=1");                    /* 0.7.0: 1 = a picture of your own again */
     CHECK(s.background == BG_CUSTOM);
     settings_parse_line(&s, "background_image=Night Sky.jpg");

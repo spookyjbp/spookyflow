@@ -6,7 +6,8 @@ enum {
     ICON_CROSS = 0, ICON_TRIANGLE = 1, ICON_CIRCLE = 2, ICON_START = 3,
     ICON_L1 = 4, ICON_R1 = 5, ICON_L2 = 6, ICON_R2 = 7, ICON_SELECT = 8, ICON_SQUARE = 9,
     ICON_THUMB0 = 10,   /* 0.8.0: Background thumbnails 10..16 (Drift, Aurora, Fireflies, Ribbons, Halo, Twilight, Stage), gray */
-    ICON_COUNT = 17
+    ICON_DPAD_LR = 17,  /* 0.8.2: D-pad left / right ("Change") */
+    ICON_COUNT = 18
 };
 
 typedef struct { int x, w; } IconRect;   /* horizontal extent in the atlas; height = atlas h */

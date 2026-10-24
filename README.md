@@ -114,11 +114,11 @@ install on your setup, try `spookyflow.gnpdrm.pkg` from the same artifact.
 
 | Button | Cover flow | In a settings panel |
 |---|---|---|
-| D-pad ← → or left stick | D-pad: previous / next game, one per press. Left stick: hold to scroll faster (the stick does nothing in the Settings menus) | Change value |
+| D-pad ← → or left stick | D-pad: previous / next game, one per press. Left stick: hold to scroll faster (the stick does nothing in the Settings menus) | Change the value (stops at the first / last choice) |
 | D-pad ↑ ↓ | — | Move between rows |
 | L1 / R1 | Previous / next tab (PS1 ↔ PS2 ↔ PS3, stops at the ends) | — |
 | L2 / R2 | Jump to previous / next letter (A–Z, # first) | — |
-| ✖ | Launch (through webMAN MOD, see *Launching*) | Change / activate |
+| ✖ | Launch (through webMAN MOD, see *Launching*) | Open a group / run an action (Quit, Rescan, About...) |
 | ▲ | Open **Game Settings** for the selected game | — |
 | ■ | **Display mode**: the selected case grows to fill the screen, the title and info fade out. Only ✖ (Launch), ▲ (Game Settings) and ◯ (Back) work there, and the controls bar shows just those three | — |
 | START | Open **Flow Settings** | — (only ◯ goes back) |
@@ -474,7 +474,17 @@ Next: Download Missing Covers, sizes of folder games, release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.8.1:** ■ display mode dims the console tabs like the other cases;
+15. **0.8.2:** in Flow Settings and Game Settings ← / → change a value
+    and stop at the first and last choice (no wrap); ✖ only opens a group
+    or runs an action (the controls bar shows "◀▶ Change" on a value and
+    "✖ Select" on a group or action). The names and values are centered in
+    their rows, the titles centered too, and the selected row has the
+    glowing outline of the selected console tab. Music & Sound: Sound
+    Effects first. The name on the loading screens has no glow any more.
+    The A–Z rail only enlarges the letter you're on. New **About
+    spookyflow** row: a centered card with what the app is, its features
+    and what it was made with (◯ goes back).
+    **0.8.1:** ■ display mode dims the console tabs like the other cases;
     Game Settings / Choose Disc hide them. Flow Settings is now a whole card
     sliding in (its glowing outline all round), each page's name with a full
     glowing line under it (the small "Flow Settings" above the group pages

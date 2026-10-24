@@ -1182,9 +1182,15 @@ static void test_ps2_config(void)
     tap(SFB_RIGHT);                                         /* 0.8.1: NET is what Auto gives: not listed again */
     app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
     CHECK_STR(v, "GX");
-    tap(SFB_RIGHT);                                         /* wraps to Auto */
-    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
+    tap(SFB_RIGHT);                                         /* 0.8.2: GX is the last one: no wrap */
+    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_GX);
     tap(SFB_LEFT);
+    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
+    tap(SFB_LEFT);                                          /* the first one: stays */
+    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
+    tap(SFB_CROSS);                                         /* X doesn't change it */
+    CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
+    tap(SFB_RIGHT);
     CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_GX);
     CHECK(settings_game_get(&g_app.settings, g_app.panel_cfg.key).ps2cfg == PS2CFG_GX);   /* stored */
     tap(SFB_CIRCLE); run_frames(0, 0.4f);
@@ -1195,7 +1201,7 @@ static void test_ps2_config(void)
     relaunch_reset(); run_frames(0, 0.1f);
     /* back to Auto: spookyflow's copy is removed, so webMAN picks again */
     cfg_open_row();
-    tap(SFB_RIGHT);
+    tap(SFB_LEFT);
     CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
     tap(SFB_CIRCLE); run_frames(0, 0.4f);
     tap(SFB_CROSS);
@@ -1306,7 +1312,7 @@ static void test_ps2_config(void)
     CHECK(!g_app.ps2cfg_ok);
     app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
     CHECK_STR(v, "Not available");
-    tap(SFB_CROSS);
+    tap(SFB_RIGHT);
     CHECK(strstr(g_app.toast, "PS2 ISOs") != NULL);
     tap(SFB_CIRCLE); run_frames(0, TOAST_TIME + 0.2f);
     memfs_reset();
@@ -1492,21 +1498,24 @@ static void test_bg_pictures(void)
     CHECK(g_bg_loads == 0);                                  /* nothing loaded until one is chosen */
     CHECK(flow_goto(ROW_F_BACKGROUND));
     CHECK(g_app.settings.background == BG_STAGE);
-    tap(SFB_LEFT);                                           /* Stage <- the last picture */
-    CHECK(g_app.settings.background == BG_CUSTOM && strcmp(g_app.settings.bg_image, "b.png") == 0);
-    CHECK(g_bg_loads == 1 && strcmp(g_bg_last, "/bgs/b.png") == 0);
-    app_row_value(&g_app, ROW_F_BACKGROUND, v, sizeof(v));
-    CHECK_STR(v, "Picture: b");
-    tap(SFB_LEFT);
-    CHECK(strcmp(g_app.settings.bg_image, "A.jpg") == 0 && g_bg_loads == 2);
-    tap(SFB_LEFT);
-    CHECK(g_app.settings.background == BG_TWILIGHT);
-    tap(SFB_RIGHT);                                          /* back to A: loaded again (the texture held Twilight? no: still A) */
-    CHECK(g_app.settings.background == BG_CUSTOM && g_bg_loads == 2);
-    for (i = 0; i < 4; i++) ui_draw(&g_app);
-    tap(SFB_RIGHT); tap(SFB_RIGHT);                          /* b, then Stage */
+    tap(SFB_LEFT);                                           /* 0.8.2: Stage is the first: stays */
     CHECK(g_app.settings.background == BG_STAGE);
-    tap(SFB_LEFT);                                           /* b again */
+    for (i = 0; i < 6; i++) tap(SFB_RIGHT);
+    CHECK(g_app.settings.background == BG_TWILIGHT);
+    tap(SFB_RIGHT);                                          /* the pictures come last */
+    CHECK(g_app.settings.background == BG_CUSTOM && strcmp(g_app.settings.bg_image, "A.jpg") == 0);
+    CHECK(g_bg_loads == 1 && strcmp(g_bg_last, "/bgs/A.jpg") == 0);
+    app_row_value(&g_app, ROW_F_BACKGROUND, v, sizeof(v));
+    CHECK_STR(v, "Picture: A");
+    tap(SFB_RIGHT);
+    CHECK(strcmp(g_app.settings.bg_image, "b.png") == 0 && g_bg_loads == 2);
+    tap(SFB_RIGHT);                                          /* the last one: stays */
+    CHECK(strcmp(g_app.settings.bg_image, "b.png") == 0 && g_bg_loads == 2);
+    tap(SFB_LEFT); tap(SFB_LEFT);
+    CHECK(g_app.settings.background == BG_TWILIGHT);
+    for (i = 0; i < 4; i++) ui_draw(&g_app);
+    tap(SFB_RIGHT); tap(SFB_RIGHT);                          /* A, then b again */
+    CHECK(g_app.settings.background == BG_CUSTOM && strcmp(g_app.settings.bg_image, "b.png") == 0);
     tap(SFB_CIRCLE); tap(SFB_CIRCLE); run_frames(0, 0.4f);
     /* the next start loads the saved picture during loading */
     {
@@ -1537,7 +1546,7 @@ static void test_bg_pictures(void)
     /* no pictures: the Background row has only the styles */
     CHECK(flow_goto(ROW_F_BACKGROUND));
     for (i = 0; i < 7; i++) { tap(SFB_RIGHT); CHECK(g_app.settings.background != BG_CUSTOM); }
-    CHECK(g_app.settings.background == BG_STAGE);
+    CHECK(g_app.settings.background == BG_TWILIGHT);         /* 0.8.2: stops at the last style */
     tap(SFB_CIRCLE); tap(SFB_CIRCLE); run_frames(0, 0.4f);
     ui_set_background_image(-1);
 }
@@ -1691,8 +1700,8 @@ static void test_panels_m6(void)
     gc.emulator = 1;
     CHECK(menu_segments(ROW_G_EMULATOR, PLAT_PS1, &gc, &names, &cur) == 2 && cur == 1 && strcmp(names[0], "Standard") == 0);
     CHECK(menu_segments(ROW_G_PS2CFG, PLAT_PS2, &gc, &names, &cur) == 0);
-    CHECK(g_icons.count == ICON_COUNT && ICON_COUNT == ICON_THUMB0 + 7);
-    for (i = ICON_THUMB0; i < ICON_COUNT; i++) CHECK(icons_aspect(i) > 1.7f && icons_aspect(i) < 1.8f);   /* 16:9 */
+    CHECK(g_icons.count == ICON_COUNT && ICON_DPAD_LR == ICON_THUMB0 + 7);
+    for (i = ICON_THUMB0; i < ICON_DPAD_LR; i++) CHECK(icons_aspect(i) > 1.7f && icons_aspect(i) < 1.8f);   /* 16:9 */
     ui_bar_layout(4, &L);
     CHECK(L.n == 2 && strcmp(L.g[0].label, "Select") == 0);
 
@@ -1745,4 +1754,54 @@ static void test_panels_m6(void)
     CHECK(g_app.display == 1 && g_app.panel == PANEL_NONE);
     tap(SFB_CIRCLE); run_frames(0, 0.5f);
     ui_draw(&g_app);
+}
+
+/* 0.8.2: no wrap at the ends, X only for groups / actions, Sound Effects
+ * first, the About card, the bar following the selected row */
+static void test_panels_082(void)
+{
+    AppHost host;
+    BarLayout L;
+    RowKind r[8];
+    int i, n;
+    printf("panels 0.8.2\n");
+    n = menu_group_rows(ROW_FG_SOUND, r, 8);
+    CHECK(n == 3 && r[0] == ROW_F_SFX && r[1] == ROW_F_VOLUME && r[2] == ROW_F_SHUFFLE);
+    ui_bar_layout(1, &L);
+    CHECK(L.n == 2 && L.g[0].item[0].icon == ICON_DPAD_LR && strcmp(L.g[0].label, "Change") == 0);
+    ui_bar_layout(5, &L);
+    CHECK(L.n == 1 && L.g[0].item[0].icon == ICON_CIRCLE);
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    /* a switch: X does nothing, <- / -> stop at Off / On */
+    CHECK(flow_goto(ROW_F_REFLECT));
+    g_app.settings.reflections = 1;
+    tap(SFB_CROSS); CHECK(g_app.settings.reflections == 1);
+    tap(SFB_RIGHT); CHECK(g_app.settings.reflections == 1);
+    tap(SFB_LEFT); CHECK(g_app.settings.reflections == 0);
+    tap(SFB_LEFT); CHECK(g_app.settings.reflections == 0);
+    tap(SFB_RIGHT); CHECK(g_app.settings.reflections == 1);
+    /* UI Color: no wrap either way */
+    CHECK(flow_goto(ROW_F_UI_COLOR));
+    for (i = 0; i < 10; i++) tap(SFB_LEFT);
+    CHECK(g_app.settings.ui_color == 0);
+    for (i = 0; i < 10; i++) tap(SFB_RIGHT);
+    CHECK(g_app.settings.ui_color == UI_COLOR_COUNT - 1);
+    g_app.settings.ui_color = UI_COLOR_BLUE;
+    /* About: X opens the card, only O closes it (back to Flow Settings) */
+    CHECK(flow_goto(ROW_F_ABOUT));
+    tap(SFB_CROSS);
+    CHECK(g_app.about == 1 && g_app.panel == PANEL_FLOW);
+    for (i = 0; i < 12; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    CHECK(g_app.about_t == 1.0f);
+    tap(SFB_DOWN); tap(SFB_CROSS); tap(SFB_START); tap(SFB_TRIANGLE);
+    CHECK(g_app.about == 1 && g_app.rows[g_app.row] == ROW_F_ABOUT && !g_app.exiting);
+    tap(SFB_CIRCLE);
+    CHECK(g_app.about == 0 && g_app.panel_open && g_app.panel == PANEL_FLOW);
+    for (i = 0; i < 8; i++) { ui_draw(&g_app); run_frames(0, 0.05f); }
+    tap(SFB_CIRCLE); run_frames(0, 0.5f);
+    CHECK(g_app.panel == PANEL_NONE);
 }

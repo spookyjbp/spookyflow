@@ -314,7 +314,8 @@ static void background_cycle(App *a, int dir)
     } else {
         for (i = 0; i < ns; i++) if (styles[i] == a->settings.background) cur = i;
     }
-    cur = ((cur + d) % n + n) % n;
+    if (cur + d < 0 || cur + d >= n) return;            /* 0.8.2: the ends don't wrap */
+    cur += d;
     if (cur < ns) a->settings.background = styles[cur];
     else {
         a->settings.background = BG_CUSTOM;
@@ -711,12 +712,13 @@ static void ps2cfg_cycle(App *a, int dir)
         return;
     }
     for (i = 0; i < PS2CFG_COUNT; i++) {
-        cur = ((cur + d) % PS2CFG_COUNT + PS2CFG_COUNT) % PS2CFG_COUNT;
+        cur += d;
+        if (cur < 0 || cur >= PS2CFG_COUNT) return;      /* 0.8.2: the ends don't wrap */
         /* 0.8.1: the config Auto already picks isn't listed a second time */
         if (cur > 0 && cur == a->ps2cfg_auto && cur != a->panel_cfg.ps2cfg) continue;
         if (a->ps2cfg_avail & (1u << cur)) break;
     }
-    if (cur == a->panel_cfg.ps2cfg) return;
+    if (cur >= PS2CFG_COUNT || cur == a->panel_cfg.ps2cfg) return;
     ps2cfg_adopt_old_copies(a, a->panel_cfg.ps2cfg);
     a->panel_cfg.ps2cfg = (signed char)cur;
     sound_play(SND_CHANGE);
@@ -891,6 +893,10 @@ static void apply_fx(App *a, RowKind k, int fx)
     case MENU_FX_GROUP:
         flow_enter_group(a, k);
         break;
+    case MENU_FX_ABOUT:
+        a->about = 1;
+        log_printf("panel: About spookyflow");
+        break;
     }
 }
 
@@ -902,6 +908,10 @@ static void panel_input(App *a)
     RowKind k;
     int vis = app_panel_visible_rows(a), first;
     if (!a->panel_open || a->nrows <= 0) return;
+    if (a->about) {                          /* the About card: only ◯ (back to Flow Settings) */
+        if (in->pressed & SFB_CIRCLE) { a->about = 0; sound_play(SND_CLOSE); }
+        return;
+    }
     if (in->pressed & SFB_CIRCLE) {
         if (a->panel == PANEL_FLOW && a->flow_group >= 0) { flow_leave_group(a); return; }   /* back to the groups */
         app_close_panel(a);
@@ -919,19 +929,19 @@ static void panel_input(App *a)
     if (a->panel == PANEL_DISC) {
         if (in->pressed & SFB_CROSS) { launch_disc(a, a->row); app_close_panel(a); }
     } else {
+        /* 0.8.2: values change with <- / -> only; X opens a group or runs an action */
         if (k == ROW_G_PS2CFG) {
             if (in->pressed & SFB_LEFT) ps2cfg_cycle(a, -1);
             if (in->pressed & SFB_RIGHT) ps2cfg_cycle(a, +1);
-            if (in->pressed & SFB_CROSS) ps2cfg_cycle(a, 0);
         } else if (k == ROW_F_BACKGROUND) {
             if (in->pressed & SFB_LEFT) background_cycle(a, -1);
             if (in->pressed & SFB_RIGHT) background_cycle(a, +1);
-            if (in->pressed & SFB_CROSS) background_cycle(a, 0);
         } else if (!menu_is_action(k)) {
             if (in->pressed & SFB_LEFT) apply_fx(a, k, menu_change(k, a->panel_plat, -1, &a->settings, &a->panel_cfg));
             if (in->pressed & SFB_RIGHT) apply_fx(a, k, menu_change(k, a->panel_plat, +1, &a->settings, &a->panel_cfg));
+        } else if (in->pressed & SFB_CROSS) {
+            apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
         }
-        if ((in->pressed & SFB_CROSS) && k != ROW_G_PS2CFG && k != ROW_F_BACKGROUND) apply_fx(a, k, menu_change(k, a->panel_plat, 0, &a->settings, &a->panel_cfg));
     }
     if (a->mode != MODE_FLOW) return;      /* rescan switched modes */
     spring_set(&a->row_hl, (float)a->row);
@@ -1088,6 +1098,8 @@ static void animate(App *a, float dt)
     anim_approach(&a->intro, 1.0f, 1.0f / INTRO_TIME, dt);
     anim_approach(&a->panel_anim, a->panel_open ? 1.0f : 0.0f, 1.0f / PANEL_ANIM_TIME, dt);
     anim_approach(&a->display_t, a->display ? 1.0f : 0.0f, 1.0f / DISPLAY_TIME, dt);
+    if (!a->panel_open) a->about = 0;
+    anim_approach(&a->about_t, a->about ? 1.0f : 0.0f, 1.0f / ABOUT_TIME, dt);
     if (a->page_t < 5.0f) a->page_t += dt;
     if (!a->panel_open && a->panel_anim <= 0.0f) a->panel = PANEL_NONE;
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;

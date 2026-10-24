@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.8.1"
+#define APP_VERSION     "0.8.2"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -22,6 +22,7 @@
 #define INTRO_TIME      1.10f   /* loading -> flow cross-fade */
 #define TAB_ANIM_TIME   0.30f
 #define PANEL_ANIM_TIME 0.20f
+#define ABOUT_TIME      0.30f   /* the About card fades / grows in */
 #define DISPLAY_TIME    0.45f   /* Square: the selected case grows to fill the screen */
 #define XFADE_TIME      0.18f
 #define LETTER_TIME     1.00f
@@ -148,6 +149,8 @@ typedef struct {
     int panel_open;         /* target state */
     float panel_anim;       /* 0..1 */
     float page_t;           /* 0.8.0: seconds since this page of rows appeared (they cascade in) */
+    int   about;            /* 0.8.2: the About spookyflow card is up (over Flow Settings) */
+    float about_t;          /* 0..1, follows about */
     int   page_dir;         /* +1: the page comes in from the right (opened / a group entered), -1: from the left (back) */
     int   display;          /* 1 = display mode (Square): one big case, only Launch and Back */
     float display_t;        /* 0..1, follows display */

@@ -2,6 +2,7 @@
 #include "menu.h"
 #include "util.h"
 #include <stdio.h>
+#include <string.h>
 
 int menu_rows(int panel, int plat, RowKind *out, int max)
 {
@@ -16,7 +17,7 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
     } else if (panel == PANEL_FLOW) {
         /* 0.7.0: grouped; Quit and Power Off stay on the first page */
         tmp[n++] = ROW_FG_LOOK; tmp[n++] = ROW_FG_SOUND; tmp[n++] = ROW_FG_GAMES; tmp[n++] = ROW_FG_SYSTEM;
-        tmp[n++] = ROW_F_QUIT; tmp[n++] = ROW_F_POWEROFF;
+        tmp[n++] = ROW_F_ABOUT; tmp[n++] = ROW_F_QUIT; tmp[n++] = ROW_F_POWEROFF;
     }
     if (n > max) n = max;
     for (i = 0; i < n; i++) out[i] = tmp[i];
@@ -24,7 +25,7 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
 }
 
 static const RowKind k_g_look[] = { ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT };
-static const RowKind k_g_sound[] = { ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_SFX };
+static const RowKind k_g_sound[] = { ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE };   /* 0.8.2: Sound Effects first */
 static const RowKind k_g_games[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_IGNORE_THE, ROW_F_COVERS, ROW_F_RESCAN };
 static const RowKind k_g_system[] = { ROW_F_SLEEP, ROW_F_XMB_TOP };
 
@@ -88,6 +89,7 @@ const char *menu_label(RowKind k)
     case ROW_F_IGNORE_THE: return "Ignore \"The\" When Sorting";
     case ROW_F_XMB_TOP: return "Pin to Top of XMB";
     case ROW_F_RESCAN: return "Rescan Library";
+    case ROW_F_ABOUT: return "About spookyflow";
     case ROW_F_QUIT: return "Quit to XMB";
     case ROW_F_POWEROFF: return "Power Off PS3";
     }
@@ -96,7 +98,7 @@ const char *menu_label(RowKind k)
 
 int menu_is_action(RowKind k)
 {
-    return k == ROW_D_DISC || menu_is_group(k) || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
+    return k == ROW_D_DISC || menu_is_group(k) || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_QUIT || k == ROW_F_POWEROFF || k == ROW_F_ABOUT;
 }
 
 int menu_is_slider(RowKind k) { return k == ROW_F_VOLUME || k == ROW_F_SFX; }
@@ -177,18 +179,36 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
     case ROW_F_IGNORE_THE: sf_strlcpy(out, onoff(s->ignore_the), cap); break;
     case ROW_F_XMB_TOP: sf_strlcpy(out, onoff(s->xmb_top), cap); break;
     case ROW_F_RESCAN: sf_strlcpy(out, "Start", cap); break;
+    case ROW_F_ABOUT: out[0] = '\0'; break;
     case ROW_F_QUIT: sf_strlcpy(out, "", cap); break;
     case ROW_F_POWEROFF: sf_strlcpy(out, "", cap); break;
     }
 }
 
+/* <- / ->: one step, stopping at the first and last choice (0.8.2); dir 0
+ * (only used for actions now) steps forward with wrap */
 static int cycle(int v, int n, int dir)
 {
-    int d = dir == 0 ? 1 : dir;
-    return ((v + d) % n + n) % n;
+    if (dir == 0) return (v + 1) % n;
+    return sf_clampi(v + dir, 0, n - 1);
 }
 
+static int menu_change_raw(RowKind k, int plat, int dir, Settings *s, GameCfg *g);
+
 int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
+{
+    char before[64], after[64];
+    int fx;
+    menu_value_text(k, plat, s, g, before, sizeof(before));
+    fx = menu_change_raw(k, plat, dir, s, g);
+    if (fx == MENU_FX_CHANGED || fx == MENU_FX_RESORT || fx == MENU_FX_XMB_TOP) {
+        menu_value_text(k, plat, s, g, after, sizeof(after));
+        if (strcmp(before, after) == 0) return MENU_FX_NONE;   /* at the end already: nothing changes */
+    }
+    return fx;
+}
+
+static int menu_change_raw(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
 {
     (void)plat;
     switch (k) {
@@ -244,6 +264,7 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     case ROW_F_IGNORE_THE: s->ignore_the = cycle(s->ignore_the, 2, dir); return MENU_FX_RESORT;
     case ROW_F_XMB_TOP: s->xmb_top = cycle(s->xmb_top, 2, dir); return MENU_FX_XMB_TOP;
     case ROW_F_RESCAN: return dir == 0 ? MENU_FX_RESCAN : MENU_FX_NONE;
+    case ROW_F_ABOUT: return dir == 0 ? MENU_FX_ABOUT : MENU_FX_NONE;
     case ROW_F_QUIT: return dir == 0 ? MENU_FX_QUIT : MENU_FX_NONE;
     case ROW_F_POWEROFF: return dir == 0 ? MENU_FX_POWEROFF : MENU_FX_NONE;
     }
