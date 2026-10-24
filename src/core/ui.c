@@ -419,6 +419,8 @@ static int g_stage_baked;          /* 1: TEX_STAGE / TEX_STAGE_RIB hold the comp
 static uint32_t g_baked_tint;
 static unsigned char *g_bake_buf;
 static size_t g_bake_cap;
+static unsigned char *g_prep_glow;     /* bw x bh: 0.55 x glow over the scene */
+static unsigned char *g_prep_rib;      /* rw x rh/2 x 4: A, wg, wb, wc (0..255) */
 
 void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsigned char *rib, int rw, int rh,
                           const unsigned char *glow, int gw, int gh)
@@ -427,33 +429,86 @@ void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsig
     g_src_rib = rib; g_src_rw = rw; g_src_rh = rh;
     g_src_glow = glow; g_src_gw = gw; g_src_gh = gh;
     g_stage_baked = 0;
+    free(g_prep_glow); free(g_prep_rib);
+    g_prep_glow = g_prep_rib = NULL;
 }
 
 int ui_stage_baked(void) { return g_stage_baked; }
 
-static float glow_at(float gx, float gy)            /* bilinear, in glow pixels */
+/* Upsample the glow map (bilinear, fixed point: no int<->float conversions,
+ * which stall the PS3's PPU) from region gx0..gx0+gw_r, gy0..gy0+gh_r (in
+ * 1/256 glow pixels) to w x h, scaled by k/256. */
+static void glow_resample(unsigned char *out, int w, int h, int gx0, int gw_r, int gy0, int gh_r, int k)
 {
-    int x0, y0, x1, y1;
-    float fx, fy, a, b;
-    if (gx < 0.0f) gx = 0.0f;
-    if (gy < 0.0f) gy = 0.0f;
-    if (gx > (float)(g_src_gw - 1)) gx = (float)(g_src_gw - 1);
-    if (gy > (float)(g_src_gh - 1)) gy = (float)(g_src_gh - 1);
-    x0 = (int)gx; y0 = (int)gy; x1 = x0 + 1 < g_src_gw ? x0 + 1 : x0; y1 = y0 + 1 < g_src_gh ? y0 + 1 : y0;
-    fx = gx - (float)x0; fy = gy - (float)y0;
-    a = sf_lerp(g_src_glow[y0 * g_src_gw + x0], g_src_glow[y0 * g_src_gw + x1], fx);
-    b = sf_lerp(g_src_glow[y1 * g_src_gw + x0], g_src_glow[y1 * g_src_gw + x1], fx);
-    return sf_lerp(a, b, fy) * (1.0f / 255.0f);
+    int x, y;
+    for (y = 0; y < h; y++) {
+        int gy = gy0 + (int)(((long long)(2 * y + 1) * gh_r) / (2 * h)) - 128, y0, y1, fy;
+        if (gy < 0) gy = 0;
+        y0 = gy >> 8; fy = gy & 255;
+        if (y0 >= g_src_gh - 1) { y0 = g_src_gh - 1; fy = 0; }
+        y1 = y0 + 1 < g_src_gh ? y0 + 1 : y0;
+        for (x = 0; x < w; x++) {
+            int gx = gx0 + (int)(((long long)(2 * x + 1) * gw_r) / (2 * w)) - 128, x0, x1, fx, a, b, v;
+            const unsigned char *r0, *r1;
+            if (gx < 0) gx = 0;
+            x0 = gx >> 8; fx = gx & 255;
+            if (x0 >= g_src_gw - 1) { x0 = g_src_gw - 1; fx = 0; }
+            x1 = x0 + 1 < g_src_gw ? x0 + 1 : x0;
+            r0 = g_src_glow + y0 * g_src_gw; r1 = g_src_glow + y1 * g_src_gw;
+            a = r0[x0] * (256 - fx) + r0[x1] * fx;
+            b = r1[x0] * (256 - fx) + r1[x1] * fx;
+            v = (a * (256 - fy) + b * fy) >> 16;          /* 0..255 */
+            out[(size_t)y * w + x] = (unsigned char)((v * k) >> 8);
+        }
+    }
 }
 
-static unsigned char u8c(float v) { v = v * 255.0f + 0.5f; return (unsigned char)(v < 0.0f ? 0.0f : (v > 255.0f ? 255.0f : v)); }
+/* Colour-independent part, done once: the glow over the scene (0.55) and,
+ * per ribbon pixel, the weights of glow / body / core in one "over" layer. */
+static int stage_prepare(void)
+{
+    int rw = g_src_rw, rh = g_src_rh / 2, half = rw / 2, i, x, y;
+    unsigned char *gl;
+    if (g_prep_glow && g_prep_rib) return 1;
+    free(g_prep_glow); free(g_prep_rib);
+    g_prep_glow = (unsigned char *)malloc((size_t)g_src_bw * g_src_bh);
+    g_prep_rib = (unsigned char *)malloc((size_t)rw * rh * 4u);
+    gl = (unsigned char *)malloc((size_t)half * rh);
+    if (!g_prep_glow || !g_prep_rib || !gl) {
+        free(g_prep_glow); free(g_prep_rib); free(gl);
+        g_prep_glow = g_prep_rib = NULL;
+        return 0;
+    }
+    {
+        int split = (int)((float)g_src_gh * STAGE_GLOW_SPLIT + 0.5f);   /* glow rows 0..split: the scene */
+        glow_resample(g_prep_glow, g_src_bw, g_src_bh, 0, g_src_gw * 256, 0, split * 256, 141);   /* 0.55 */
+        for (i = 0; i < 2; i++) {      /* left | right ribbon set: glow columns 0..gw/2 | gw/2..gw, rows split..gh */
+            glow_resample(gl, half, rh, i * (g_src_gw / 2) * 256, (g_src_gw / 2) * 256, split * 256, (g_src_gh - split) * 256, 141);
+            for (y = 0; y < rh; y++) {
+                const unsigned char *body = g_src_rib + (size_t)y * rw, *core = g_src_rib + (size_t)(y + rh) * rw;
+                for (x = 0; x < half; x++) {
+                    int c = i * half + x;
+                    int ag = gl[(size_t)y * half + x], ab = body[c], ac = (core[c] * 217) >> 8;   /* 0.85 */
+                    int qb = 255 - ab, qc = 255 - ac, qg = 255 - ag;
+                    int wg = ag * qb / 255 * qc / 255, wb = ab * qc / 255, wc = ac;
+                    int A = 255 - qg * qb / 255 * qc / 255;
+                    unsigned char *o = g_prep_rib + ((size_t)y * rw + c) * 4u;
+                    o[0] = (unsigned char)A; o[1] = (unsigned char)wg; o[2] = (unsigned char)wb; o[3] = (unsigned char)wc;
+                }
+            }
+        }
+    }
+    free(gl);
+    return 1;
+}
 
 static void stage_bake(uint32_t tint)
 {
-    float tr = (float)(tint >> 24) / 255.0f, tg = (float)((tint >> 16) & 255) / 255.0f, tb = (float)((tint >> 8) & 255) / 255.0f;
-    float lr = sf_lerp(tr, 1.0f, 0.35f), lg = sf_lerp(tg, 1.0f, 0.35f), lb = sf_lerp(tb, 1.0f, 0.35f);
+    int tr = (int)(tint >> 24), tg = (int)((tint >> 16) & 255), tb = (int)((tint >> 8) & 255);
+    int lr = tr + (255 - tr) * 89 / 255, lg = tg + (255 - tg) * 89 / 255, lb = tb + (255 - tb) * 89 / 255;   /* lite: 35% white */
     size_t need_b = (size_t)g_src_bw * g_src_bh * 4u, need_r = (size_t)g_src_rw * (g_src_rh / 2) * 4u;
-    int x, y, ok = 1;
+    int i, n, ok = 1;
+    unsigned char lut[256][3];
     if (!g_src_base || !g_src_rib || !g_src_glow) return;
     if (g_bake_cap < (need_b > need_r ? need_b : need_r)) {
         free(g_bake_buf);
@@ -461,54 +516,49 @@ static void stage_bake(uint32_t tint)
         g_bake_buf = (unsigned char *)malloc(g_bake_cap);
         if (!g_bake_buf) g_bake_cap = 0;
     }
-    if (!g_bake_buf) {             /* no memory: the layered drawing, from the brightness maps */
+    if (!g_bake_buf || !stage_prepare()) {   /* no memory: the layered drawing, from the brightness maps */
         if (r_texture_upload_alpha(TEX_STAGE, g_src_bw, g_src_bh, g_src_base) == 0) g_stage_tex = TEX_STAGE;
         g_stage_baked = 0;
         g_src_base = NULL;
         return;
     }
-    /* scene: black -> base (tint, alpha = brightness) -> cores (white, 0.35) -> glow (lite, 0.55) */
-    {
-        float sgx = (float)g_src_gw / (float)g_src_bw, sgy = (float)g_src_gh * STAGE_GLOW_SPLIT / (float)g_src_bh;
-        for (y = 0; y < g_src_bh; y++) {
-            const unsigned char *row = g_src_base + (size_t)y * g_src_bw;
-            unsigned char *o = g_bake_buf + (size_t)y * g_src_bw * 4u;
-            for (x = 0; x < g_src_bw; x++, o += 4) {
-                float v = (float)row[x] / 255.0f, r, g, b, a, hx = (float)row[x] - 150.0f, hi = 0.0f;
-                if (hx > 0.0f) { hi = hx * hx / (105.0f * 105.0f); if (hi > 1.0f) hi = 1.0f; }   /* = stage_highlight */
-                r = tr * v; g = tg * v; b = tb * v;
-                a = 0.35f * hi;          r += (1.0f - r) * a; g += (1.0f - g) * a; b += (1.0f - b) * a;
-                a = 0.55f * glow_at(((float)x + 0.5f) * sgx - 0.5f, ((float)y + 0.5f) * sgy - 0.5f);
-                r += (lr - r) * a; g += (lg - g) * a; b += (lb - b) * a;
-                o[0] = u8c(r); o[1] = u8c(g); o[2] = u8c(b); o[3] = 255;
-            }
-        }
-        if (r_texture_update_rgba(TEX_STAGE, g_src_bw, g_src_bh, g_bake_buf) != 0) ok = 0;
+    /* scene: black -> base (tint x brightness) -> white-hot cores (0.35) -> glow (lite) */
+    for (i = 0; i < 256; i++) {
+        float v = (float)i / 255.0f, hx = (float)i - 150.0f, hi = 0.0f, a, c[3];
+        int k;
+        if (hx > 0.0f) { hi = hx * hx / (105.0f * 105.0f); if (hi > 1.0f) hi = 1.0f; }   /* = stage_highlight */
+        a = 0.35f * hi;
+        c[0] = (float)tr / 255.0f * v; c[1] = (float)tg / 255.0f * v; c[2] = (float)tb / 255.0f * v;
+        for (k = 0; k < 3; k++) lut[i][k] = (unsigned char)((c[k] + (1.0f - c[k]) * a) * 255.0f + 0.5f);
     }
-    /* ribbons, both sets side by side: glow (lite, 0.55) under the body (tint)
-     * under the white-hot core (white, 0.85), as one "over" layer */
+    n = g_src_bw * g_src_bh;
+    for (i = 0; i < n; i++) {
+        const unsigned char *c = lut[g_src_base[i]];
+        int a = g_prep_glow[i];
+        unsigned char *o = g_bake_buf + (size_t)i * 4u;
+        o[0] = (unsigned char)(c[0] + ((lr - c[0]) * a) / 255);
+        o[1] = (unsigned char)(c[1] + ((lg - c[1]) * a) / 255);
+        o[2] = (unsigned char)(c[2] + ((lb - c[2]) * a) / 255);
+        o[3] = 255;
+    }
+    if (r_texture_update_rgba(TEX_STAGE, g_src_bw, g_src_bh, g_bake_buf) != 0) ok = 0;
+    /* ribbons: colour = (lite * wg + tint * wb + white * wc) / A */
     if (ok) {
-        int rw = g_src_rw, rh = g_src_rh / 2, half = rw / 2;
-        float g0 = (float)g_src_gh * STAGE_GLOW_SPLIT, gspan = (float)g_src_gh - g0;
-        for (y = 0; y < rh; y++) {
-            const unsigned char *body = g_src_rib + (size_t)y * rw, *core = g_src_rib + (size_t)(y + rh) * rw;
-            unsigned char *o = g_bake_buf + (size_t)y * rw * 4u;
-            float gy = g0 + ((float)y + 0.5f) / (float)rh * gspan - 0.5f;
-            for (x = 0; x < rw; x++, o += 4) {
-                int s = x >= half;
-                float u = ((float)(x - s * half) + 0.5f) / (float)half;
-                float ag = 0.55f * glow_at(((float)s * 0.5f + u * 0.5f) * (float)g_src_gw - 0.5f, gy);
-                float ab = (float)body[x] / 255.0f, ac = 0.85f * (float)core[x] / 255.0f;
-                float A = 1.0f - (1.0f - ag) * (1.0f - ab) * (1.0f - ac);
-                float pr = lr * ag * (1.0f - ab) * (1.0f - ac) + tr * ab * (1.0f - ac) + ac;
-                float pg = lg * ag * (1.0f - ab) * (1.0f - ac) + tg * ab * (1.0f - ac) + ac;
-                float pb = lb * ag * (1.0f - ab) * (1.0f - ac) + tb * ab * (1.0f - ac) + ac;
-                if (A > 0.0015f) { o[0] = u8c(pr / A); o[1] = u8c(pg / A); o[2] = u8c(pb / A); }
-                else { o[0] = u8c(lr); o[1] = u8c(lg); o[2] = u8c(lb); }
-                o[3] = u8c(A);
+        n = g_src_rw * (g_src_rh / 2);
+        for (i = 0; i < n; i++) {
+            const unsigned char *w = g_prep_rib + (size_t)i * 4u;
+            unsigned char *o = g_bake_buf + (size_t)i * 4u;
+            int A = w[0];
+            if (A > 0) {
+                int r = (lr * w[1] + tr * w[2] + 255 * w[3]) / A, g = (lg * w[1] + tg * w[2] + 255 * w[3]) / A,
+                    b = (lb * w[1] + tb * w[2] + 255 * w[3]) / A;
+                o[0] = (unsigned char)(r > 255 ? 255 : r); o[1] = (unsigned char)(g > 255 ? 255 : g); o[2] = (unsigned char)(b > 255 ? 255 : b);
+            } else {
+                o[0] = (unsigned char)lr; o[1] = (unsigned char)lg; o[2] = (unsigned char)lb;
             }
+            o[3] = (unsigned char)A;
         }
-        if (r_texture_update_rgba(TEX_STAGE_RIB, rw, rh, g_bake_buf) != 0) ok = 0;
+        if (r_texture_update_rgba(TEX_STAGE_RIB, g_src_rw, g_src_rh / 2, g_bake_buf) != 0) ok = 0;
     }
     if (ok) {
         g_stage_tex = TEX_STAGE;

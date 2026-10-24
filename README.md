@@ -453,12 +453,20 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.6.5 — faster drawing:** from the performance test: the depth test
+15. **0.6.8:** the floating particles are plain dots of one even color
+    with a soft edge (the sprites from the particle pack had specks and rings
+    inside them).
+    **0.6.7:** the floating △ ○ ✕ □ shapes are whole: some of the source
+    pictures were cut off at their own edge (a flat corner); only whole ones
+    are used now (mirrored for a second look where only one was whole).
+    **0.6.6:** 60 fps confirmed by the performance test. Combining Stage
+    (once at start, again per UI color) now uses integer math: it took about
+    a second on the PS3, now a few milliseconds.
+    **0.6.5 — faster drawing:** from the performance test: the depth test
     is off (2D needs none; 20 → 30 fps alone), textures already bound aren't
     sent again, and Stage's scene, glow and ribbons are combined once per UI
     color into two textures (5 full-screen layers → 1, drawn without
-    blending; 6 ribbon layers → 2). Changing the UI color with Stage on takes
-    a moment. The Performance Test now has 7 steps; please run it again.
+    blending; 6 ribbon layers → 2). The Performance Test now has 7 steps; please run it again.
     **0.6.4:** a 2-second pause between songs; the Now Playing card now
     appears when the song is actually heard (it used to show up to 2 s early).
     **0.6.3 — Performance Test:** Flow Settings → **Performance Test** (✖)

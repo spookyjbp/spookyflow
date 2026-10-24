@@ -188,10 +188,30 @@ def fog(w=1024, h=256, seed=7):
     a = 1.4 * cap * np.tanh(a / cap)
     return np.dstack([np.full_like(a, 255.0)] * 3 + [a])
 
-srcs = [('glow', flare()), ('line', hline()), ('dots', dots_grid()), ('mist', fog())]
+def dots_clean():
+    """13 plain particles (0.6.8): one even color with a soft round edge, no
+    texture inside (the sprites cut from the particle pack had specks, rings
+    and smudges in them). Cells 0-7: small sparks, 8-12: bigger soft dots."""
+    out = np.zeros((64, 1024, 4), np.float32)
+    yy, xx = np.mgrid[0:64, 0:64].astype(np.float32) + 0.5
+    d = np.hypot(xx - 32.0, yy - 32.0)
+    for n in range(13):
+        if n < 8:
+            r, soft = 13.0 + 0.6 * (n % 4), 3.0         # sparks: crisp
+        else:
+            r, soft = 17.0 + 1.2 * (n - 8), 7.0         # glow dots: soft rim
+        a = np.clip((r - d) / soft + 0.5, 0.0, 1.0)
+        a = a * a * (3.0 - 2.0 * a)                     # smooth edge, flat inside
+        cell = np.zeros((64, 64, 4), np.float32)
+        cell[..., :3] = 255.0
+        cell[..., 3] = 255.0 * a
+        out[:, n * 64:(n + 1) * 64] = cell
+    return out
+
+srcs = [('glow', flare()), ('line', hline()), ('dots', dots_clean()), ('mist', fog())]
 for name, px in srcs:
     v = bright(px)
-    if name in ('glow', 'line'):           # generated: alpha is the brightness
+    if name in ('glow', 'line', 'dots'):   # generated: alpha is the brightness
         v = px[..., 3]
     if name not in ('mist', 'dots'):                 # fog wraps left-right; dot cells are already padded
         v = feather(v, 4)
@@ -208,11 +228,17 @@ json.dump({'size': [AW, AH], 'rects': rects}, open(os.path.join(root, 'art', 'st
 # 3. symbols: 4 shapes x 2 angles, each as glass body + white-hot edges
 CW, CH = 256, 224
 kinds = ['triangle', 'circle', 'cross', 'square']
-angles = ['01', '04']
+# Only angles whose picture isn't cut off at its own edge (several source
+# renders touch the border: triangle 01/03-06, cross 01/03/04, square 01-05).
+# "m" = mirrored left-right, for a second look when only one angle is whole.
+angles = {'triangle': ['02', '02m'], 'circle': ['01', '04'], 'cross': ['02', '05'], 'square': ['06', '06m']}
 shapes = np.zeros((CH * 4, CW * 4, 4), np.uint8)
 for k, kind in enumerate(kinds):
-    for vi, ang in enumerate(angles):
-        px = rgba(P('Symbols', '%s_angle_%s.png' % (kind, ang)))
+    for vi, ang in enumerate(angles[kind]):
+        px = rgba(P('Symbols', '%s_angle_%s.png' % (kind, ang.rstrip('m'))))
+        if ang.endswith('m'): px = px[:, ::-1].copy()
+        edge = max((px[:, 0, 3] > 128).sum(), (px[:, -1, 3] > 128).sum(), (px[0, :, 3] > 128).sum(), (px[-1, :, 3] > 128).sum())
+        assert edge == 0, '%s angle %s is cut off at its edge' % (kind, ang)
         body = feather(bright(px), 3)
         hot = feather(255.0 * np.clip((whiteness(px) - 150.0) / 90.0, 0, 1) ** 1.3, 3)
         for layer, (rgb, a) in enumerate(((np.clip(body * 1.1, 0, 255), np.clip(body * 1.6, 0, 255)),
