@@ -1296,45 +1296,6 @@ static void test_panel_back(void)
     CHECK(g_app.panel == PANEL_NONE && !g_app.exiting);
 }
 
-/* 0.6.3: performance test */
-static int g_perf_calls, g_perf_last_phase;
-static unsigned g_perf_last_flags;
-static void fake_perf(int phase, unsigned flags) { g_perf_calls++; g_perf_last_phase = phase; g_perf_last_flags = flags; }
-
-static void test_perf_test(void)
-{
-    AppHost host;
-    int i, n = app_perf_phase_count();
-    printf("performance test\n");
-    lib_clear(&g_lib);
-    memset(&host, 0, sizeof(host));
-    host.fs_list = cfg_list;
-    host.perf_phase = fake_perf;
-    g_perf_calls = 0;
-    app_init(&g_app, &g_lib, &host);
-    run_frames(0, LOAD_MIN_TIME + 1.5f);
-    CHECK(g_app.perf_phase == -1 && g_app.perf_flags == 0);
-    CHECK(flow_goto(ROW_F_PERFTEST));
-    tap(SFB_CROSS);
-    CHECK(g_app.perf_phase == 0 && g_perf_calls == 1 && g_perf_last_phase == 0 && !g_app.panel_open);
-    run_frames(0, PERF_PHASE_TIME + 0.1f);
-    CHECK(g_app.perf_phase == 1 && g_perf_last_flags == PERF_NO_BG);
-    tap(SFB_TRIANGLE); tap(SFB_START);                 /* other buttons do nothing meanwhile */
-    CHECK(g_app.panel == PANEL_NONE && g_app.perf_phase == 1);
-    for (i = 0; i < 4; i++) ui_draw(&g_app);           /* every variant draws */
-    run_frames(0, PERF_PHASE_TIME * (float)(n - 1));
-    CHECK(g_app.perf_phase == -1 && g_perf_last_phase == -1 && g_app.perf_flags == 0);
-    CHECK(strstr(g_app.toast, "send the log") != NULL);
-    CHECK(g_perf_calls == n + 1);
-    /* ◯ stops it early, and it never exits the app */
-    flow_goto(ROW_F_PERFTEST);
-    tap(SFB_CROSS);
-    run_frames(0, 0.5f);
-    for (i = 0; i < n; i++) { g_app.perf_flags = app_perf_phase_flags(i); ui_draw(&g_app); }
-    tap(SFB_CIRCLE);
-    CHECK(g_app.perf_phase == -1 && !g_app.exiting && strstr(g_app.toast, "stopped") != NULL);
-}
-
 /* 0.6.4: a 2 s pause before the next song; the song shows once it's heard */
 static void test_music_gap(void)
 {
@@ -1511,4 +1472,124 @@ static void test_bg_pictures(void)
     CHECK(g_app.settings.background == BG_STAGE);
     tap(SFB_CIRCLE); tap(SFB_CIRCLE); run_frames(0, 0.4f);
     ui_set_background_image(-1);
+}
+
+/* 0.7.1: Rescan fades the cover flow out first, keeping the library until then */
+static void test_rescan_fade(void)
+{
+    AppHost host;
+    int before;
+    printf("rescan transition\n");
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    before = g_lib.tab[PLAT_PS2].count;
+    CHECK(before > 0 && flow_goto(ROW_F_RESCAN));
+    tap(SFB_CROSS);
+    CHECK(g_app.mode == MODE_LOADING && g_app.rescan);
+    run_frames(0, RESCAN_OUT_TIME * 0.5f);
+    CHECK(g_app.load_step == LOAD_START && g_lib.tab[PLAT_PS2].count == before);   /* still fading out */
+    ui_draw(&g_app);
+    run_frames(0, RESCAN_OUT_TIME);
+    CHECK(g_app.load_step > LOAD_START);
+    ui_draw(&g_app);
+    run_frames(0, RESCAN_MIN_TIME + 1.5f);
+    CHECK(g_app.mode == MODE_FLOW && g_lib.tab[PLAT_PS2].count == before);
+}
+
+/* 0.7.2: Square = display mode: the selected case grows, the title and info
+ * fade; only Launch (✖) and Back (◯) work, and the controls bar shows just those */
+static void test_display_mode(void)
+{
+    AppHost host;
+    int sel, tab;
+    BarLayout L;
+    printf("display mode\n");
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    host.launch = fake_launch;
+    g_launch_calls = 0; g_launch_fail = 0;
+    app_init(&g_app, &g_lib, &host);
+    g_app.settings.last_tab = PLAT_PS2;
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    g_app.tab = PLAT_PS2;
+    app_select(&g_app, PLAT_PS2, idx_of(PLAT_PS2, "Okami"), 0);
+    run_frames(0, 0.5f);
+    CHECK(!g_app.display && g_app.display_t == 0.0f);
+    tap(SFB_SQUARE);
+    CHECK(g_app.display == 1 && g_app.panel == PANEL_NONE);
+    run_frames(0, DISPLAY_TIME * 0.5f);
+    CHECK(g_app.display_t > 0.1f && g_app.display_t < 0.9f);     /* grows smoothly */
+    ui_draw(&g_app);
+    run_frames(0, DISPLAY_TIME + 0.1f);
+    CHECK(g_app.display_t == 1.0f);
+    ui_draw(&g_app);
+    /* everything else is ignored */
+    sel = g_app.view[PLAT_PS2].sel; tab = g_app.tab;
+    tap(SFB_RIGHT); tap(SFB_LEFT); tap(SFB_L1); tap(SFB_R1); tap(SFB_L2); tap(SFB_R2);
+    tap(SFB_START); tap(SFB_SQUARE); tap(SFB_SELECT);
+    run_frames(0, 0.3f);
+    CHECK(g_app.display == 1 && g_app.panel == PANEL_NONE && g_app.tab == tab && g_app.view[PLAT_PS2].sel == sel);
+    CHECK(!app_main_context(&g_app));       /* ◯ cannot arm hold-to-exit here */
+    /* the bar */
+    ui_bar_layout(3, &L);
+    CHECK(L.n == 3 && strcmp(L.g[0].label, "Launch") == 0 && L.g[0].item[0].icon == ICON_CROSS &&
+          strcmp(L.g[1].label, "Game Settings") == 0 && L.g[1].item[0].icon == ICON_TRIANGLE &&
+          strcmp(L.g[2].label, "Back") == 0 && L.g[2].item[0].icon == ICON_CIRCLE);
+    ui_bar_layout(0, &L);
+    CHECK(L.n == 7 && L.g[1].item[0].icon == ICON_SQUARE && strcmp(L.g[1].label, "Display") == 0 &&
+          L.g[2].item[0].icon == ICON_TRIANGLE && strcmp(L.g[2].label, "Game Settings") == 0);   /* 0.7.3: ■ before ▲ */
+    /* 0.7.3: Game Settings opens from display mode, and ◯ there comes back to it */
+    tap(SFB_TRIANGLE);
+    CHECK(g_app.panel == PANEL_GAME && g_app.display == 1);
+    run_frames(0, 0.4f);
+    ui_draw(&g_app);
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_NONE && g_app.display == 1 && !g_app.exiting);
+    /* holding ◯ goes back and never exits */
+    run_frames(SFB_CIRCLE, HOLD_EXIT_TIME + 0.5f);
+    run_frames(0, 0.1f);
+    CHECK(!g_app.display && !g_app.exiting && g_app.hold.shown == 0.0f);
+    run_frames(0, DISPLAY_TIME + 0.1f);
+    CHECK(g_app.display_t == 0.0f);
+    CHECK(sel > 0);
+    tap(SFB_LEFT);
+    CHECK(g_app.view[PLAT_PS2].sel == sel - 1);   /* flow controls are back */
+    tap(SFB_RIGHT);
+    /* ✖ launches from display mode */
+    tap(SFB_SQUARE); run_frames(0, DISPLAY_TIME + 0.1f);
+    tap(SFB_CROSS);
+    CHECK(g_launch_calls == 1 && strstr(g_app.last_launch, "Okami") != NULL);
+    ui_draw(&g_app);
+    relaunch_reset();
+}
+
+/* 0.7.3: the kittens drawn in light: the outlines are sane, and the
+ * loading screen draws through every stage (tracing, filling, breathing) */
+static void test_kitten_entrance(void)
+{
+    AppHost host;
+    int i, nk[3] = { 0, 0, 0 };
+    printf("kittens drawn in light\n");
+    CHECK(g_kitline_count > 3 && g_kitline_start[0] == 0);
+    for (i = 0; i < g_kitline_count; i++) {
+        int j;
+        CHECK(g_kitline_start[i + 1] - g_kitline_start[i] >= 3 && g_kitline_kind[i] <= 2);
+        if (g_kitline_kind[i] <= 2) nk[g_kitline_kind[i]]++;
+        for (j = g_kitline_start[i]; j < g_kitline_start[i + 1]; j++)
+            CHECK(g_kitline_uv[j][0] >= 0.0f && g_kitline_uv[j][0] <= 1.0f && g_kitline_uv[j][1] >= 0.0f && g_kitline_uv[j][1] <= 1.0f);
+    }
+    CHECK(nk[0] >= 1 && nk[2] >= 2);                 /* a silhouette and the eyes */
+    CHECK(g_kitline_start[g_kitline_count] <= 800);  /* few enough lines for one frame */
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    app_init(&g_app, &g_lib, &host);
+    g_app.settings.background = BG_ANIMATED;
+    for (i = 0; i < 90 && g_app.mode == MODE_LOADING; i++) { ui_draw(&g_app); run_frames(0, 0.1f); }
+    CHECK(g_app.mode == MODE_FLOW);
+    for (i = 0; i < 10; i++) { ui_draw(&g_app); run_frames(0, 0.1f); }
 }

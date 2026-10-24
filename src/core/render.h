@@ -64,16 +64,4 @@ uint16_t *r_cover_pixels(int slot);
 /* Main thread: texture TEX_COVER0 + slot now holds a w x h image. */
 void r_cover_define(int slot, int w, int h);
 
-/* Performance test variants (Flow Settings > Performance Test). The backend
- * handles the first two, ui.c the rest. */
-enum {
-    PERF_NO_DEPTH   = 1 << 0,   /* backend: depth test/write off (2D is drawn in order) */
-    PERF_TEX_CACHE  = 1 << 1,   /* backend: don't re-send a texture that is already bound */
-    PERF_NO_BG      = 1 << 2,   /* ui: no background (black) */
-    PERF_NO_FLOW    = 1 << 3,   /* ui: no cover row */
-    PERF_NO_REFLECT = 1 << 4,   /* ui: no floor reflections */
-    PERF_NO_CASES   = 1 << 5,   /* ui: covers without case images */
-    PERF_NO_UI      = 1 << 6    /* ui: no tabs, title, bar, panels */
-};
-
 #endif

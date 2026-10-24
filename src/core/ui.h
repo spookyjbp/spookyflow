@@ -38,6 +38,7 @@ void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsig
 int  ui_stage_baked(void);
 /* the user's background picture (BG_CUSTOM): texture id, -1 = none */
 void ui_set_background_image(int tex);
+/* the kittens' entrance frames (cats.h atlas) as a texture; -1 = none (a plain fade instead) */
 /* UI color (accent, UI_COLOR_* from settings.h): tabs, highlighted rows,
  * sliders, selection frame, loading bar, exit ring, background shapes */
 void ui_set_color(int idx);
@@ -52,7 +53,7 @@ void ui_update_targets(App *a);
 void ui_draw(App *a);
 
 /* ---- bottom bar layout (testable) ---- */
-#define BAR_MAX_GROUPS 6
+#define BAR_MAX_GROUPS 7
 #define BAR_MAX_ITEMS  3
 typedef struct {
     int icon;            /* ICON_* badge */
@@ -77,7 +78,8 @@ typedef struct {
 } BarLayout;
 
 /* panel_mode = 0: main bar (Launch, Game settings, L1 R1 A-Z, Flow settings, Exit)
- * panel_mode = 1: panel bar (Change, Back); 2: Choose Disc (Launch, Back).
+ * panel_mode = 1: panel bar (Change, Back); 2: Choose Disc (Launch, Back);
+ * 3: display mode, Square (Launch, Game Settings, Back).
  * Uses the current d_screen(). */
 void ui_bar_layout(int panel_mode, BarLayout *out);
 

@@ -21,6 +21,7 @@
 #include "settings.h"
 #include "title.h"
 #include "ui.h"
+#include "cats.h"
 #include "util.h"
 
 static int g_fail, g_pass;
@@ -327,12 +328,12 @@ static void test_bar_layout(void)
     scr[2] = screen_direct(1280, 720); scr[3] = screen_direct(1920, 1080);
     for (k = 0; k < 4; k++) {
         d_set_screen(&scr[k]);
-        for (mode = 0; mode < 2; mode++) {
+        for (mode = 0; mode < 4; mode++) {
             BarLayout L;
             float px_x = scr[k].px * scr[k].pa;   /* physical px per logical x unit */
             float gaps[BAR_MAX_GROUPS + 1];
             ui_bar_layout(mode, &L);
-            CHECK(L.n == (mode ? 2 : 6));
+            CHECK(L.n == (mode == 0 ? 7 : mode == 3 ? 3 : 2));
             CHECK_NEAR(L.bar_x, scr[k].W * 0.015f, 1e-3);
             CHECK_NEAR(L.bar_x + L.bar_w, scr[k].W * 0.985f, 1e-3);
             gaps[0] = L.g[0].x - L.bar_x;
@@ -486,12 +487,27 @@ static void test_menu(void)
     {   /* every setting is in exactly one group, and no page needs scrolling */
         static const RowKind all[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND,
             ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT, ROW_F_SLEEP, ROW_F_COVERS, ROW_F_IGNORE_THE, ROW_F_XMB_TOP,
-            ROW_F_RESCAN, ROW_F_PERFTEST };
+            ROW_F_RESCAN };
         int k2, total = 0, gi;
         for (k2 = 0; k2 < (int)(sizeof(all) / sizeof(all[0])); k2++) CHECK(menu_group_of(all[k2]) >= 0);
         for (gi = 0; gi < 4; gi++) { int nn = menu_group_rows(r[gi], r + 8, 8); CHECK(nn > 0 && nn <= PANEL_VISIBLE_ROWS); total += nn; }
         CHECK(total == (int)(sizeof(all) / sizeof(all[0])));
         CHECK(menu_group_of(ROW_F_QUIT) == -1);
+        /* 0.7.3: System is Sleep and XMB top (Performance Test removed) */
+        CHECK(menu_group_rows(ROW_FG_SYSTEM, r + 8, 8) == 2 && r[8] == ROW_F_SLEEP && r[9] == ROW_F_XMB_TOP);
+    }
+    {   /* 0.7.3: the group rows show no summary */
+        Settings s2;
+        GameCfg g2;
+        char v2[64];
+        int gi;
+        settings_defaults(&s2);
+        memset(&g2, 0, sizeof(g2));
+        for (gi = 0; gi < 4; gi++) {
+            strcpy(v2, "x");
+            menu_value_text(r[gi], PLAT_PS2, &s2, &g2, v2, sizeof(v2));
+            CHECK(v2[0] == '\0');
+        }
     }
     settings_defaults(&s);
     memset(&g, 0, sizeof(g));
@@ -1291,9 +1307,11 @@ int main(void)
     test_music_gap();
     test_ps2_config();
     test_panel_back();
-    test_perf_test();
     test_stage_bake();
     test_bg_pictures();
+    test_rescan_fade();
+    test_display_mode();
+    test_kitten_entrance();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

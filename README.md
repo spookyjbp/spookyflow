@@ -120,6 +120,7 @@ install on your setup, try `spookyflow.gnpdrm.pkg` from the same artifact.
 | L2 / R2 | Jump to previous / next letter (A–Z, # first) | — |
 | ✖ | Launch (through webMAN MOD, see *Launching*) | Change / activate |
 | ▲ | Open **Game Settings** for the selected game | — |
+| ■ | **Display mode**: the selected case grows to fill the screen, the title and info fade out. Only ✖ (Launch), ▲ (Game Settings) and ◯ (Back) work there, and the controls bar shows just those three | — |
 | START | Open **Flow Settings** | — (only ◯ goes back) |
 | ◯ | **Hold 1.5 s** to exit to the XMB (tap does nothing) | Back (tap). Holding here never exits |
 | SELECT | Next song (background music) | not used |
@@ -142,14 +143,16 @@ They are applied when the game is launched (see *Launching*). The RSX clock
 row was removed in milestone 3; overclocking may come back later.
 
 **Flow Settings (START)** — grouped (0.7.0). The first page lists the groups,
-each with a short summary; ✖ opens one, ◯ goes back:
+centered, without summaries (0.7.3); ✖ opens one, ◯ goes back. Every
+panel is centered: the title, the group and action names, and each setting
+as *name | value* lined up on the middle of the panel:
 
 - **Appearance** — Background, UI Color, Show Game Info, Custom Cases, Reflections
 - **Music & Sound** — Music Volume (0% = off), Shuffle Music, Sound Effects
 - **Games & Library** — Auto-Play, Offline Mode, Ignore “The”, Download
   Missing Covers (stub), Rescan Library
 - **System** — Sleep, Pin to top of XMB (no pop-up; only a failure says
-  something), Performance Test
+  something). (The Performance Test was removed in 0.7.3.)
 - then **Quit to XMB** and **Power Off PS3** directly.
 
 **Background pictures (0.7.0):** put `.jpg` / `.png` pictures (any size up to
@@ -467,7 +470,41 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.7.0:** Flow Settings in groups; your own background pictures
+15. **0.7.3:** the loading screen of every background but Stage now shows
+    the **kittens drawn in light**: a point of light draws their outline,
+    then the line where the white fur meets the black and the eyes; the
+    picture fills in inside the lines as they fade, and the kittens breathe
+    while the name is written letter by letter in light (the outlines are
+    traced from art/cats.png by `tools/gen_cats.py`; the frame animation and
+    its sprite sheet are gone). **Display mode** also takes ▲: Game Settings
+    opens over the big case and ◯ comes back to display mode; the bar there
+    shows Launch, Game Settings, Back. The main bar lists **■ Display**
+    right after Launch, then ▲ Game Settings. **Flow Settings** and **Game
+    Settings** are centered, without the group summaries (and the game name
+    is no longer in the Game Settings title). **Performance Test** removed.
+    **0.7.2:** the kittens' entrance is redone from the animation pack's
+    24 drawn frames (art/kittens_anim.png, cut from the pack's sheet by
+    `tools/gen_cats.py <sprite_sheet_original.png>`): the black kitten runs
+    in from the left, the white one tumbles in from the right, gets up, the
+    black one leaps over to it and the two play (frames 9–24 at 12 fps), then
+    stay there breathing while the name is written in light. **■ display
+    mode:** press ■ on the cover flow and the selected case grows smoothly to
+    fill the screen while the title and info fade out and the other cases
+    slide aside and dim; the controls bar changes to just Launch and Back.
+    Try ✖ (launches; multi-disc games still ask which disc) and ◯ (back to
+    the cover flow; holding ◯ there never exits).
+    **0.7.1:** loading screens: on Stage the kittens stand exactly where the
+    selected case will (same bottom edge, same floor reflection and shadow
+    line), the name sits just above them, and there's no status text or
+    progress line any more. Every other background gets the **kittens'
+    entrance**: the black kitten pounces in from the left, the white one
+    tumbles in from the right, they land, hop once together, and the name is
+    written letter by letter in light (the two kittens are cut apart from
+    the one picture by tools/gen_cats.py). The selected case then appears
+    where they stood. **Rescan Library** fades the cover flow out over the
+    same background before the kittens fade in. The **A–Z rail** takes the
+    info line's place while it shows (the line fades out and back).
+    **0.7.0:** Flow Settings in groups; your own background pictures
     (`backgrounds/` folder, several at once); every background other than
     Stage gets its own loading screen (the background fades in from black and
     a frosted card with the kittens, the name and a glowing progress line
@@ -633,7 +670,7 @@ make pkg                        # PS3 build (needs PSL1GHT + Tiny3D, $PSL1GHT se
 python3 tools/gen_font.py       # regenerate font atlases (src/core/font_data.c)
 python3 tools/gen_icons.py      # regenerate button badges (src/core/icons_data.c)
 python3 tools/cutout_cats.py    # art/cats_source.png -> art/cats.png (transparent kittens)
-python3 tools/gen_cats.py       # art/cats.png -> src/core/cats_data.c + pkgfiles/ICON0.PNG
+python3 tools/gen_cats.py       # art/cats.png -> src/core/cats_data.c (pixels + outlines) + pkgfiles/ICON0.PNG
 ```
 
 - `src/core/` — portable C99, no PS3 headers: title cleanup, sorting, letter

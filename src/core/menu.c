@@ -26,7 +26,7 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
 static const RowKind k_g_look[] = { ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT };
 static const RowKind k_g_sound[] = { ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_SFX };
 static const RowKind k_g_games[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_IGNORE_THE, ROW_F_COVERS, ROW_F_RESCAN };
-static const RowKind k_g_system[] = { ROW_F_SLEEP, ROW_F_XMB_TOP, ROW_F_PERFTEST };
+static const RowKind k_g_system[] = { ROW_F_SLEEP, ROW_F_XMB_TOP };
 
 static const RowKind *group_list(RowKind g, int *n)
 {
@@ -88,7 +88,6 @@ const char *menu_label(RowKind k)
     case ROW_F_IGNORE_THE: return "Ignore \"The\" When Sorting";
     case ROW_F_XMB_TOP: return "Pin to Top of XMB";
     case ROW_F_RESCAN: return "Rescan Library";
-    case ROW_F_PERFTEST: return "Performance Test";
     case ROW_F_QUIT: return "Quit to XMB";
     case ROW_F_POWEROFF: return "Power Off PS3";
     }
@@ -97,7 +96,7 @@ const char *menu_label(RowKind k)
 
 int menu_is_action(RowKind k)
 {
-    return k == ROW_D_DISC || menu_is_group(k) || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_PERFTEST || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
+    return k == ROW_D_DISC || menu_is_group(k) || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
 }
 
 int menu_is_slider(RowKind k) { return k == ROW_F_VOLUME || k == ROW_F_SFX; }
@@ -128,17 +127,8 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
         sf_strlcpy(out, n[sf_clampi(g->ps2cfg, 0, SET_PS2CFG_MAX)], cap);
         break;
     }
-    /* groups: a short summary of what's inside */
-    case ROW_FG_LOOK: snprintf(out, cap, "%s \xC2\xB7 %s  \xE2\x80\xBA", settings_background_name(s->background), settings_color_name(s->ui_color)); break;
-    case ROW_FG_SOUND:
-        if (s->music_volume == 0) snprintf(out, cap, "Music Off  \xE2\x80\xBA");
-        else snprintf(out, cap, "Music %d%%%s  \xE2\x80\xBA", s->music_volume, s->shuffle ? " \xC2\xB7 Shuffle" : "");
-        break;
-    case ROW_FG_GAMES: snprintf(out, cap, "Auto-Play %s  \xE2\x80\xBA", onoff(s->autoplay)); break;
-    case ROW_FG_SYSTEM:
-        if (s->sleep_min <= 0) sf_strlcpy(out, "Sleep Off  \xE2\x80\xBA", cap);
-        else snprintf(out, cap, "Sleep %d min  \xE2\x80\xBA", s->sleep_min);
-        break;
+    /* groups (0.7.3): no summary, just the name, centered */
+    case ROW_FG_LOOK: case ROW_FG_SOUND: case ROW_FG_GAMES: case ROW_FG_SYSTEM: out[0] = '\0'; break;
     case ROW_F_AUTOPLAY: sf_strlcpy(out, onoff(s->autoplay), cap); break;
     case ROW_F_OFFLINE: sf_strlcpy(out, onoff(s->offline), cap); break;
     case ROW_F_SFX:
@@ -160,7 +150,6 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
     case ROW_F_IGNORE_THE: sf_strlcpy(out, onoff(s->ignore_the), cap); break;
     case ROW_F_XMB_TOP: sf_strlcpy(out, onoff(s->xmb_top), cap); break;
     case ROW_F_RESCAN: sf_strlcpy(out, "Start", cap); break;
-    case ROW_F_PERFTEST: sf_strlcpy(out, "Start", cap); break;
     case ROW_F_QUIT: sf_strlcpy(out, "", cap); break;
     case ROW_F_POWEROFF: sf_strlcpy(out, "", cap); break;
     }
@@ -228,7 +217,6 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     case ROW_F_IGNORE_THE: s->ignore_the = cycle(s->ignore_the, 2, dir); return MENU_FX_RESORT;
     case ROW_F_XMB_TOP: s->xmb_top = cycle(s->xmb_top, 2, dir); return MENU_FX_XMB_TOP;
     case ROW_F_RESCAN: return dir == 0 ? MENU_FX_RESCAN : MENU_FX_NONE;
-    case ROW_F_PERFTEST: return dir == 0 ? MENU_FX_PERFTEST : MENU_FX_NONE;
     case ROW_F_QUIT: return dir == 0 ? MENU_FX_QUIT : MENU_FX_NONE;
     case ROW_F_POWEROFF: return dir == 0 ? MENU_FX_POWEROFF : MENU_FX_NONE;
     }

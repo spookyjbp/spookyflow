@@ -226,6 +226,21 @@ int main(int argc, char **argv)
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
     step(0, 0.5f);
     render("03_flow_ps2", 1280, 720);
+    if (getenv("SF_PREVIEW_DISPLAY")) {   /* 0.7.2: Square = display mode, Circle = back */
+        int fr = 0;
+        char nm[64];
+        float keep = g_app.music_card_t;
+        g_app.music_card_t = g_app.music_card_len;
+        press(SFB_SQUARE);
+        for (; fr < 14; fr++) { snprintf(nm, sizeof(nm), "anim_disp_%03d", fr); render(nm, 1280, 720); step(0, 0.05f); }
+        for (; fr < 24; fr++) { snprintf(nm, sizeof(nm), "anim_disp_%03d", fr); render(nm, 1280, 720); step(0, 0.1f); }
+        press(SFB_TRIANGLE); step(0, 0.4f);
+        render("03f_display_game_settings", 1280, 720);
+        press(SFB_CIRCLE); step(0, 0.4f);
+        press(SFB_CIRCLE);
+        for (; fr < 38; fr++) { snprintf(nm, sizeof(nm), "anim_disp_%03d", fr); render(nm, 1280, 720); step(0, 0.05f); }
+        g_app.music_card_t = keep;
+    }
     /* background music: the "now playing" toast when a song starts (or SELECT) */
     sf_strlcpy(g_app.music_name, "Dreams of the Midnight Arcade", sizeof(g_app.music_name));
     g_app.music_card_t = 0.0f;
@@ -549,6 +564,11 @@ int main(int argc, char **argv)
                         }
                         render("34_stage_ps2", 1280, 720);
                         render("34_stage_ps2_1080p", 1920, 1080);
+                        if (getenv("SF_PREVIEW_DISPLAY")) {   /* 0.7.2: display mode on the Stage */
+                            g_app.display = 1; g_app.display_t = 1.0f;
+                            render("34_stage_display", 1280, 720);
+                            g_app.display = 0; g_app.display_t = 0.0f;
+                        }
                         if (getenv("SF_PREVIEW_REVEAL")) {   /* 0.6.9: the Stage reveal loading screen, frame by frame */
                             int fr;
                             char nm2[64];
@@ -570,6 +590,22 @@ int main(int argc, char **argv)
                                 render(nm2, 1280, 720);
                             }
                             g_app.intro = 1.0f; g_app.time = tsave;
+                        }
+                        if (getenv("SF_PREVIEW_RESCAN")) {   /* 0.7.1: Rescan Library on Stage, frame by frame */
+                            int fr = 0, i2;
+                            char nm2[64];
+                            g_app.mode = MODE_FLOW; g_app.intro = 1.0f;
+                            press(SFB_START); step(0, 0.3f);
+                            press(SFB_DOWN); press(SFB_DOWN); press(SFB_CROSS); step(0, 0.2f);   /* Games & Library */
+                            for (i2 = 0; i2 < 4; i2++) press(SFB_DOWN);                          /* Rescan Library */
+                            step(0, 0.2f);
+                            press(SFB_CROSS);
+                            for (fr = 0; fr < 40; fr++) {
+                                snprintf(nm2, sizeof(nm2), "anim_rescan_%03d", fr);
+                                render(nm2, 1280, 720);
+                                step(0, 0.1f);
+                            }
+                            step(0, 1.0f);
                         }
                         if (getenv("SF_PREVIEW_CARD")) {   /* 0.7.0: the loading screen of the other backgrounds */
                             int fr = 0, bgk;

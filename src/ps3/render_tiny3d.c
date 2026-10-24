@@ -26,8 +26,7 @@ static int g_pending_type = -1;   /* polygon type to open on first vertex, -1 = 
 static int g_open;                /* SetPolygon issued for this batch */
 static int g_cur_tex = -1;
 
-/* performance test (Flow Settings > Performance Test): variants + counters */
-static unsigned g_perf;                 /* PERF_* flags (render.h; ui.c acts on them) */
+/* per-frame counters (what a frame sends to the RSX) */
 static int g_bound_tex = -1;            /* texture last given to the RSX this frame */
 static int g_last_kind = -1;            /* 0 = color triangles, 1 = textured quads (Tiny3D shader) */
 R3Stats g_r3_stats;
@@ -37,7 +36,6 @@ R3Stats g_r3_stats;
 void rsxtiny_DepthTestEnable(void *context, uint32_t enable);
 void rsxtiny_DepthWriteEnable(void *context, uint32_t enable);
 
-void ps3_render_set_perf(unsigned flags) { g_perf = flags; }
 
 int ps3_render_init(u32 pool_bytes)
 {

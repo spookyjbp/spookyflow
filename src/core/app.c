@@ -78,7 +78,6 @@ void app_init(App *a, Library *lib, const AppHost *host)
     a->music_card_t = MUSIC_CARD_TIME;
     a->music_card_len = MUSIC_CARD_TIME;
     a->music_swap_t = 1.0f;
-    a->perf_phase = -1;
     a->reveal_start = -1000.0f;
     sf_strlcpy(a->load_status, "Starting\xE2\x80\xA6", sizeof(a->load_status));
 }
@@ -95,7 +94,7 @@ int app_tab_has_games(const App *a, int tab) { return a->lib->tab[tab].count > 0
 
 int app_main_context(const App *a)
 {
-    return a->mode == MODE_FLOW && a->panel == PANEL_NONE && !a->exiting;
+    return a->mode == MODE_FLOW && a->panel == PANEL_NONE && !a->exiting && !a->display;
 }
 
 void app_show_toast(App *a, const char *msg)
@@ -140,12 +139,9 @@ void app_save(App *a)
         log_printf("settings: could not write %s", a->host.settings_path);
 }
 
-static void perf_enter(App *a, int phase);
-
 void app_request_exit(App *a, const char *why)
 {
     if (a->exiting) return;
-    if (a->perf_phase >= 0) perf_enter(a, -1);
     a->exiting = 1;
     a->exit_fade = 0.0f;
     log_printf("exit requested (%s)", why);
@@ -166,9 +162,7 @@ static void start_loading(App *a, int rescan)
     a->rescan = rescan;
     a->intro = 0.0f;
     a->reveal_start = -1000.0f;     /* ui.c starts the Stage reveal when it can */
-    drop_covers(a);
-    /* "Rescan Library" also refreshes covers (new art, a new cover pack) */
-    if (rescan && a->host.covers) cover_wipe_cache(a->host.covers);
+    if (!rescan) drop_covers(a);    /* a rescan drops them once the cover flow has faded out */
 }
 
 static void sort_all(App *a, int keep_selection)
@@ -403,6 +397,12 @@ static void loading_update(App *a, float dt)
     a->load_t += dt;
     switch (a->load_step) {
     case LOAD_START:
+        if (a->rescan) {
+            if (a->load_t < RESCAN_OUT_TIME) break;      /* the cover flow is still fading out */
+            drop_covers(a);
+            /* "Rescan Library" also refreshes covers (new art, a new cover pack) */
+            if (a->host.covers) cover_wipe_cache(a->host.covers);
+        }
         sf_strlcpy(a->load_status, a->rescan ? "Rescanning library\xE2\x80\xA6" : "Loading settings\xE2\x80\xA6", sizeof(a->load_status));
         a->load_target = 0.06f;
         a->load_step = LOAD_SETTINGS;      /* do the work next frame so this frame renders */
@@ -757,62 +757,6 @@ static void ps2cfg_apply(App *a, const char *iso, const char *lib_id, int type)
     else log_printf("ps2 config: couldn't write %s", cfg);
 }
 
-/* ------------------------------------------------------------------ */
-/* Performance test: a few seconds of each variant; the host logs the
- * frame times of each step (src/ps3/main.c) */
-
-static const struct { unsigned flags; const char *name; } k_perf[] = {
-    /* depth off and the texture-bind cache are permanent since 0.6.5 */
-    { 0,                                                   "as is" },
-    { PERF_NO_BG,                                          "without the background" },
-    { PERF_NO_FLOW,                                        "without the cover row" },
-    { PERF_NO_REFLECT,                                     "without reflections" },
-    { PERF_NO_CASES,                                       "without case images" },
-    { PERF_NO_UI,                                          "without tabs/title/bar" },
-    { PERF_NO_BG | PERF_NO_FLOW | PERF_NO_UI,              "nothing drawn (floor)" },
-};
-int app_perf_phase_count(void) { return (int)(sizeof(k_perf) / sizeof(k_perf[0])); }
-unsigned app_perf_phase_flags(int phase) { return (phase >= 0 && phase < app_perf_phase_count()) ? k_perf[phase].flags : 0u; }
-const char *app_perf_phase_name(int phase) { return (phase >= 0 && phase < app_perf_phase_count()) ? k_perf[phase].name : ""; }
-
-static void perf_enter(App *a, int phase)
-{
-    a->perf_phase = phase;
-    a->perf_t = 0.0f;
-    a->perf_flags = phase >= 0 ? k_perf[phase].flags : 0u;
-    if (phase >= 0) log_printf("perf test: step %d/%d, %s (flags %u)", phase + 1, app_perf_phase_count(), k_perf[phase].name, a->perf_flags);
-    if (a->host.perf_phase) a->host.perf_phase(phase, a->perf_flags);
-}
-
-static void perf_start(App *a)
-{
-    log_printf("perf test: start (background %s, %s tab, %d games)", settings_background_name(a->settings.background),
-               k_plat_name[a->tab], a->lib->tab[a->tab].count);
-    perf_enter(a, 0);
-}
-
-static void perf_stop(App *a, const char *why)
-{
-    if (a->perf_phase < 0) return;
-    perf_enter(a, -1);
-    log_printf("perf test: %s", why);
-    app_show_toast(a, strcmp(why, "done") == 0 ? "Performance test done: please send the log" : "Performance test stopped");
-}
-
-/* 1 while the test runs (it takes the input: only ◯ stops it) */
-static int perf_update(App *a, float dt)
-{
-    if (a->perf_phase < 0) return 0;
-    a->idle_t = 0.0f;                                  /* no sleep during the test */
-    if (a->input.pressed & SFB_CIRCLE) { perf_stop(a, "stopped with circle"); return 1; }
-    a->perf_t += dt;
-    if (a->perf_t >= PERF_PHASE_TIME) {
-        if (a->perf_phase + 1 < app_perf_phase_count()) perf_enter(a, a->perf_phase + 1);
-        else perf_stop(a, "done");
-    }
-    return 1;
-}
-
 /* Flow Settings groups: ✖ on a group opens its page, ◯ comes back */
 static void flow_enter_group(App *a, RowKind g)
 {
@@ -891,10 +835,6 @@ static void apply_fx(App *a, RowKind k, int fx)
         break;
     case MENU_FX_GROUP:
         flow_enter_group(a, k);
-        break;
-    case MENU_FX_PERFTEST:
-        app_close_panel(a);
-        perf_start(a);
         break;
     }
 }
@@ -1038,6 +978,15 @@ static void flow_input(App *a)
     const Input *in = &a->input;
     const GameList *gl = &a->lib->tab[a->tab];
     TabView *v = &a->view[a->tab];
+    if (a->display) {
+        /* display mode: only Launch, Game Settings and Back (◯ in Game
+         * Settings comes back here) */
+        if (in->pressed & SFB_CIRCLE) { a->display = 0; sound_play(SND_CLOSE); return; }
+        if ((in->pressed & SFB_CROSS) && gl->count > 0) launch(a);
+        else if ((in->pressed & SFB_TRIANGLE) && gl->count > 0) app_open_panel(a, PANEL_GAME);
+        return;
+    }
+    if ((in->pressed & SFB_SQUARE) && gl->count > 0) { a->display = 1; sound_play(SND_OPEN); return; }
     if (in->pressed & SFB_L1) { switch_tab(a, -1); return; }
     if (in->pressed & SFB_R1) { switch_tab(a, +1); return; }
     if (gl->count > 0) {
@@ -1082,6 +1031,7 @@ static void animate(App *a, float dt)
     spring_update(&a->title_w, dt);
     anim_approach(&a->intro, 1.0f, 1.0f / INTRO_TIME, dt);
     anim_approach(&a->panel_anim, a->panel_open ? 1.0f : 0.0f, 1.0f / PANEL_ANIM_TIME, dt);
+    anim_approach(&a->display_t, a->display ? 1.0f : 0.0f, 1.0f / DISPLAY_TIME, dt);
     if (!a->panel_open && a->panel_anim <= 0.0f) a->panel = PANEL_NONE;
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;
     if (a->toast_t < TOAST_TIME) a->toast_t += dt;
@@ -1146,7 +1096,6 @@ void app_update(App *a, uint32_t held, float dt)
     sound_set_enabled(a->settings.sfx_volume > 0);
     sound_set_volume((float)a->settings.sfx_volume / 100.0f);
     if (a->mode == MODE_LOADING) { loading_update(a, dt); return; }
-    if (perf_update(a, dt)) { animate(a, dt); return; }
 
     /* evaluated BEFORE handling this frame's input, so a ◯ press that closes a
      * panel cannot arm the exit hold */

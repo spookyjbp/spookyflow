@@ -732,6 +732,9 @@ static void case_window(int plat, float x, float y, float w, float h, Rect *r)
  * fading out with distance. The mirror line is the case's bottom edge. ---- */
 #define REFLECT_DEPTH 0.25f   /* how far it reaches, fraction of case height */
 #define REFLECT_ALPHA 0.32f   /* strength right under the case */
+#define DISPLAY_H     0.70f   /* display mode (Square): the big case's height, fraction of the screen */
+#define DISPLAY_CY    0.505f  /* its vertical center: between the tabs and the controls bar */
+#define DISPLAY_DIM   0.22f   /* the other cases' opacity */
 
 /* mirror the part of rect (y..y+h) that lies within `depth` above axis A
  * to below it, as texture rows v(y)=0..1 */
@@ -771,7 +774,7 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
     if (tex < 0) art = 0.0f;
     case_window(plat, x, y, w, h, &win);
     /* reflection first (it lies under everything) */
-    if (a->settings.reflections && !(a->perf_flags & PERF_NO_REFLECT)) {
+    if (a->settings.reflections) {
         float A = y + h, depth = h * REFLECT_DEPTH, k = REFLECT_ALPHA * alpha * b;
         uint32_t white = 0xFFFFFFFFu;
         if (art < 1.0f) reflect_rect(win.x, win.y, win.w, win.h, A, depth, 0x1E1F24FFu, k * (1.0f - art));
@@ -806,6 +809,18 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     float scroll = a->view[tab].scroll.x;
     int center = (int)floorf(scroll + 0.5f), k;
     const Screen *s = d_screen();
+    /* display mode (Square): the selected case grows to DISPLAY_H of the
+     * screen, centered; the others slide aside and dim */
+    float de = tab == a->tab ? ease_in_out(a->display_t) : 0.0f;
+    CoverPos big;
+    layout_cover(s, tab, 0.0f, &big);
+    {
+        float sc = DISPLAY_H * H() / ((layout_floor() ? LY_SEL_H : LY_C_SEL_H) * H());
+        big.h *= sc; big.w *= sc;
+        big.cy = DISPLAY_CY * H();
+        big.cx += xoff;
+        big.bright = 1.0f;
+    }
     if (gl->count <= 0) {
         d_text(&g_font_main, W() * 0.5f + xoff, H() * layout_flow_cy(), H() * 0.03f, sf_col_alpha(TH_TEXT_DIM, alpha), "No games", ALIGN_CENTER);
         return;
@@ -815,7 +830,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     {
         CoverPos c0;
         float frac = sf_absf(scroll - (float)center);
-        float la = alpha * (1.0f - sf_minf(1.0f, frac * 2.0f) * 0.6f);
+        float la = alpha * (1.0f - sf_minf(1.0f, frac * 2.0f) * 0.6f) * (1.0f - de);
         layout_cover(s, tab, 0.0f, &c0);
         if (la > 0.0f) {
             uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
@@ -835,9 +850,23 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
         for (side = 0; side < (k == 0 ? 1 : 2); side++) {
             int idx = side == 0 ? center - k : center + k;
             CoverPos p;
+            float ra;
             if (idx < 0 || idx >= gl->count) continue;
             layout_cover(s, tab, (float)idx - scroll, &p);
             p.cx += xoff;
+            if (de > 0.0f) {
+                float dd = (float)idx - scroll, ad = sf_minf(1.0f, sf_absf(dd)), f = de * (1.0f - ad);
+                float w0 = p.w;
+                p.h = sf_lerp(p.h, big.h, f);
+                p.w = sf_lerp(p.w, big.w, f);
+                p.cy = sf_lerp(p.cy, big.cy, f);
+                p.bright = sf_lerp(p.bright, 1.0f, f);
+                /* neighbours make room for the big case */
+                p.cx += (dd < 0.0f ? -1.0f : 1.0f) * ad * de * ((big.w - w0) * 0.5f + big.w * 0.04f);
+                ra = sf_lerp(1.0f, DISPLAY_DIM, de * ad);
+            } else {
+                ra = 1.0f;
+            }
             if (p.cx + p.w * 0.5f < 0.0f || p.cx - p.w * 0.5f > W()) continue;
             {
                 int slot = cc_lookup(&a->covers, tab, idx), tex = -1, no_cover = 1;
@@ -853,7 +882,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
                 } else if (a->host.covers && !(gl->games[idx].flags & GAME_DEMO)) {
                     no_cover = 0;     /* not queued yet: also on its way */
                 }
-                draw_cover(a, tab, &gl->games[idx], &p, alpha, tex, art, no_cover,
+                draw_cover(a, tab, &gl->games[idx], &p, alpha * ra, tex, art, no_cover,
                            sf_clampf(1.0f - sf_absf((float)idx - scroll) * 2.0f, 0.0f, 1.0f));
             }
         }
@@ -1054,6 +1083,16 @@ static void shadow_text(const Font *f, float x, float y, float em, uint32_t col,
     d_text_fit(f, x, y, em, sf_col_alpha(col, alpha), t, ALIGN_CENTER, maxw);
 }
 
+/* the A-Z rail takes the info line's place while it shows (0.7.1) */
+static float g_info_fade = 1.0f;
+static float rail_alpha(const App *a)
+{
+    float t = a->letter_t, al;
+    if (t >= LETTER_TIME || !a->letter[0]) return 0.0f;
+    al = t < 0.45f ? 1.0f : sf_maxf(0.0f, 1.0f - (t - 0.45f) / (LETTER_TIME - 0.45f));
+    return al * sf_minf(1.0f, t / 0.12f);
+}
+
 static void draw_info_styled(App *a, float alpha, const UiMetrics *m, float ty, float cy)
 {
     float t = ease_in_out(a->info_t), maxw = W() * 0.80f;
@@ -1073,7 +1112,7 @@ static void draw_info_styled(App *a, float alpha, const UiMetrics *m, float ty, 
                 d_rect_hgrad(W() * 0.5f - tw * 0.5f, ly, tw * 0.5f, th, clear, sf_col_alpha(col, al));
                 d_rect_hgrad(W() * 0.5f, ly, tw * 0.5f, th, sf_col_alpha(col, al), clear);
             }
-            if (a->settings.show_info) info_line(a, tab, idx, cy, m->chip_em * 1.10f, al, g_info_style == 2, 0);
+            if (a->settings.show_info) info_line(a, tab, idx, cy, m->chip_em * 1.10f, al * g_info_fade, g_info_style == 2, 0);
         } else if (g_info_style == 3) {
             /* one frosted card under the case: title + info line */
             float tem = m->title_em * 1.05f, iem = m->chip_em * 1.05f;
@@ -1113,6 +1152,7 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
         mm.title_y = ty;
         mm.chips_y = cy;
     }
+    g_info_fade = 1.0f - ease_in_out(rail_alpha(a));
     if (g_info_style != 0) { ui_update_targets(a); draw_info_styled(a, alpha, m, mm.title_y, mm.chips_y); return; }
     {
     const char *cur = info_title(a, a->info_tab, a->info_idx);
@@ -1130,10 +1170,10 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
     maxw = sf_minf(maxw, pw - 2.0f * pad * 0.6f);
     if (t < 1.0f) {
         draw_title_text(info_title(a, a->prev_tab, a->prev_idx), alpha * (1.0f - t), m, maxw);
-        if (a->settings.show_info) draw_chips(a, a->prev_tab, a->prev_idx, alpha * (1.0f - t), m);
+        if (a->settings.show_info) draw_chips(a, a->prev_tab, a->prev_idx, alpha * (1.0f - t) * g_info_fade, m);
     }
     draw_title_text(cur, alpha * t, m, maxw);
-    if (a->settings.show_info) draw_chips(a, a->info_tab, a->info_idx, alpha * t, m);
+    if (a->settings.show_info) draw_chips(a, a->info_tab, a->info_idx, alpha * t * g_info_fade, m);
     }
 }
 
@@ -1164,16 +1204,22 @@ void ui_bar_layout(int panel_mode, BarLayout *L)
     L->bar_y = m.bar_y - m.bar_h * 0.5f;
     if (!panel_mode) {
         group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = "Launch";
+        group_add_badge(&L->g[1], ICON_SQUARE, L->icon);   L->g[1].label = "Display";
+        group_add_badge(&L->g[2], ICON_TRIANGLE, L->icon); L->g[2].label = "Game Settings";
+        group_add_badge(&L->g[3], ICON_L2, L->icon);
+        group_add_badge(&L->g[3], ICON_R2, L->icon);
+        L->g[3].label = "A\xE2\x80\x93Z";
+        group_add_badge(&L->g[4], ICON_SELECT, L->icon);   L->g[4].label = "Next Song";
+        group_add_badge(&L->g[5], ICON_START, L->icon);    L->g[5].label = "Flow Settings";
+        group_add_badge(&L->g[6], ICON_CIRCLE, L->icon);   L->g[6].label = "Exit (Hold)";
+        L->n = 7;
+    } else if (panel_mode == 3) {
+        group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = "Launch";
         group_add_badge(&L->g[1], ICON_TRIANGLE, L->icon); L->g[1].label = "Game Settings";
-        group_add_badge(&L->g[2], ICON_L2, L->icon);
-        group_add_badge(&L->g[2], ICON_R2, L->icon);
-        L->g[2].label = "A\xE2\x80\x93Z";
-        group_add_badge(&L->g[3], ICON_SELECT, L->icon);   L->g[3].label = "Next Song";
-        group_add_badge(&L->g[4], ICON_START, L->icon);    L->g[4].label = "Flow Settings";
-        group_add_badge(&L->g[5], ICON_CIRCLE, L->icon);   L->g[5].label = "Exit (Hold)";
-        L->n = 6;
+        group_add_badge(&L->g[2], ICON_CIRCLE, L->icon);   L->g[2].label = "Back";
+        L->n = 3;
     } else {
-        group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = panel_mode == 2 ? "Launch" : "Change";
+        group_add_badge(&L->g[0], ICON_CROSS, L->icon);    L->g[0].label = panel_mode >= 2 ? "Launch" : "Change";
         group_add_badge(&L->g[1], ICON_CIRCLE, L->icon);   L->g[1].label = "Back";
         L->n = 2;
     }
@@ -1222,14 +1268,20 @@ static void draw_bar_groups(const App *a, const BarLayout *L, float alpha, int s
 
 static void draw_bar(const App *a, float alpha)
 {
-    BarLayout main_l, panel_l;
-    float pe = ease_out_cubic(a->panel_anim);
+    BarLayout main_l, panel_l, disp_l;
+    float pe = ease_out_cubic(a->panel_anim), de = ease_in_out(a->display_t);
     ui_bar_layout(0, &main_l);
     ui_bar_layout(a->panel == PANEL_DISC ? 2 : 1, &panel_l);
+    ui_bar_layout(3, &disp_l);
     d_rrect(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, sf_col_alpha(TH_BAR, alpha));
     d_rrect_stroke(main_l.bar_x, main_l.bar_y, main_l.bar_w, main_l.bar_h, main_l.bar_h * 0.5f, 0.0028f * H(),
                    sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), alpha));
-    if (pe < 1.0f) draw_bar_groups(a, &main_l, alpha * (1.0f - pe), 1);
+    {
+        /* display mode: the main controls fade out, then Launch and Back fade in */
+        float mo = 1.0f - sf_clampf(de * 2.0f, 0.0f, 1.0f), di = sf_clampf(de * 2.0f - 1.0f, 0.0f, 1.0f);
+        if (pe < 1.0f && mo > 0.0f) draw_bar_groups(a, &main_l, alpha * (1.0f - pe) * mo, 1);
+        if (pe < 1.0f && di > 0.0f) draw_bar_groups(a, &disp_l, alpha * (1.0f - pe) * di, 0);
+    }
     if (pe > 0.0f) draw_bar_groups(a, &panel_l, alpha * pe, 0);
 }
 
@@ -1250,6 +1302,13 @@ static void draw_value(float xr, float cy, float em, const char *val, int select
     } else {
         d_text(&g_font_main, xr, cy, em, c, val, ALIGN_RIGHT);
     }
+}
+
+/* room one of draw_value's ‹ › takes */
+static float arrow_slot(float em) { return d_text_width(&g_font_main, em, "\xE2\x80\xBA") + d_xu(em * 0.45f); }
+static float value_width(float em, const char *val, int arrows)
+{
+    return d_text_width(&g_font_main, em, val) + (arrows ? 2.0f * arrow_slot(em) : 0.0f);
 }
 
 static void draw_panel(App *a)
@@ -1278,13 +1337,9 @@ static void draw_panel(App *a)
 
     d_rrect(px, py, pw, ph, 0.05f * H(), sf_col_alpha(TH_PANEL, e));
     d_rrect_stroke(px, py, pw, ph, 0.05f * H(), 0.0035f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF99u, 0.95f)), e));
-    d_text(&g_font_main, ix + d_xu(rh * 0.3f), py + pad + th * 0.45f, 0.034f * H() * sc, sf_col_alpha(TH_TEXT, e),
-           ptitle, ALIGN_LEFT);
-    if (g) {
-        float tw = d_text_width(&g_font_main, 0.034f * H() * sc, ptitle);
-        d_text_fit(&g_font_main, ix + iw - d_xu(rh * 0.3f), py + pad + th * 0.45f, em * 0.92f, sf_col_alpha(TH_TEXT_FAINT, e),
-                   lib_title(a->lib, g), ALIGN_RIGHT, iw - tw - d_xu(rh * 1.2f));
-    }
+    /* 0.7.3: everything centered, no summaries */
+    d_text_fit(&g_font_main, px + pw * 0.5f, py + pad + th * 0.45f, 0.034f * H() * sc, sf_col_alpha(TH_TEXT, e),
+               ptitle, ALIGN_CENTER, iw);
     if (a->nrows > vis) sbw = d_xu(0.022f * H());
     /* rows */
     for (i = 0; i < a->nrows; i++) {
@@ -1307,7 +1362,8 @@ static void draw_panel(App *a)
     for (i = 0; i < a->nrows; i++) {
         float rel = (float)i - a->list_scroll.x;
         float ry = list_y + rel * (rh + rg), cy = ry + rh * 0.5f;
-        float fa = 1.0f, xr = ix + iw - sbw - d_xu(rh * 0.42f);
+        float fa = 1.0f, mid = ix + (iw - sbw) * 0.5f, gap = d_xu(em * 0.9f);
+        float lmax = (iw - sbw) * 0.5f - gap - d_xu(rh * 0.42f);
         RowKind k = a->rows[i];
         int sel = i == a->row;
         char val[48];
@@ -1319,23 +1375,38 @@ static void draw_panel(App *a)
             const Disc *dd = lib_game_disc(a->lib, g, i);
             char lab[TITLE_MAX];
             lib_disc_name(a->lib, dd, i, lab, sizeof(lab));
-            d_text(&g_font_main, ix + d_xu(rh * 0.42f), cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), lab, ALIGN_LEFT);
             val[0] = '\0';
             if (dd && dd->size) sf_format_size(dd->size, val, sizeof(val));
-            if (val[0]) draw_value(xr, cy, em, val, sel, 0, fa);
+            if (!val[0]) {
+                d_text_fit(&g_font_main, mid, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), lab, ALIGN_CENTER, lmax * 2.0f);
+            } else {
+                d_text_fit(&g_font_main, mid - gap, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), lab, ALIGN_RIGHT, lmax);
+                draw_value(mid + gap + value_width(em, val, 0), cy, em, val, sel, 0, fa);
+            }
             continue;
         }
-        d_text(&g_font_main, ix + d_xu(rh * 0.42f), cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), menu_label(k), ALIGN_LEFT);
         app_row_value(a, k, val, sizeof(val));
+        if (!val[0] && !menu_is_slider(k)) {
+            /* groups and actions: the name, centered */
+            d_text_fit(&g_font_main, mid, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), menu_label(k), ALIGN_CENTER, lmax * 2.0f);
+            continue;
+        }
+        /* name | value, lined up on the middle of the panel */
+        d_text_fit(&g_font_main, mid - gap, cy, em, sf_col_alpha(sel ? TH_TEXT : TH_TEXT_DIM, fa), menu_label(k), ALIGN_RIGHT, lmax);
         if (menu_is_slider(k)) {
-            float tw = d_xu(0.20f * H() * sc), tx = xr - tw, th2 = 0.008f * H();
+            float tw = d_xu(0.16f * H() * sc), th2 = 0.008f * H(), tx;
             float v = menu_slider_value(k, &a->settings);
+            float vw = d_text_width(&g_font_main, em, val), left = mid + gap + arrow_slot(em);
+            draw_value(left + vw + (sel ? arrow_slot(em) : 0.0f), cy, em, val, sel, sel, fa);
+            tx = left + sf_maxf(vw, d_text_width(&g_font_main, em, "100%")) + arrow_slot(em) + d_xu(em * 0.6f);   /* fixed spot */
             d_rrect(tx, cy - th2 * 0.5f, tw, th2, th2 * 0.5f, sf_col_alpha(TH_SLIDER_TRACK, fa));
             d_rrect(tx, cy - th2 * 0.5f, tw * v, th2, th2 * 0.5f, sf_col_alpha(accent_or(TH_SLIDER_FILL, 1.0f), fa));
             d_disc(tx + tw * v, cy, th2 * 1.3f, sf_col_alpha(TH_TEXT, fa));
-            draw_value(tx - d_xu(em * 0.9f), cy, em, val, sel, sel, fa);
-        } else if (val[0]) {
-            draw_value(xr, cy, em, val, sel, sel && !menu_is_action(k), fa);
+        } else {
+            /* the value starts at the same x whether or not its ‹ › show */
+            int can = !menu_is_action(k), arrows = sel && can;
+            float left = mid + gap + (can ? arrow_slot(em) : 0.0f);
+            draw_value(left + d_text_width(&g_font_main, em, val) + (arrows ? arrow_slot(em) : 0.0f), cy, em, val, sel, arrows, fa);
         }
     }
     /* scrollbar */
@@ -1366,7 +1437,14 @@ static void draw_letter(const App *a)
     uint32_t acc;
     int b;
     if (t >= LETTER_TIME || !a->letter[0]) return;
-    if (!a->settings.show_info) {
+    if (a->settings.show_info) {
+        /* in the info line's place: the line fades out as the rail fades in */
+        UiMetrics m;
+        float ty, cy;
+        layout_ui(d_screen(), &m);
+        layout_info_y(d_screen(), &m, a->tab, &ty, &cy);
+        y = cy;
+    } else {
         /* no title/info line: the rail sits halfway between the selected case and the controls bar */
         CoverPos c0;
         BarLayout L;
@@ -1376,8 +1454,7 @@ static void draw_letter(const App *a)
         case_bot = c0.cy + c0.h * 0.5f;
         y = sf_clampf((case_bot + L.bar_y) * 0.5f, case_bot + ph * 0.6f, L.bar_y - ph * 0.6f);
     }
-    al = t < 0.45f ? 1.0f : sf_maxf(0.0f, 1.0f - (t - 0.45f) / (LETTER_TIME - 0.45f));
-    al *= sf_minf(1.0f, t / 0.08f);                                     /* quick fade in */
+    al = ease_in_out(rail_alpha(a));
     k = ease_out_cubic(sf_minf(1.0f, t / 0.30f));
     pos = sf_lerp((float)a->letter_prev_bucket, (float)a->letter_bucket, k);
     acc = accent_white() ? TH_TEXT : sf_col_mix(accent() | 0xFFu, 0xFFFFFFFFu, 0.30f);
@@ -1559,91 +1636,179 @@ static void stage_reveal_overlay(float rt)
     }
 }
 
-/* name, kittens, status and progress over the Stage */
+/* ---- the kittens on the loading screens (0.7.1) ------------------------
+ * They stand exactly where the selected game's case will stand: their feet
+ * on its bottom edge, its contact shadow and floor reflection starting at
+ * the same line, so the cover flow takes over the same spot. */
+typedef struct { float cx, bottom, kh, kw, case_w, case_h; } KitSpot;
+static void kitten_spot(const App *a, KitSpot *k)
+{
+    CoverPos c;
+    layout_cover(d_screen(), a->tab, 0.0f, &c);
+    k->cx = c.cx; k->bottom = c.cy + c.h * 0.5f; k->case_w = c.w; k->case_h = c.h;
+    k->kh = c.h * 0.60f;
+    k->kw = d_xu(k->kh * (float)g_cats_w / (float)g_cats_h);
+}
+
+/* one kitten sprite (or both: TEX_CATS): centre x, feet at `bottom`, squash
+ * sx/sy around the feet, lifted by `lift`, turned by `ang`; the reflection
+ * and contact shadow fade as it leaves the ground */
+static void draw_kitten(const App *a, const KitSpot *k, int tex, float x, float lift, float sx, float sy, float ang, float alpha)
+{
+    float w = k->kw * sx, h = k->kh * sy, ground = 1.0f - clamp01(lift / (0.06f * H()));
+    float y = k->bottom - lift - h;
+    if (alpha <= 0.002f) return;
+    if (ground > 0.0f && ang == 0.0f) {
+        if (a->settings.reflections)
+            reflect_tex(tex, x - w * 0.5f, y, w, h, k->bottom, k->case_h * REFLECT_DEPTH, 0xFFFFFFFFu, REFLECT_ALPHA * alpha * ground);
+    }
+    if (layout_floor() && ground > 0.0f)
+        d_blob_ellipse(x, k->bottom, w * 0.40f, k->case_h * 0.045f, sf_col_alpha(0x000000FFu, 0.55f * alpha * ground));
+    if (ang == 0.0f) d_image(tex, x - w * 0.5f, y, w, h, sf_col_alpha(0xFFFFFFFFu, alpha));
+    else d_image_rot(tex, x, y + h * 0.5f, w * PA(), h, ang, 0.0f, 1.0f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, alpha));
+}
+
+/* where the name sits: centred above the kittens */
+static float wordmark_y(const KitSpot *k) { return k->bottom - k->kh - 0.085f * H(); }
+#define WORDMARK_EM (0.095f)
+
+/* name and kittens over the Stage (no status text or progress line: 0.7.1) */
 static void draw_loading_stage(const App *a, float alpha, float rt)
 {
-    float t = (float)a->time, hy = H() * LY_HORIZON_Y;
+    float t = (float)a->time;
     float ea = alpha * ease_in_out(clamp01((rt - REVEAL_ITEMS_T0) / REVEAL_ITEMS_T));
     float rise = 1.0f - ease_out_cubic(clamp01((rt - REVEAL_ITEMS_T0) / (REVEAL_ITEMS_T * 1.3f)));
+    KitSpot k;
     if (ea <= 0.002f) return;
-    draw_wordmark(a, H() * (0.205f + 0.02f * rise), 0.105f * H(), ea);
-    /* the kittens stand on the horizon, mirrored in the floor */
-    {
-        float breath = 1.0f + 0.010f * sinf(t * 2.1f);
-        float kh = 0.29f * H() * breath, kw = d_xu(kh * (float)g_cats_w / (float)g_cats_h);
-        float kx = W() * 0.5f - kw * 0.5f, ky = hy - kh + 0.006f * H() + rise * 0.03f * H();
-        d_image_v(TEX_CATS, kx, hy + 0.004f * H(), kw, kh * 0.45f, 1.0f, 0.55f,
-                  sf_col_alpha(0xFFFFFFFFu, 0.22f * ea), sf_col_alpha(0xFFFFFFFFu, 0.0f));
-        d_image(TEX_CATS, kx, ky, kw, kh, sf_col_alpha(0xFFFFFFFFu, ea));
-    }
-    d_text(&g_font_main, W() * 0.5f, H() * 0.815f, 0.024f * H(), sf_col_alpha(TH_TEXT_DIM, ea), a->load_status, ALIGN_CENTER);
-    /* progress: a glowing line that grows out from the middle */
-    {
-        uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
-        float full = d_xu(0.50f * H()), hw = full * 0.5f * clamp01(a->load_shown), y = H() * 0.855f;
-        float th = 0.0045f * H(), gh = 0.022f * H();
-        uint32_t track = sf_col_alpha(0xFFFFFFFFu, 0.10f * ea), core = sf_col_alpha(sf_col_mix(glow(col), 0xFFFFFFFFu, 0.35f), ea),
-                 haze = sf_col_alpha(glow(col), 0.35f * ea);
-        d_rect_hgrad(W() * 0.5f - full * 0.5f, y - th * 0.5f, full * 0.5f, th, track & 0xFFFFFF00u, track);
-        d_rect_hgrad(W() * 0.5f, y - th * 0.5f, full * 0.5f, th, track, track & 0xFFFFFF00u);
-        if (hw > 0.0f) {
-            d_rect_hgrad(W() * 0.5f - hw, y - gh * 0.5f, hw, gh, clear, haze);
-            d_rect_hgrad(W() * 0.5f, y - gh * 0.5f, hw, gh, haze, clear);
-            d_rect_hgrad(W() * 0.5f - hw, y - th * 0.5f, hw, th, clear, core);
-            d_rect_hgrad(W() * 0.5f, y - th * 0.5f, hw, th, core, clear);
-        }
-    }
+    kitten_spot(a, &k);
+    draw_wordmark(a, wordmark_y(&k) + 0.02f * H() * rise, WORDMARK_EM * H(), ea);
+    draw_kitten(a, &k, TEX_CATS, k.cx, 0.03f * H() * rise, 1.0f, 1.0f + 0.010f * sinf(t * 2.1f), 0.0f, ea);
 }
 
-/* ---- the loading screen of every other background (0.7.0) -------------
- * The chosen background fades in from black; a frosted card in the middle
- * (the controls bar's fill and glowing outline) rises into place with the
- * kittens, the name, the status and a glowing progress line. When the cover
- * flow comes in, only the card fades away. ea = opacity, rt = seconds. */
-static void draw_loading_card(const App *a, float alpha, float rt, float grow)
+/* ---- Kittens drawn in light (0.7.3): the loading screen of every
+ * background but Stage. The kittens' outlines (traced from the picture by
+ * tools/gen_cats.py) are drawn by a point of light, the picture fills in
+ * inside them as the lines fade, and the kittens breathe while the name is
+ * written letter by letter in light. Same spot as the Stage screen: feet on
+ * the selected case's bottom edge. */
+#define LT_T0   0.45f     /* the silhouette starts */
+#define LT_SIL  1.55f     /* ... and takes this long */
+#define LT_FUR  0.55f     /* where the white fur meets the black: start after LT_T0 ... */
+#define LT_FURD 0.95f
+#define LT_EYE  1.20f     /* the eyes */
+#define LT_EYED 0.45f
+#define LT_FILL 2.05f     /* the picture fills in */
+#define LT_FILLD 0.75f
+#define LT_FADE 2.35f     /* the lines fade */
+#define LT_FADED 0.70f
+#define ENT_N0 2.55f      /* the name */
+#define ENT_NL 0.085f     /* per letter */
+
+static void draw_name_in_light(const App *a, float cx, float wy, float em, float rt, float alpha);
+
+/* draw outline i up to fraction p of its length; returns the tip */
+static void kit_stroke(int i, float p, float ox, float oy, float kw, float kh, float thick, uint32_t col,
+                       float *tx, float *ty)
 {
-    float ea = alpha * ease_in_out(clamp01((rt - 0.45f) / 0.80f));
-    float rise = (1.0f - ease_out_cubic(clamp01((rt - 0.45f) / 1.0f))) * 0.035f * H();
-    float sc = 1.0f + 0.04f * grow;
-    float ch = 0.66f * H() * sc, cw = d_xu(0.80f * H()) * sc, cx = W() * 0.5f, cy = H() * 0.5f + rise, top = cy - ch * 0.5f;
-    float t = (float)a->time;
-    if (ea <= 0.002f) return;
-    d_rrect(cx - cw * 0.5f, top, cw, ch, 0.06f * H(), sf_col_alpha(0x0A0B10FFu, 0.80f * ea));   /* dark glass... */
-    d_rrect(cx - cw * 0.5f, top, cw, ch, 0.06f * H(), sf_col_alpha(TH_BAR, ea));                  /* ...with the bar's sheen */
-    d_rrect_stroke(cx - cw * 0.5f, top, cw, ch, 0.06f * H(), 0.0028f * H(), sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), ea));
-    {   /* the kittens, breathing gently */
-        float breath = 1.0f + 0.010f * sinf(t * 2.1f);
-        float kh = 0.25f * H() * sc * breath, kw = d_xu(kh * (float)g_cats_w / (float)g_cats_h);
-        d_image(TEX_CATS, cx - kw * 0.5f, top + ch * 0.23f - kh * 0.5f, kw, kh, sf_col_alpha(0xFFFFFFFFu, ea));
+    int j0 = g_kitline_start[i], j1 = g_kitline_start[i + 1], j;
+    float total = 0.0f, want, run = 0.0f;
+    *tx = ox + g_kitline_uv[j0][0] * kw; *ty = oy + g_kitline_uv[j0][1] * kh;
+    for (j = j0 + 1; j < j1; j++) {
+        float dx = (g_kitline_uv[j][0] - g_kitline_uv[j - 1][0]) * kw, dy = (g_kitline_uv[j][1] - g_kitline_uv[j - 1][1]) * kh;
+        dx /= d_xu(1.0f);                              /* lengths in vertical units */
+        total += sqrtf(dx * dx + dy * dy);
     }
-    draw_wordmark(a, top + ch * 0.58f, 0.085f * H() * sc, ea);
-    d_text(&g_font_main, cx, top + ch * 0.75f, 0.023f * H() * sc, sf_col_alpha(TH_TEXT_DIM, ea), a->load_status, ALIGN_CENTER);
-    {
-        uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
-        float full = cw * 0.70f, hw = full * 0.5f * clamp01(a->load_shown), y = top + ch * 0.84f;
-        float th = 0.0045f * H(), gh = 0.022f * H();
-        uint32_t track = sf_col_alpha(0xFFFFFFFFu, 0.10f * ea), core = sf_col_alpha(sf_col_mix(glow(col), 0xFFFFFFFFu, 0.35f), ea),
-                 haze = sf_col_alpha(glow(col), 0.35f * ea);
-        d_rect_hgrad(cx - full * 0.5f, y - th * 0.5f, full * 0.5f, th, track & 0xFFFFFF00u, track);
-        d_rect_hgrad(cx, y - th * 0.5f, full * 0.5f, th, track, track & 0xFFFFFF00u);
-        if (hw > 0.0f) {
-            d_rect_hgrad(cx - hw, y - gh * 0.5f, hw, gh, clear, haze);
-            d_rect_hgrad(cx, y - gh * 0.5f, hw, gh, haze, clear);
-            d_rect_hgrad(cx - hw, y - th * 0.5f, hw, th, clear, core);
-            d_rect_hgrad(cx, y - th * 0.5f, hw, th, core, clear);
-        }
+    want = total * clamp01(p);
+    for (j = j0 + 1; j < j1 && run < want; j++) {
+        float x0 = ox + g_kitline_uv[j - 1][0] * kw, y0 = oy + g_kitline_uv[j - 1][1] * kh;
+        float x1 = ox + g_kitline_uv[j][0] * kw, y1 = oy + g_kitline_uv[j][1] * kh;
+        float dxv = (x1 - x0) / d_xu(1.0f), dy = y1 - y0, len = sqrtf(dxv * dxv + dy * dy), f = 1.0f;
+        if (len <= 0.0f) continue;
+        if (run + len > want) f = (want - run) / len;
+        x1 = x0 + (x1 - x0) * f; y1 = y0 + (y1 - y0) * f;
+        d_line(x0, y0, x1, y1, thick, col);
+        run += len * f;
+        *tx = x1; *ty = y1;
     }
 }
 
-/* 1: the loading screen is the Stage reveal; 2: the card over the chosen
- * background; -1: black (settings / Stage not ready yet) */
+static void draw_loading_entrance(const App *a, float alpha, float rt)
+{
+    float t = (float)a->time;
+    float fill = ease_in_out(clamp01((rt - LT_FILL) / LT_FILLD));
+    float lines = 1.0f - ease_in_out(clamp01((rt - LT_FADE) / LT_FADED));
+    KitSpot k;
+    if (alpha <= 0.002f) return;
+    kitten_spot(a, &k);
+    if (lines > 0.0f && rt > LT_T0) {
+        uint32_t hot = sf_col_mix(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, 0xFFFFFFFFu, 0.55f);
+        float ox = k.cx - k.kw * 0.5f, oy = k.bottom - k.kh, th = 0.0034f * H();
+        int i, pass;
+        /* a soft glow under the kittens while they are being drawn */
+        d_blob(k.cx, k.bottom - k.kh * 0.5f, k.kh * 0.75f, sf_col_alpha(hot, 0.05f * alpha * lines * clamp01((rt - LT_T0) / 0.6f)));
+        for (pass = 0; pass < 2; pass++) {             /* glow, then the bright core */
+            for (i = 0; i < g_kitline_count; i++) {
+                int kind = g_kitline_kind[i];
+                float s0 = LT_T0 + (kind == 0 ? 0.0f : kind == 1 ? LT_FUR : LT_EYE);
+                float dur = kind == 0 ? LT_SIL : kind == 1 ? LT_FURD : LT_EYED;
+                float pr = ease_in_out(clamp01((rt - s0) / dur)), tx, ty;
+                float la = alpha * lines * (kind == 0 ? 1.0f : 0.80f);
+                if (pr <= 0.0f) continue;
+                if (pass == 0) {
+                    kit_stroke(i, pr, ox, oy, k.kw, k.kh, th * 3.4f, sf_col_alpha(hot, 0.16f * la), &tx, &ty);
+                } else {
+                    kit_stroke(i, pr, ox, oy, k.kw, k.kh, th, sf_col_alpha(hot, 0.92f * la), &tx, &ty);
+                    if (pr < 1.0f) {                   /* the point of light that draws it */
+                        d_blob(tx, ty, 0.030f * H(), sf_col_alpha(hot, 0.55f * la));
+                        d_disc(tx, ty, th * 1.3f, sf_col_alpha(0xFFFFFFFFu, la));
+                    }
+                }
+            }
+        }
+    }
+    if (fill > 0.0f) {
+        /* the picture fills in, a little bright at first; then it breathes */
+        float glow = (1.0f - fill) * clamp01((rt - LT_FILL) / 0.2f);
+        draw_kitten(a, &k, TEX_CATS, k.cx, 0.0f, 1.0f, 1.0f + 0.010f * sinf(t * 2.1f) * fill, 0.0f, alpha * fill);
+        if (glow > 0.0f)
+            d_blob(k.cx, k.bottom - k.kh * 0.5f, k.kh * 0.8f, sf_col_alpha(0xFFFFFFFFu, 0.10f * alpha * glow));
+    }
+    draw_name_in_light(a, k.cx, wordmark_y(&k), WORDMARK_EM * H(), rt, alpha);
+}
+
+static void draw_name_in_light(const App *a, float cx, float wy, float em, float rt, float alpha)
+{
+    const char *name = APP_NAME;
+    float total = d_text_width(&g_font_big, em, name), x = cx - total * 0.5f;
+    int i, n = (int)strlen(name);
+    uint32_t hot = sf_col_mix(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, 0xFFFFFFFFu, 0.55f);
+    float done = clamp01((rt - (ENT_N0 + (float)n * ENT_NL)) / 0.6f);
+    if (done > 0.0f) draw_wordmark(a, wy, em, alpha * done);     /* the settled name, with its ghostly glow */
+    for (i = 0; i < n; i++) {
+        char c[2];
+        float cw, la, flash;
+        float t0 = ENT_N0 + (float)i * ENT_NL;
+        c[0] = name[i]; c[1] = '\0';
+        cw = d_text_width(&g_font_big, em, c);
+        la = clamp01((rt - t0) / 0.18f);
+        flash = rt > t0 ? expf(-(rt - t0) * 4.0f) : 0.0f;
+        if (la > 0.0f && done < 1.0f)
+            d_text(&g_font_big, x, wy, em, sf_col_alpha(sf_col_mix(TH_WORDMARK, hot, flash), alpha * la * (1.0f - done)), c, ALIGN_LEFT);
+        if (flash > 0.02f && la > 0.0f)        /* the light that writes it */
+            d_blob(x + cw * 0.5f, wy, em * 0.9f, sf_col_alpha(hot, 0.45f * alpha * flash));
+        x += cw;
+    }
+}
+
+/* 1: the loading screen is the Stage reveal; 2: the kittens' entrance over
+ * the chosen background; -1: black (settings / Stage not ready yet) */
 static int loading_style(const App *a)
 {
     int stage_ok = g_stage_tex >= 0 || g_src_base != NULL;
     if (!a->settings_ready) return -1;
     if (a->settings.background != BG_STAGE) return 2;
     if (stage_ok) return 1;
-    return a->load_step <= LOAD_PREPARE ? -1 : 2;        /* Stage failed to load: the card */
+    return a->load_step <= LOAD_PREPARE ? -1 : 2;        /* Stage failed to load: the entrance */
 }
 
 static void draw_loading(const App *a, float alpha)
@@ -1687,6 +1852,34 @@ static void draw_loading(const App *a, float alpha)
 
 /* ------------------------------------------------------------------ */
 
+/* the cover flow and everything over it; ia = its opacity (0.7.1: also used
+ * to fade it out when Rescan Library starts) */
+static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
+{
+    UiMetrics m = *mm;
+    /* tabs */
+    draw_tabs(a, ia, -(1.0f - intro) * 0.05f * H());
+    /* cover rows (tab switch: old slides out, new slides in) */
+    if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
+        float e = ease_out_cubic(a->tab_anim), dist = W() * 0.45f;
+        draw_flow_row(a, a->tab_prev, -(float)a->tab_dir * e * dist, (1.0f - e) * ia);
+        draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist, e * ia);
+    } else {
+        /* after the kittens' loading screens the selected case appears where they stood */
+        draw_flow_row(a, a->tab, a->reveal_start > -999.0f ? 0.0f : (1.0f - intro) * W() * 0.12f, ia);
+    }
+    if (a->display_t < 1.0f) draw_info(a, ia * (1.0f - ease_in_out(a->display_t)), &m);   /* display mode: title and info fade out */
+    if (a->panel != PANEL_NONE) {
+        float pe = ease_out_cubic(a->panel_anim);
+        d_rect(0, 0, W(), H(), sf_col_alpha(TH_DIM_OVERLAY, TH_DIM_MAX * pe));
+        draw_panel(a);
+    }
+    draw_bar(a, ia);
+    draw_letter(a);
+    draw_music_card(a, ia);
+    draw_toast(a);
+}
+
 void ui_draw(App *a)
 {
     UiMetrics m;
@@ -1698,15 +1891,17 @@ void ui_draw(App *a)
     if (a->mode == MODE_LOADING && a->settings_ready && a->settings.background == BG_STAGE && g_src_base &&
         (!g_stage_baked || g_baked_tint != stage_tint()))
         stage_bake(stage_tint());
-    layout_use_case_images(a->settings.cases && !(a->perf_flags & PERF_NO_CASES));
+    layout_use_case_images(a->settings.cases);
     layout_set_floor(a->settings.background == BG_STAGE);   /* Stage: on its floor; others: centered */
     layout_ui(d_screen(), &m);
     g_intro_shapes = g_intro_parts = 1.0f;
-    if (a->perf_flags & PERF_NO_BG) d_rect(0, 0, W(), H(), 0x000000FFu);
-    else if (a->mode != MODE_LOADING) draw_background(a, 1.0f, animated);
+    if (a->mode != MODE_LOADING) draw_background(a, 1.0f, animated);
 
     if (a->mode == MODE_LOADING) {
         int style = loading_style(a);
+        /* Rescan Library (0.7.1): the cover flow fades out over the same
+         * background while the kittens and the name fade in */
+        float rf = a->rescan ? ease_in_out(clamp01((a->load_t - RESCAN_OUT_TIME * 0.6f) / 0.5f)) : 1.0f;
         if (style == 1) {
             float rt;
             if (a->reveal_start <= -999.0f) a->reveal_start = a->rescan ? -100.0f : sf_maxf(a->load_t, 0.5f);
@@ -1716,7 +1911,7 @@ void ui_draw(App *a)
             draw_background_as(a, 1.0f, 1, BG_STAGE);
             g_intro_shapes = g_intro_parts = 1.0f;
             stage_reveal_overlay(rt);
-            draw_loading_stage(a, 1.0f, rt);
+            draw_loading_stage(a, rf, rt);
         } else if (style == 2) {
             float rt, fade;
             int bg = a->settings.background == BG_STAGE ? BG_ANIMATED : a->settings.background;
@@ -1725,40 +1920,16 @@ void ui_draw(App *a)
             draw_background_as(a, 1.0f, animated, bg);
             fade = 1.0f - ease_in_out(clamp01(rt / 1.2f));      /* the background fades in from black */
             if (fade > 0.0f) d_rect(0, 0, W(), H(), sf_col_alpha(0x000000FFu, fade));
-            draw_loading_card(a, 1.0f, rt, 0.0f);
+            draw_loading_entrance(a, rf, rt);
         } else {
             d_rect(0, 0, W(), H(), 0x000000FFu);
         }
+        if (a->rescan && a->load_t < RESCAN_OUT_TIME)
+            draw_flow_ui(a, &m, 1.0f, 1.0f - ease_in_out(a->load_t / RESCAN_OUT_TIME));
     } else {
         intro = ease_out_cubic(a->intro);
         ia = ease_in_out(sf_clampf(a->intro * 1.4f - 0.25f, 0.0f, 1.0f));   /* UI fades in as the loading screen fades out */
-        int ui_on = !(a->perf_flags & PERF_NO_UI);
-        /* tabs */
-        if (ui_on) draw_tabs(a, ia, -(1.0f - intro) * 0.05f * H());
-        /* cover rows (tab switch: old slides out, new slides in) */
-        if (a->perf_flags & PERF_NO_FLOW) {
-        } else if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
-            float e = ease_out_cubic(a->tab_anim), dist = W() * 0.45f;
-            draw_flow_row(a, a->tab_prev, -(float)a->tab_dir * e * dist, (1.0f - e) * ia);
-            draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist, e * ia);
-        } else {
-            draw_flow_row(a, a->tab, (1.0f - intro) * W() * 0.12f, ia);
-        }
-        if (ui_on) draw_info(a, ia, &m);
-        if (a->panel != PANEL_NONE) {
-            float pe = ease_out_cubic(a->panel_anim);
-            d_rect(0, 0, W(), H(), sf_col_alpha(TH_DIM_OVERLAY, TH_DIM_MAX * pe));
-            draw_panel(a);
-        }
-        if (ui_on) draw_bar(a, ia);
-        draw_letter(a);
-        draw_music_card(a, ia);
-        draw_toast(a);
-        if (a->perf_phase >= 0) {      /* small label while the performance test runs */
-            char t[96];
-            snprintf(t, sizeof(t), "Performance test %d/%d  \xC2\xB7  Circle stops", a->perf_phase + 1, app_perf_phase_count());
-            d_text(&g_font_main, W() * 0.985f, H() * 0.035f, 0.022f * H(), TH_TEXT_DIM, t, ALIGN_RIGHT);
-        }
+        draw_flow_ui(a, &m, intro, ia);
         if (a->intro < 1.0f) {
             /* the loading screen (with its own background) cross-fades out on top */
             float la = 1.0f - ease_in_out(sf_clampf(a->intro * 1.25f, 0.0f, 1.0f));
@@ -1767,8 +1938,8 @@ void ui_draw(App *a)
                 /* Stage reveal: same scene underneath, only the name and kittens fade */
                 draw_loading_stage(a, la, 100.0f);
             } else if (la > 0.0f && a->reveal_start > -999.0f) {
-                /* the card fades away, growing a little; the background is the same */
-                draw_loading_card(a, la, 100.0f, 1.0f - la);
+                /* the kittens and the name fade; the cases take their place */
+                draw_loading_entrance(a, la, 100.0f);
             } else if (la > 0.0f) {
                 draw_background_as(a, la, 1, BG_ANIMATED);
                 draw_loading(a, la);

@@ -13,14 +13,16 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.7.0"
+#define APP_VERSION     "0.7.3"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
-#define RESCAN_MIN_TIME 1.2f    /* "Rescan library" has no video mode switch */
+#define RESCAN_MIN_TIME 1.6f    /* "Rescan library" has no video mode switch */
+#define RESCAN_OUT_TIME 0.40f   /* Rescan: the cover flow fades out first (the library is kept until then) */
 #define INTRO_TIME      1.10f   /* loading -> flow cross-fade */
 #define TAB_ANIM_TIME   0.30f
 #define PANEL_ANIM_TIME 0.20f
+#define DISPLAY_TIME    0.45f   /* Square: the selected case grows to fill the screen */
 #define XFADE_TIME      0.18f
 #define LETTER_TIME     1.00f
 #define TOAST_TIME      2.20f
@@ -77,9 +79,6 @@ typedef struct {
      * needs read_at. The host runs music_decode_step() on a thread and
      * music_mix() in its audio callback. NULL = no music. */
     const char *music_dir;
-    /* optional: performance test variant changed (PERF_* in render.h, the
-     * backend's part); phase = test step, -1 = test over */
-    void (*perf_phase)(int phase, unsigned flags);
     /* optional: small file operations for the PS2 config picker (with
      * read_at). is_file gets fs_ctx; write_file replaces the file; both
      * return 0 / 1 as named. Without them the PS2 Config row is unavailable. */
@@ -147,6 +146,8 @@ typedef struct {
     int panel;              /* PANEL_* currently shown (or closing) */
     int panel_open;         /* target state */
     float panel_anim;       /* 0..1 */
+    int   display;          /* 1 = display mode (Square): one big case, only Launch and Back */
+    float display_t;        /* 0..1, follows display */
     RowKind rows[MENU_MAX_ROWS];
     int nrows, row;
     Spring row_hl;          /* highlight position in rows */
@@ -172,9 +173,6 @@ typedef struct {
     char letter[4];
     int letter_bucket, letter_prev_bucket;   /* the A-Z rail glides from the previous letter */
     int music_gen;          /* last track counter seen (music_current) */
-    int perf_phase;         /* performance test step, -1 = not running */
-    float perf_t;           /* time in this step */
-    unsigned perf_flags;    /* PERF_* of this step (render.h) */
     int music_scanned;      /* the music folder has been read */
     char music_name[128];   /* song shown on the now-playing card */
     float music_card_t;     /* time since the card appeared (>= music_card_len: hidden) */
@@ -213,10 +211,6 @@ void app_update(App *a, uint32_t held, float dt);
 /* Request a clean exit (sysutil exit event, Quit row...). */
 void app_request_exit(App *a, const char *why);
 float music_gain(int percent);
-#define PERF_PHASE_TIME 5.0f
-int app_perf_phase_count(void);
-unsigned app_perf_phase_flags(int phase);
-const char *app_perf_phase_name(int phase);
 /* Text of a settings row's value as shown (the PS2 Config row knows more
  * than menu_value_text: what exists for this game and what Auto picks). */
 void app_row_value(const App *a, RowKind k, char *out, size_t cap);   /* Music Volume setting -> music_set_volume() */

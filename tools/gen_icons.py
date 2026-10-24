@@ -8,6 +8,7 @@ rendered at 2x and downsampled.
   3 start    - black right-pointing arrow button, like the DualShock 3's START
   4..7 L1 R1 L2 R2 - black rounded shoulder buttons, white label
   8 select   - black flat rounded-rectangle button, like the DualShock 3's SELECT
+  9 square   - black round button, pink outline square
 Every button has the same near-black body and the same thin gray rim, so they
 read as one family and stay visible on the dark UI.
 Stored as planar R,G,B,A in one RLE stream (same codec as the fonts), with a
@@ -33,8 +34,9 @@ SYMBOL = {                       # DualShock 3 symbol colors
     "cross":    (0x7F, 0xB2, 0xF0),
     "triangle": (0x3C, 0xD0, 0xA0),
     "circle":   (0xF2, 0x5C, 0x6A),
+    "square":   (0xE7, 0x8C, 0xC9),
 }
-BADGES = ["cross", "triangle", "circle", "start", "L1", "R1", "L2", "R2", "select"]
+BADGES = ["cross", "triangle", "circle", "start", "L1", "R1", "L2", "R2", "select", "square"]
 SHOULDER_W = 104   # final px width of shoulder buttons (height = OUT)
 START_W = 150      # final px width of the START pill
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -123,6 +125,9 @@ def badge(kind):
     elif kind == "circle":
         r = S * 0.215
         d.ellipse([c - r, c - r, c + r, c + r], outline=white, width=stroke)
+    elif kind == "square":
+        k = S * 0.185
+        d.rounded_rectangle([c - k, c - k, c + k, c + k], radius=stroke * 0.55, outline=white, width=stroke)
     alpha = Image.new("L", (S, S), 0)
     ImageDraw.Draw(alpha).ellipse([pad, pad, S - pad - 1, S - pad - 1], fill=255)
     rgb = rgb.resize((OUT, OUT), Image.LANCZOS)
