@@ -1171,7 +1171,7 @@ static void test_ps2_config(void)
     tap(SFB_LEFT);
     CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_GX);
     CHECK(settings_game_get(&g_app.settings, g_app.panel_cfg.key).ps2cfg == PS2CFG_GX);   /* stored */
-    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
 
     /* launching with GX: the GX file is put next to the ISO */
     tap(SFB_CROSS);
@@ -1181,7 +1181,7 @@ static void test_ps2_config(void)
     cfg_open_row();
     tap(SFB_RIGHT);
     CHECK(g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);
-    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
     tap(SFB_CROSS);
     CHECK(g_launch_calls == 2 && !memfs_find(OKAMI_CFG));
     relaunch_reset(); run_frames(0, 0.1f);
@@ -1192,7 +1192,7 @@ static void test_ps2_config(void)
     app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
     CHECK_STR(v, "Auto (game's own file)");
     tap(SFB_RIGHT);                                         /* NET */
-    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
     tap(SFB_CROSS);
     CHECK(mf_is(OKAMI_CFG, "NETCFG") && mf_is(OKAMI_BAK, "MINE"));
     relaunch_reset(); run_frames(0, 0.1f);
@@ -1205,7 +1205,7 @@ static void test_ps2_config(void)
     tap(SFB_LEFT);                                          /* Auto */
     app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
     CHECK_STR(v, "Auto (game's own file)");
-    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
     tap(SFB_CROSS);
     CHECK(mf_is(OKAMI_CFG, "MINE") && !memfs_find(OKAMI_BAK));
     relaunch_reset(); run_frames(0, 0.1f);
@@ -1221,7 +1221,7 @@ static void test_ps2_config(void)
         cfg_open_row();
         app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
         CHECK_STR(v, "SOFT (missing)");
-        tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+        tap(SFB_CIRCLE); run_frames(0, 0.4f);
     }
 
     /* no title ID (and none inside the image): not available, ✖ explains */
@@ -1232,6 +1232,34 @@ static void test_ps2_config(void)
     CHECK_STR(v, "Not available");
     tap(SFB_CROSS);
     CHECK(strstr(g_app.toast, "PS2 ISOs") != NULL);
-    tap(SFB_TRIANGLE); run_frames(0, TOAST_TIME + 0.2f);
+    tap(SFB_CIRCLE); run_frames(0, TOAST_TIME + 0.2f);
     memfs_reset();
+}
+
+/* 0.6.1: only ◯ goes back from the settings panels */
+static void test_panel_back(void)
+{
+    AppHost host;
+    printf("panels: only circle goes back\n");
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    tap(SFB_START); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_FLOW && g_app.panel_open);
+    tap(SFB_START); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_FLOW && g_app.panel_open);      /* START doesn't close it */
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_FLOW && g_app.panel_open);
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_NONE);
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_GAME && g_app.panel_open);
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_GAME && g_app.panel_open);      /* ▲ doesn't close it */
+    tap(SFB_START); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_GAME);                           /* nor opens Flow Settings over it */
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_NONE && !g_app.exiting);
 }

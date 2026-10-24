@@ -1261,6 +1261,7 @@ int main(void)
     test_music();
     test_music_app();
     test_ps2_config();
+    test_panel_back();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

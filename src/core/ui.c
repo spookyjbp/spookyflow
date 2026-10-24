@@ -1238,7 +1238,6 @@ static void draw_music_card(App *a, float ia)
     /* the kittens bob a little to the beat */
     kx = x + d_xu(h * 0.30f);
     ky = y + h * 0.5f - kh * 0.5f - fabsf(sinf(now * 3.4f)) * 0.006f * H();
-    d_blob(kx + kw * 0.5f, y + h * 0.5f, h * 0.55f, sf_col_alpha(TH_WORDMARK_GLOW, 0.10f * al));
     d_image(TEX_CATS, kx, ky, kw, kh, sf_col_alpha(0xFFFFFFFFu, al));
     /* label + equalizer, then the song name */
     tx = kx + kw + d_xu(h * 0.22f);

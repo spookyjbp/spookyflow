@@ -712,8 +712,7 @@ static void panel_input(App *a)
     int vis = PANEL_VISIBLE_ROWS, first;
     if (!a->panel_open || a->nrows <= 0) return;
     if (in->pressed & SFB_CIRCLE) { app_close_panel(a); return; }
-    if ((in->pressed & SFB_START) && a->panel == PANEL_FLOW) { app_close_panel(a); return; }
-    if ((in->pressed & SFB_TRIANGLE) && a->panel == PANEL_GAME) { app_close_panel(a); return; }
+    /* only ◯ goes back (START / ▲ don't close the panel they opened) */
     /* Settings menus: D-pad only (the stick is ignored), one step per press */
     {
         int before = a->row;

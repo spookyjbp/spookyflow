@@ -119,8 +119,8 @@ install on your setup, try `spookyflow.gnpdrm.pkg` from the same artifact.
 | L1 / R1 | Previous / next tab (PS1 ↔ PS2 ↔ PS3, stops at the ends) | — |
 | L2 / R2 | Jump to previous / next letter (A–Z, # first) | — |
 | ✖ | Launch (through webMAN MOD, see *Launching*) | Change / activate |
-| ▲ | Open **Game Settings** for the selected game | Close |
-| START | Open **Flow Settings** | Close |
+| ▲ | Open **Game Settings** for the selected game | — |
+| START | Open **Flow Settings** | — (only ◯ goes back) |
 | ◯ | **Hold 1.5 s** to exit to the XMB (tap does nothing) | Back (tap). Holding here never exits |
 | SELECT | Next song (background music) | not used |
 
@@ -452,7 +452,9 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.6.0:** Game Settings → PS2 Config picks the CONFIG for PS2 ISOs
+15. **0.6.1:** only ◯ closes Game Settings and Flow Settings (▲ and START
+    no longer do); the kittens on the Now Playing card have no glow behind them.
+    **0.6.0:** Game Settings → PS2 Config picks the CONFIG for PS2 ISOs
     (Auto / CUSTOM / NET / GX / SOFT); SELECT “Next Song” is on the controls
     bar; the Ribbons background fills the whole screen; the Image background
     is removed.
