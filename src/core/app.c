@@ -73,6 +73,7 @@ void app_init(App *a, Library *lib, const AppHost *host)
     a->letter_t = LETTER_TIME;
     a->toast_t = TOAST_TIME;
     a->music_card_t = MUSIC_CARD_TIME;
+    a->music_card_len = MUSIC_CARD_TIME;
     sf_strlcpy(a->load_status, "Starting\xE2\x80\xA6", sizeof(a->load_status));
 }
 
@@ -252,6 +253,15 @@ static void scan_music(App *a)
     a->music_scanned = 1;
 }
 
+/* Music Volume % -> gain. Songs are mastered near full scale, so even 100%
+ * stays well under the UI sounds' level, and the curve is squared so the
+ * steps sound even: 50% = 0.125 (-18 dB), 100% = 0.5 (-6 dB). */
+float music_gain(int percent)
+{
+    float v = (float)sf_clampi(percent, 0, 100) / 100.0f;
+    return MUSIC_GAIN_MAX * v * v;
+}
+
 /* settings -> music, every frame: plays in the cover flow, fades out on exit
  * and launch, quieter while the screen sleeps */
 static void music_tick(App *a)
@@ -259,7 +269,7 @@ static void music_tick(App *a)
     char name[128];
     int gen;
     if (!a->settings_ready) return;
-    music_set_volume((float)a->settings.music_volume / 100.0f);
+    music_set_volume(music_gain(a->settings.music_volume));
     music_set_shuffle(a->settings.shuffle);
     music_set_duck(1.0f - MUSIC_SLEEP_DUCK * a->sleep_t);
     music_set_playing(a->mode == MODE_FLOW && !a->exiting && a->music_scanned);
@@ -268,8 +278,9 @@ static void music_tick(App *a)
         a->music_gen = gen;
         if (gen && a->mode == MODE_FLOW && !a->exiting && !a->asleep && name[0]) {
             /* a card that's still showing just swaps the name (no second slide-in) */
-            if (a->music_card_t >= MUSIC_CARD_TIME - 0.5f) a->music_card_t = 0.0f;
+            if (a->music_card_t >= a->music_card_len - 0.5f) a->music_card_t = 0.0f;
             else if (a->music_card_t > 0.6f) a->music_card_t = 0.6f;
+            a->music_card_len = MUSIC_CARD_TIME;          /* ui.c lengthens it for a name that scrolls */
             sf_strlcpy(a->music_name, name, sizeof(a->music_name));
         }
     }
@@ -691,7 +702,7 @@ static void animate(App *a, float dt)
     if (!a->panel_open && a->panel_anim <= 0.0f) a->panel = PANEL_NONE;
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;
     if (a->toast_t < TOAST_TIME) a->toast_t += dt;
-    if (a->music_card_t < MUSIC_CARD_TIME) a->music_card_t += dt;
+    if (a->music_card_t < a->music_card_len) a->music_card_t += dt;
     /* title/chips cross-fade on selection change */
     {
         int cur = a->view[a->tab].sel;

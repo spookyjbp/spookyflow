@@ -219,8 +219,20 @@ int main(int argc, char **argv)
     step(0, 0.6f);
     render("03b_music_now_playing", 1280, 720);
     sf_strlcpy(g_app.music_name, "A Very Long Song Title From Some Album (Extended Remix Version)", sizeof(g_app.music_name));
+    g_app.music_card_t = 1.0f;
     render("03e_music_long_name", 1280, 720);
-    g_app.music_card_t = MUSIC_CARD_TIME;
+    if (getenv("SF_PREVIEW_MUSIC_ANIM")) {   /* frames of the whole card, for a GIF */
+        int fr = 0;
+        char nm[64];
+        g_app.music_card_t = 0.0f;
+        while (fr < 400) {
+            snprintf(nm, sizeof(nm), "anim_music_%03d", fr++);
+            render(nm, 1280, 720);
+            step(0, 0.1f);
+            if (g_app.music_card_t >= g_app.music_card_len) break;
+        }
+    }
+    g_app.music_card_t = g_app.music_card_len;
     g_app.settings.music_volume = 0;
     app_show_toast(&g_app, "Music is off (Music Volume in Flow Settings)");
     step(0, 0.5f);
@@ -507,6 +519,12 @@ int main(int argc, char **argv)
                         g_app.settings.background = BG_STAGE;
                         render("34_stage_ps2", 1280, 720);
                         render("34_stage_ps2_1080p", 1920, 1080);
+                        {   /* the background alone (no cases), to check its edges */
+                            int keep = g_lib.tab[g_app.tab].count;
+                            g_lib.tab[g_app.tab].count = 0;
+                            render("34b_stage_background_only", 1280, 720);
+                            g_lib.tab[g_app.tab].count = keep;
+                        }
                         press(SFB_R2); step(0, 0.25f);
                         render("37_letter_rail_stage", 1280, 720);
                         step(0, 1.2f);

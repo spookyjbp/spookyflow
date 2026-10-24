@@ -47,6 +47,10 @@ float d_text(const Font *f, float x, float y, float em, uint32_t col, const char
 float d_text_width(const Font *f, float em, const char *s);
 /* Draw text truncated with an ellipsis to fit maxw. Returns drawn width. */
 float d_text_fit(const Font *f, float x, float y, float em, uint32_t col, const char *s, int align, float maxw);
+/* Left-aligned text starting at x, shown only between x0 and x1: glyphs fade
+ * out over `fade` at both edges (a marquee without a clip rectangle). */
+void d_text_window(const Font *f, float x, float y, float em, uint32_t col, const char *s,
+                   float x0, float x1, float fade);
 /* Word-wrapped, centered block around (cx, cy). Up to maxlines lines. */
 void d_text_box(const Font *f, float cx, float cy, float maxw, float em, int maxlines, uint32_t col, const char *s);
 

@@ -347,6 +347,42 @@ static void text_raw(const Font *f, float x, float y, float em, uint32_t col, co
     r_quads_end();
 }
 
+void d_text_window(const Font *f, float x, float y, float em, uint32_t col, const char *s,
+                   float x0, float x1, float fade)
+{
+    float sc = em / (float)f->px;
+    float base = y + (float)f->cap * sc * 0.5f;
+    float pen = x;
+    float iw = 1.0f / (float)f->atlas_w, ih = 1.0f / (float)f->atlas_h;
+    float a0 = (float)(col & 255) / 255.0f;
+    if ((col & 255) == 0 || x1 <= x0) return;
+    if (fade < 1e-3f) fade = 1e-3f;
+    r_quads_begin(font_tex(f));
+    while (*s) {
+        uint32_t cp = sf_utf8_next(&s);
+        const FontGlyph *g = font_glyph(f, cp);
+        float adv = g->adv * sc / g_scr.pa;
+        if (g->w && g->h) {
+            float gx = pen + (float)g->bx * sc / g_scr.pa, gy = base + (float)g->by * sc;
+            float gw = (float)g->w * sc / g_scr.pa, gh = (float)g->h * sc;
+            float cx = gx + gw * 0.5f;
+            float k = sf_clampf((cx - x0) / fade, 0.0f, 1.0f) * sf_clampf((x1 - cx) / fade, 0.0f, 1.0f);
+            if (k > 0.0f && gx + gw > x0 && gx < x1) {
+                uint32_t c = (col & 0xFFFFFF00u) | (uint32_t)(a0 * k * 255.0f + 0.5f);
+                float u0 = (float)g->x * iw, v0 = (float)g->y * ih;
+                float u1 = (float)(g->x + g->w) * iw, v1 = (float)(g->y + g->h) * ih;
+                r_qvtx(gx, gy, u0, v0, c);
+                r_qvtx(gx + gw, gy, u1, v0, c);
+                r_qvtx(gx + gw, gy + gh, u1, v1, c);
+                r_qvtx(gx, gy + gh, u0, v1, c);
+            }
+        }
+        pen += adv;
+        if (pen > x1 + em * 4.0f) break;
+    }
+    r_quads_end();
+}
+
 float d_text(const Font *f, float x, float y, float em, uint32_t col, const char *s, int align)
 {
     float w = d_text_width(f, em, s);

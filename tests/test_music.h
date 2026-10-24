@@ -1038,7 +1038,24 @@ static void test_music_app(void)
     run_frames(0, 0.05f);
     CHECK(music_current(NULL, 0) == gen + 1);
     run_frames(0, MUSIC_CARD_TIME + 0.1f);
-    CHECK(g_app.music_card_t >= MUSIC_CARD_TIME);       /* the card goes away */
+    CHECK(g_app.music_card_t >= g_app.music_card_len);  /* the card goes away */
+    /* a name that doesn't fit keeps the card up until it has scrolled to the end */
+    sf_strlcpy(g_app.music_name, "Short", sizeof(g_app.music_name));
+    g_app.music_card_t = 0.0f;
+    ui_draw(&g_app);
+    CHECK(g_app.music_card_len == MUSIC_CARD_TIME);
+    sf_strlcpy(g_app.music_name, "A Very Long Song Title From Some Album (Extended Remix Version)", sizeof(g_app.music_name));
+    ui_draw(&g_app);
+    CHECK(g_app.music_card_len > MUSIC_CARD_TIME + 2.0f && g_app.music_card_len < 20.0f);
+    run_frames(0, MUSIC_CARD_TIME + 0.2f);
+    CHECK(g_app.music_card_t < g_app.music_card_len);   /* still scrolling */
+    run_frames(0, g_app.music_card_len);
+    CHECK(g_app.music_card_t >= g_app.music_card_len);
+    /* the volume curve: much quieter than a straight line */
+    CHECK(music_gain(0) == 0.0f);
+    CHECK_NEAR(music_gain(50), 0.125, 1e-6);
+    CHECK_NEAR(music_gain(100), MUSIC_GAIN_MAX, 1e-6);
+    CHECK(music_gain(150) == music_gain(100));
     /* Music Volume 0: SELECT explains, nothing decodes */
     g_app.settings.music_volume = 0;
     run_frames(0, 0.05f);

@@ -105,6 +105,7 @@ static uint32_t accent_or(uint32_t white_col, float color_alpha)
 }
 
 static float W(void) { return d_screen()->W; }
+static float PA(void) { return d_screen()->pa; }   /* x units -> vertical units */
 static float H(void) { return d_screen()->H; }
 
 /* ------------------------------------------------------------------ */
@@ -389,7 +390,7 @@ static void bg_stage(float t, float alpha)
     if (g_stage_hi >= 0) d_image(g_stage_hi, 0, 0, W(), H(), sf_col_alpha(0xFFFFFFFFu, 0.35f * alpha));
     /* glow: soft halos around the lights, breathing slowly */
     if (g_stage_glow >= 0)
-        d_image_rot(g_stage_glow, W() * 0.5f, H() * 0.5f, W(), H(), 0.0f, 0.0f, 1.0f, 0.0f, STAGE_GLOW_SPLIT,
+        d_image_rot(g_stage_glow, W() * 0.5f, H() * 0.5f, W() * PA(), H(), 0.0f, 0.0f, 1.0f, 0.0f, STAGE_GLOW_SPLIT,
                     sf_col_alpha(lite, alpha * (0.55f + 0.15f * sinf(t * 0.45f))));
     /* light ribbons: the left and right wave sets sway, tilt and breathe on
      * their own (slightly oversized so their outer edges never show) */
@@ -397,7 +398,9 @@ static void bg_stage(float t, float alpha)
         for (i = 0; i < 2; i++) {
             float ph = (float)i * 2.3f, sgn = i ? 1.0f : -1.0f;
             float sx = 1.07f + 0.02f * sinf(t * 0.08f + ph), sy = 1.06f + 0.03f * sinf(t * 0.06f + ph * 1.7f);
-            float w = W() * (1.0f - STAGE_RIB_SPLIT) * sx, h = hy * sy;
+            /* d_image_rot takes widths in vertical units (it rotates a true
+             * shape), so a width measured in screen x units is scaled by PA() */
+            float w = W() * (1.0f - STAGE_RIB_SPLIT) * sx * PA(), h = hy * sy;
             float cx = W() * (0.5f + sgn * (0.5f - (1.0f - STAGE_RIB_SPLIT) * 0.5f)) + sgn * W() * 0.01f
                        + W() * 0.012f * sinf(t * 0.05f + ph);
             /* bob only upward, and kept clear of the horizon even when tilted */
@@ -1177,27 +1180,36 @@ static void draw_letter(const App *a)
  * starts (or SELECT skips): the kittens, a little equalizer, the song name.
  * Same fill and glowing outline as the controls bar; slides in from the
  * left, stays MUSIC_CARD_TIME, slides back out. */
-static void draw_music_card(const App *a, float ia)
+#define MCARD_SCROLL_WAIT  1.5f    /* s before a long name starts to scroll */
+#define MCARD_SCROLL_END   1.6f    /* s it rests at the end of the name */
+#define MCARD_OUT          0.5f    /* slide-out time */
+
+static void draw_music_card(App *a, float ia)
 {
-    float t = a->music_card_t, in, out, al, slide;
+    float t = a->music_card_t, len, in, out, al, slide, over, speed, off = 0.0f;
     float h = 0.112f * H(), r = h * 0.5f, x, y = 0.028f * H(), w;
-    float kh, kw, kx, ky, tx, em_l = 0.017f * H(), em_n = 0.027f * H(), maxw, namew;
+    float kh, kw, kx, ky, tx, em_l = 0.017f * H(), em_n = 0.027f * H(), maxw, namew, tw, fade;
     float now = (float)a->time;
     int i;
-    if (t >= MUSIC_CARD_TIME || !a->music_name[0] || a->asleep) return;
-    in = ease_out_cubic(sf_minf(1.0f, t / 0.45f));
-    out = t > MUSIC_CARD_TIME - 0.5f ? ease_in_out((t - (MUSIC_CARD_TIME - 0.5f)) / 0.5f) : 0.0f;
-    al = sf_clampf(in * (1.0f - out), 0.0f, 1.0f) * ia;
-    if (al <= 0.0f) return;
+    if (!a->music_name[0]) return;
     /* kittens on the left, inside the rounded end */
     kh = h * 0.86f;
     kw = d_xu(kh * (float)g_cats_w / (float)g_cats_h);
     maxw = W() * (0.283f - 0.022f) - (d_xu(h * 0.30f) + kw + d_xu(h * 0.22f) + d_xu(h * 0.38f));   /* clear of the L1 badge */
-    {   /* long names: a smaller size first, then "..." */
-        float tw = d_text_width(&g_font_main, em_n, a->music_name);
-        if (tw > maxw) em_n = sf_maxf(0.019f * H(), em_n * maxw / tw);
-    }
-    namew = sf_minf(d_text_width(&g_font_main, em_n, a->music_name), maxw);
+    tw = d_text_width(&g_font_main, em_n, a->music_name);
+    over = tw - maxw;
+    speed = d_xu(0.075f * H());                           /* scroll speed (x units per s) */
+    /* a long name keeps the card up until it has scrolled all the way */
+    len = MUSIC_CARD_TIME;
+    if (over > 0.0f) len = sf_maxf(len, MCARD_SCROLL_WAIT + over / speed + MCARD_SCROLL_END + MCARD_OUT);
+    a->music_card_len = len;
+    if (t >= len || a->asleep) return;
+    in = ease_out_cubic(sf_minf(1.0f, t / 0.45f));
+    out = t > len - MCARD_OUT ? ease_in_out((t - (len - MCARD_OUT)) / MCARD_OUT) : 0.0f;
+    al = sf_clampf(in * (1.0f - out), 0.0f, 1.0f) * ia;
+    if (al <= 0.0f) return;
+    if (over > 0.0f) off = sf_clampf((t - MCARD_SCROLL_WAIT) * speed, 0.0f, over);
+    namew = sf_minf(tw, maxw);
     namew = sf_maxf(namew, d_text_width(&g_font_main, em_l, "NOW PLAYING") + d_xu(0.05f * H()));
     w = d_xu(h * 0.30f) + kw + d_xu(h * 0.22f) + namew + d_xu(h * 0.38f);
     slide = (1.0f - in) + out;
@@ -1221,7 +1233,14 @@ static void draw_music_card(const App *a, float ia)
             d_rect(bx + (float)i * (bw + gap), base - bh, bw, bh, sf_col_alpha(accent_or(TH_TEXT_DIM, 1.0f), al));
         }
     }
-    d_text_fit(&g_font_main, tx, y + h * 0.68f, em_n, sf_col_alpha(TH_TEXT, al), a->music_name, ALIGN_LEFT, maxw);
+    if (over <= 0.0f) {
+        d_text(&g_font_main, tx, y + h * 0.68f, em_n, sf_col_alpha(TH_TEXT, al), a->music_name, ALIGN_LEFT);
+    } else {
+        /* too long: scrolls left until the end shows; the letters fade at the edges */
+        fade = d_xu(0.016f * H());
+        d_text_window(&g_font_main, tx - off, y + h * 0.68f, em_n, sf_col_alpha(TH_TEXT, al), a->music_name,
+                      tx - fade + sf_minf(off, fade), tx + maxw + fade * 0.5f, fade);   /* no left fade before it moves */
+    }
 }
 
 static void draw_toast(const App *a)

@@ -315,10 +315,11 @@ played:
 Music starts when the cover flow appears and loops through the folder.
 **Shuffle music** On plays every song once in a random order before any
 repeats; Off plays them by file name. **Music volume** sets the level (the
-UI sounds have their own volume); 0% stops it. **SELECT** skips to the next
+UI sounds have their own volume); 0% stops it. The scale is gentle: 50% is
+about a quarter as loud as 100%, and 100% is still under the UI sounds. **SELECT** skips to the next
 song. Whenever a new song starts, a **Now Playing** card with the kittens
-slides in at the top left for a few seconds (very long names are shrunk,
-then cut with “…”).
+slides in at the top left for a few seconds; a name too long for the card
+scrolls until its end has shown, and the card stays up until it has.
 It gets quieter while the screen sleeps and fades out when you exit or
 launch a game. Files that can't be played are skipped (the log says which).
 Rescan Library also re-reads the music folder.
@@ -434,7 +435,10 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **Milestone 5 (0.5.0):** background music from
+15. **0.5.1:** the Stage background no longer shows hard vertical lines
+    near the left and right edges (its glow layer was drawn about 7% too
+    narrow on a 16:9 screen; the ribbons were slightly too narrow too).
+    **Milestone 5 (0.5.0):** background music from
     `/dev_hdd0/tmp/spookyflow/music` (.mp3/.wav), Music volume and Shuffle
     work, SELECT skips; check it never stutters while you scroll fast or
     while covers load, and send the log.

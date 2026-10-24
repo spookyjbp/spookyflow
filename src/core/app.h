@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.5.0 (milestone 5)"
+#define APP_VERSION     "0.5.1 (milestone 5)"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -31,6 +31,7 @@
 #define SLEEP_DIM       0.72f   /* how dark sleep gets: the screen stays visible */
 #define SLEEP_FADE_TIME 1.5f
 #define WAKE_FADE_TIME  0.25f
+#define MUSIC_GAIN_MAX  0.5f   /* gain at Music Volume 100% */
 #define MUSIC_SLEEP_DUCK 0.6f  /* music drops to 40% while the screen sleeps */
 
 typedef enum { MODE_LOADING = 0, MODE_FLOW = 1 } AppMode;
@@ -144,7 +145,8 @@ typedef struct {
     int music_gen;          /* last track counter seen (music_current) */
     int music_scanned;      /* the music folder has been read */
     char music_name[128];   /* song shown on the now-playing card */
-    float music_card_t;     /* time since the card appeared (>= MUSIC_CARD_TIME: hidden) */
+    float music_card_t;     /* time since the card appeared (>= music_card_len: hidden) */
+    float music_card_len;   /* how long it stays: longer while a long name scrolls (set by ui.c) */
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
     char toast[160];
     volatile int ntfs_busy;  /* 1 while webMAN re-indexes the NTFS drives (Rescan) */
@@ -171,6 +173,7 @@ void app_init(App *a, Library *lib, const AppHost *host);
 void app_update(App *a, uint32_t held, float dt);
 /* Request a clean exit (sysutil exit event, Quit row...). */
 void app_request_exit(App *a, const char *why);
+float music_gain(int percent);   /* Music Volume setting -> music_set_volume() */
 /* Save settings now (also called on exit). */
 void app_save(App *a);
 
