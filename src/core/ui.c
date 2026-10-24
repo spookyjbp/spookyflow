@@ -1090,7 +1090,7 @@ static float rail_alpha(const App *a)
     float t = a->letter_t, al;
     if (t >= LETTER_TIME || !a->letter[0]) return 0.0f;
     al = t < 0.45f ? 1.0f : sf_maxf(0.0f, 1.0f - (t - 0.45f) / (LETTER_TIME - 0.45f));
-    return al * sf_minf(1.0f, t / 0.12f);
+    return al * sf_minf(1.0f, a->letter_in / 0.12f);   /* fades in once, not on every jump */
 }
 
 static void draw_info_styled(App *a, float alpha, const UiMetrics *m, float ty, float cy)
@@ -1653,13 +1653,14 @@ static void kitten_spot(const App *a, KitSpot *k)
 /* one kitten sprite (or both: TEX_CATS): centre x, feet at `bottom`, squash
  * sx/sy around the feet, lifted by `lift`, turned by `ang`; the reflection
  * and contact shadow fade as it leaves the ground */
-static void draw_kitten(const App *a, const KitSpot *k, int tex, float x, float lift, float sx, float sy, float ang, float alpha)
+static void draw_kitten(const App *a, const KitSpot *k, int tex, float x, float lift, float sx, float sy, float ang, float alpha,
+                        int reflect)
 {
     float w = k->kw * sx, h = k->kh * sy, ground = 1.0f - clamp01(lift / (0.06f * H()));
     float y = k->bottom - lift - h;
     if (alpha <= 0.002f) return;
     if (ground > 0.0f && ang == 0.0f) {
-        if (a->settings.reflections)
+        if (a->settings.reflections && reflect)
             reflect_tex(tex, x - w * 0.5f, y, w, h, k->bottom, k->case_h * REFLECT_DEPTH, 0xFFFFFFFFu, REFLECT_ALPHA * alpha * ground);
     }
     if (layout_floor() && ground > 0.0f)
@@ -1682,122 +1683,54 @@ static void draw_loading_stage(const App *a, float alpha, float rt)
     if (ea <= 0.002f) return;
     kitten_spot(a, &k);
     draw_wordmark(a, wordmark_y(&k) + 0.02f * H() * rise, WORDMARK_EM * H(), ea);
-    draw_kitten(a, &k, TEX_CATS, k.cx, 0.03f * H() * rise, 1.0f, 1.0f + 0.010f * sinf(t * 2.1f), 0.0f, ea);
+    draw_kitten(a, &k, TEX_CATS, k.cx, 0.03f * H() * rise, 1.0f, 1.0f + 0.010f * sinf(t * 2.1f), 0.0f, ea, 1);
 }
 
-/* ---- Kittens drawn in light (0.7.3): the loading screen of every
- * background but Stage. The kittens' outlines (traced from the picture by
- * tools/gen_cats.py) are drawn by a point of light, the picture fills in
- * inside them as the lines fade, and the kittens breathe while the name is
- * written letter by letter in light. Same spot as the Stage screen: feet on
- * the selected case's bottom edge. */
-#define LT_T0   0.45f     /* the silhouette starts */
-#define LT_SIL  1.55f     /* ... and takes this long */
-#define LT_FUR  0.55f     /* where the white fur meets the black: start after LT_T0 ... */
-#define LT_FURD 0.95f
-#define LT_EYE  1.20f     /* the eyes */
-#define LT_EYED 0.45f
-#define LT_FILL 2.05f     /* the picture fills in */
-#define LT_FILLD 0.75f
-#define LT_FADE 2.35f     /* the lines fade */
-#define LT_FADED 0.70f
-#define ENT_N0 2.55f      /* the name */
-#define ENT_NL 0.085f     /* per letter */
+/* ---- Falling letters (0.7.4): the loading screen of every background
+ * but Stage. The kittens fade in (no reflection), then the name's letters
+ * drop in one by one from above with a little bounce, and the name settles
+ * into its ghostly glow. Same spot as the Stage screen: the kittens' feet on
+ * the selected case's bottom edge, the name above them. */
+#define FALL_KIT0  0.35f    /* the kittens fade in */
+#define FALL_KITD  1.00f
+#define FALL_N0    0.85f    /* the first letter starts falling */
+#define FALL_NL    0.075f   /* each next letter */
+#define FALL_D     0.55f    /* how long a letter falls */
+#define FALL_DROP  0.14f    /* from how high (fraction of the screen) */
 
-static void draw_name_in_light(const App *a, float cx, float wy, float em, float rt, float alpha);
-
-/* draw outline i up to fraction p of its length; returns the tip */
-static void kit_stroke(int i, float p, float ox, float oy, float kw, float kh, float thick, uint32_t col,
-                       float *tx, float *ty)
+static void draw_name_falling(const App *a, float cx, float wy, float em, float rt, float alpha)
 {
-    int j0 = g_kitline_start[i], j1 = g_kitline_start[i + 1], j;
-    float total = 0.0f, want, run = 0.0f;
-    *tx = ox + g_kitline_uv[j0][0] * kw; *ty = oy + g_kitline_uv[j0][1] * kh;
-    for (j = j0 + 1; j < j1; j++) {
-        float dx = (g_kitline_uv[j][0] - g_kitline_uv[j - 1][0]) * kw, dy = (g_kitline_uv[j][1] - g_kitline_uv[j - 1][1]) * kh;
-        dx /= d_xu(1.0f);                              /* lengths in vertical units */
-        total += sqrtf(dx * dx + dy * dy);
-    }
-    want = total * clamp01(p);
-    for (j = j0 + 1; j < j1 && run < want; j++) {
-        float x0 = ox + g_kitline_uv[j - 1][0] * kw, y0 = oy + g_kitline_uv[j - 1][1] * kh;
-        float x1 = ox + g_kitline_uv[j][0] * kw, y1 = oy + g_kitline_uv[j][1] * kh;
-        float dxv = (x1 - x0) / d_xu(1.0f), dy = y1 - y0, len = sqrtf(dxv * dxv + dy * dy), f = 1.0f;
-        if (len <= 0.0f) continue;
-        if (run + len > want) f = (want - run) / len;
-        x1 = x0 + (x1 - x0) * f; y1 = y0 + (y1 - y0) * f;
-        d_line(x0, y0, x1, y1, thick, col);
-        run += len * f;
-        *tx = x1; *ty = y1;
+    const char *name = APP_NAME;
+    float total = d_text_width(&g_font_big, em, name), x = cx - total * 0.5f;
+    int i, n = (int)strlen(name);
+    float done = clamp01((rt - (FALL_N0 + (float)(n - 1) * FALL_NL + FALL_D)) / 0.5f);
+    if (done > 0.0f) draw_wordmark(a, wy, em, alpha * done);     /* the settled name, with its ghostly glow */
+    if (done >= 1.0f) return;
+    for (i = 0; i < n; i++) {
+        char c[2];
+        float cw, u, la, dy;
+        c[0] = name[i]; c[1] = '\0';
+        cw = d_text_width(&g_font_big, em, c);
+        u = clamp01((rt - (FALL_N0 + (float)i * FALL_NL)) / FALL_D);
+        if (u > 0.0f) {
+            la = clamp01(u * 3.0f);
+            dy = (1.0f - ease_out_back(u)) * FALL_DROP * H();
+            d_text(&g_font_big, x, wy - dy, em, sf_col_alpha(TH_WORDMARK, alpha * la * (1.0f - done)), c, ALIGN_LEFT);
+        }
+        x += cw;
     }
 }
 
 static void draw_loading_entrance(const App *a, float alpha, float rt)
 {
     float t = (float)a->time;
-    float fill = ease_in_out(clamp01((rt - LT_FILL) / LT_FILLD));
-    float lines = 1.0f - ease_in_out(clamp01((rt - LT_FADE) / LT_FADED));
+    float ka = ease_in_out(clamp01((rt - FALL_KIT0) / FALL_KITD));
     KitSpot k;
     if (alpha <= 0.002f) return;
     kitten_spot(a, &k);
-    if (lines > 0.0f && rt > LT_T0) {
-        uint32_t hot = sf_col_mix(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, 0xFFFFFFFFu, 0.55f);
-        float ox = k.cx - k.kw * 0.5f, oy = k.bottom - k.kh, th = 0.0034f * H();
-        int i, pass;
-        /* a soft glow under the kittens while they are being drawn */
-        d_blob(k.cx, k.bottom - k.kh * 0.5f, k.kh * 0.75f, sf_col_alpha(hot, 0.05f * alpha * lines * clamp01((rt - LT_T0) / 0.6f)));
-        for (pass = 0; pass < 2; pass++) {             /* glow, then the bright core */
-            for (i = 0; i < g_kitline_count; i++) {
-                int kind = g_kitline_kind[i];
-                float s0 = LT_T0 + (kind == 0 ? 0.0f : kind == 1 ? LT_FUR : LT_EYE);
-                float dur = kind == 0 ? LT_SIL : kind == 1 ? LT_FURD : LT_EYED;
-                float pr = ease_in_out(clamp01((rt - s0) / dur)), tx, ty;
-                float la = alpha * lines * (kind == 0 ? 1.0f : 0.80f);
-                if (pr <= 0.0f) continue;
-                if (pass == 0) {
-                    kit_stroke(i, pr, ox, oy, k.kw, k.kh, th * 3.4f, sf_col_alpha(hot, 0.16f * la), &tx, &ty);
-                } else {
-                    kit_stroke(i, pr, ox, oy, k.kw, k.kh, th, sf_col_alpha(hot, 0.92f * la), &tx, &ty);
-                    if (pr < 1.0f) {                   /* the point of light that draws it */
-                        d_blob(tx, ty, 0.030f * H(), sf_col_alpha(hot, 0.55f * la));
-                        d_disc(tx, ty, th * 1.3f, sf_col_alpha(0xFFFFFFFFu, la));
-                    }
-                }
-            }
-        }
-    }
-    if (fill > 0.0f) {
-        /* the picture fills in, a little bright at first; then it breathes */
-        float glow = (1.0f - fill) * clamp01((rt - LT_FILL) / 0.2f);
-        draw_kitten(a, &k, TEX_CATS, k.cx, 0.0f, 1.0f, 1.0f + 0.010f * sinf(t * 2.1f) * fill, 0.0f, alpha * fill);
-        if (glow > 0.0f)
-            d_blob(k.cx, k.bottom - k.kh * 0.5f, k.kh * 0.8f, sf_col_alpha(0xFFFFFFFFu, 0.10f * alpha * glow));
-    }
-    draw_name_in_light(a, k.cx, wordmark_y(&k), WORDMARK_EM * H(), rt, alpha);
-}
-
-static void draw_name_in_light(const App *a, float cx, float wy, float em, float rt, float alpha)
-{
-    const char *name = APP_NAME;
-    float total = d_text_width(&g_font_big, em, name), x = cx - total * 0.5f;
-    int i, n = (int)strlen(name);
-    uint32_t hot = sf_col_mix(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, 0xFFFFFFFFu, 0.55f);
-    float done = clamp01((rt - (ENT_N0 + (float)n * ENT_NL)) / 0.6f);
-    if (done > 0.0f) draw_wordmark(a, wy, em, alpha * done);     /* the settled name, with its ghostly glow */
-    for (i = 0; i < n; i++) {
-        char c[2];
-        float cw, la, flash;
-        float t0 = ENT_N0 + (float)i * ENT_NL;
-        c[0] = name[i]; c[1] = '\0';
-        cw = d_text_width(&g_font_big, em, c);
-        la = clamp01((rt - t0) / 0.18f);
-        flash = rt > t0 ? expf(-(rt - t0) * 4.0f) : 0.0f;
-        if (la > 0.0f && done < 1.0f)
-            d_text(&g_font_big, x, wy, em, sf_col_alpha(sf_col_mix(TH_WORDMARK, hot, flash), alpha * la * (1.0f - done)), c, ALIGN_LEFT);
-        if (flash > 0.02f && la > 0.0f)        /* the light that writes it */
-            d_blob(x + cw * 0.5f, wy, em * 0.9f, sf_col_alpha(hot, 0.45f * alpha * flash));
-        x += cw;
-    }
+    if (ka > 0.0f)
+        draw_kitten(a, &k, TEX_CATS, k.cx, 0.0f, 1.0f, 1.0f + 0.010f * sinf(t * 2.1f), 0.0f, alpha * ka, 0);
+    draw_name_falling(a, k.cx, wordmark_y(&k), WORDMARK_EM * H(), rt, alpha);
 }
 
 /* 1: the loading screen is the Stage reveal; 2: the kittens' entrance over

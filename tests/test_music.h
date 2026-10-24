@@ -1567,23 +1567,14 @@ static void test_display_mode(void)
     relaunch_reset();
 }
 
-/* 0.7.3: the kittens drawn in light: the outlines are sane, and the
- * loading screen draws through every stage (tracing, filling, breathing) */
+/* 0.7.4: the loading screen of the other backgrounds (kittens fade in, the
+ * letters fall in) draws through every stage; quick L2/R2 jumps keep the
+ * A-Z rail up (no flicker) */
 static void test_kitten_entrance(void)
 {
     AppHost host;
-    int i, nk[3] = { 0, 0, 0 };
-    printf("kittens drawn in light\n");
-    CHECK(g_kitline_count > 3 && g_kitline_start[0] == 0);
-    for (i = 0; i < g_kitline_count; i++) {
-        int j;
-        CHECK(g_kitline_start[i + 1] - g_kitline_start[i] >= 3 && g_kitline_kind[i] <= 2);
-        if (g_kitline_kind[i] <= 2) nk[g_kitline_kind[i]]++;
-        for (j = g_kitline_start[i]; j < g_kitline_start[i + 1]; j++)
-            CHECK(g_kitline_uv[j][0] >= 0.0f && g_kitline_uv[j][0] <= 1.0f && g_kitline_uv[j][1] >= 0.0f && g_kitline_uv[j][1] <= 1.0f);
-    }
-    CHECK(nk[0] >= 1 && nk[2] >= 2);                 /* a silhouette and the eyes */
-    CHECK(g_kitline_start[g_kitline_count] <= 800);  /* few enough lines for one frame */
+    int i, sel0;
+    printf("falling letters, A-Z rail\n");
     lib_clear(&g_lib);
     memset(&host, 0, sizeof(host));
     host.fs_list = cfg_list;
@@ -1592,4 +1583,21 @@ static void test_kitten_entrance(void)
     for (i = 0; i < 90 && g_app.mode == MODE_LOADING; i++) { ui_draw(&g_app); run_frames(0, 0.1f); }
     CHECK(g_app.mode == MODE_FLOW);
     for (i = 0; i < 10; i++) { ui_draw(&g_app); run_frames(0, 0.1f); }
+    /* A-Z: jump letter after letter quickly; the rail stays up the whole time */
+    g_app.tab = PLAT_PS2;
+    app_select(&g_app, PLAT_PS2, 0, 0);
+    run_frames(0, 0.3f);
+    sel0 = g_app.view[PLAT_PS2].sel;
+    tap(SFB_R2);
+    CHECK(g_app.letter_in < 0.1f);
+    run_frames(0, 0.2f);
+    for (i = 0; i < 4; i++) {          /* the library has G and O: back and forth */
+        tap((i & 1) ? SFB_R2 : SFB_L2);
+        CHECK(g_app.letter_in >= 0.12f && g_app.view[PLAT_PS2].sel == ((i & 1) ? 1 : 0));
+        run_frames(0, 0.12f); ui_draw(&g_app);
+    }
+    CHECK(g_app.view[PLAT_PS2].sel != sel0);
+    run_frames(0, LETTER_TIME + 0.2f);
+    tap(SFB_L2);
+    CHECK(g_app.letter_in < 0.1f);                   /* after it hid, it fades in again */
 }

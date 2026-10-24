@@ -470,7 +470,12 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.7.3:** the loading screen of every background but Stage now shows
+15. **0.7.4:** the loading screen of every background but Stage: the
+    kittens fade in (no reflection) and the letters of *spookyflow* drop in
+    one by one from above with a little bounce, then the name settles into
+    its glow. Quick L2/R2 jumps keep the A–Z rail fully up: it no longer
+    blinks off and lets the game info flash through between jumps.
+    **0.7.3:** the loading screen of every background but Stage showed
     the **kittens drawn in light**: a point of light draws their outline,
     then the line where the white fur meets the black and the eyes; the
     picture fills in inside the lines as they fade, and the kittens breathe
@@ -670,7 +675,7 @@ make pkg                        # PS3 build (needs PSL1GHT + Tiny3D, $PSL1GHT se
 python3 tools/gen_font.py       # regenerate font atlases (src/core/font_data.c)
 python3 tools/gen_icons.py      # regenerate button badges (src/core/icons_data.c)
 python3 tools/cutout_cats.py    # art/cats_source.png -> art/cats.png (transparent kittens)
-python3 tools/gen_cats.py       # art/cats.png -> src/core/cats_data.c (pixels + outlines) + pkgfiles/ICON0.PNG
+python3 tools/gen_cats.py       # art/cats.png -> src/core/cats_data.c + pkgfiles/ICON0.PNG
 ```
 
 - `src/core/` — portable C99, no PS3 headers: title cleanup, sorting, letter

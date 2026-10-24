@@ -971,6 +971,7 @@ static void show_letter(App *a, int idx)
     a->letter[0] = title_bucket_char(g->bucket);
     a->letter[1] = '\0';
     a->letter_t = 0.0f;
+    if (!still) a->letter_in = 0.0f;
 }
 
 static void flow_input(App *a)
@@ -1034,6 +1035,7 @@ static void animate(App *a, float dt)
     anim_approach(&a->display_t, a->display ? 1.0f : 0.0f, 1.0f / DISPLAY_TIME, dt);
     if (!a->panel_open && a->panel_anim <= 0.0f) a->panel = PANEL_NONE;
     if (a->letter_t < LETTER_TIME) a->letter_t += dt;
+    if (a->letter_in < 1.0f) a->letter_in += dt;
     if (a->toast_t < TOAST_TIME) a->toast_t += dt;
     if (a->music_card_t < a->music_card_len) a->music_card_t += dt;
     a->flow_t += dt;

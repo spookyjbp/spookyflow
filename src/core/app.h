@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.7.3"
+#define APP_VERSION     "0.7.4"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -185,6 +185,7 @@ typedef struct {
     float reveal_start;
     float flow_t;           /* time since the cover flow appeared */     /* load_t when the Stage reveal started (-1000 = not used) */   /* how long it stays: longer while a long name scrolls (set by ui.c) */
     float letter_t;         /* seconds since shown; >= LETTER_TIME hidden */
+    float letter_in;        /* seconds since the rail appeared (kept while jumping again: no flicker) */
     char toast[160];
     volatile int ntfs_busy;  /* 1 while webMAN re-indexes the NTFS drives (Rescan) */
     int launched;           /* 1 = exiting because a game was launched */
