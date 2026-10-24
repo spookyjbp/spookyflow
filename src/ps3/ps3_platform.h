@@ -19,7 +19,11 @@
 /* render_tiny3d.c */
 int  ps3_render_init(u32 pool_bytes);
 int  ps3_render_init_covers(void);   /* cover slot textures; -1 = placeholders only */
-void ps3_render_frame_begin(void);
+void ps3_render_frame_begin(void);   /* call after tiny3d_Clear */
+/* performance test: variants (PERF_* in app.h) and per-frame counters */
+typedef struct { unsigned batches, tex_binds, shader_switches, vertices; } R3Stats;
+extern R3Stats g_r3_stats;
+void ps3_render_set_perf(unsigned flags);
 
 /* ps3_pad.c: abstract SFB_* mask from all connected pads */
 void     ps3_pad_init(void);

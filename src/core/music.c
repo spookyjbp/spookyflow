@@ -39,7 +39,15 @@ static uint32_t g_rand = 0x9E3779B9u;
 
 /* ---- now playing (decoder writes, main reads) ---- */
 static char g_cur_name[128];
-static volatile int g_cur_gen;
+static volatile int g_cur_gen;            /* decoder side: counts track starts */
+/* what music_current() reports: a new track only once it is actually heard
+ * (the ring holds up to 2 s, plus the pause between songs) */
+static char g_pend_name[128], g_pub_name[128];
+static volatile int g_pend, g_pend_gen, g_pub_gen;
+static volatile uint32_t g_pend_at;
+/* pause between songs (a track that ends on its own; skipping is immediate) */
+static volatile float g_gap_s = MUSIC_GAP_SECONDS;
+static uint32_t g_gap_left;
 
 /* ---- PCM ring: decoder writes, audio thread reads ---- */
 static float g_ring[MUSIC_RING_FRAMES * 2];
@@ -161,9 +169,24 @@ void music_set_shuffle(int on)
 
 int music_current(char *name, size_t cap)
 {
+    lock();
+    if (g_pend && (int32_t)(g_r - g_pend_at) >= 0) {   /* the audio thread got to its first frame */
+        sf_strlcpy(g_pub_name, g_pend_name, sizeof(g_pub_name));
+        g_pub_gen = g_pend_gen;
+        g_pend = 0;
+    }
+    if (name && cap) sf_strlcpy(name, g_pub_name, cap);
+    unlock();
+    return g_pub_gen;
+}
+
+int music_decoder_current(char *name, size_t cap)
+{
     if (name && cap) sf_strlcpy(name, g_cur_name, cap);
     return g_cur_gen;
 }
+
+void music_set_gap(float seconds) { g_gap_s = sf_clampf(seconds, 0.0f, 10.0f); }
 
 uint32_t music_buffered(void) { return g_w - g_r; }
 
@@ -174,6 +197,8 @@ void music_reset(void)
     unlock();
     g_volume = 0.5f; g_duck = 1.0f; g_playing = 0; g_shuffle = 1; g_skip = 0; g_failed = 0;
     g_cur_name[0] = '\0'; g_cur_gen = 0;
+    g_pend = 0; g_pend_gen = 0; g_pub_gen = 0; g_pend_at = 0; g_pend_name[0] = g_pub_name[0] = '\0';
+    g_gap_s = MUSIC_GAP_SECONDS; g_gap_left = 0;
     g_w = g_r = g_flush_to = g_flush_req = 0;
     g_fmt = FMT_NONE; g_cur = -1; g_list_seen = -1; g_fail_run = 0; g_gain = 0.0f;
 }
@@ -269,6 +294,12 @@ static int next_track(void)
             name_from_path(g_path, g_cur_name, sizeof(g_cur_name));
             g_track_frames = 0;
             g_cur_gen++;
+            lock();                                /* reported once it is heard */
+            sf_strlcpy(g_pend_name, g_cur_name, sizeof(g_pend_name));
+            g_pend_gen = g_cur_gen;
+            g_pend_at = g_w;
+            g_pend = 1;
+            unlock();
             log_printf("music: playing %s", g_path);
             return 1;
         }
@@ -291,6 +322,7 @@ static int end_track(void)
         g_fail_run++;
     } else {
         g_fail_run = 0;
+        g_gap_left = (uint32_t)(g_gap_s * (float)MUSIC_RATE);   /* a pause before the next song */
     }
     g_fmt = FMT_NONE;
     return 0;
@@ -326,6 +358,7 @@ int music_decode_step(void)
     if (g_skip || g_list_seen != g_list_gen) {
         if (g_skip) g_fail_run = 0;
         g_skip = 0;
+        g_gap_left = 0;
         g_fmt = FMT_NONE;
         g_flush_to = g_w;                     /* the audio thread drops what's buffered */
         __sync_synchronize();
@@ -334,6 +367,17 @@ int music_decode_step(void)
     if (!g_playing || g_volume <= 0.0f || g_ntracks <= 0) return 50;
     if (g_list_seen == g_list_gen && g_fail_run >= g_ntracks) return 500;   /* nothing plays: idle */
     if (MUSIC_RING_FRAMES - (g_w - g_r) < RING_ROOM) return 15;              /* ring full enough */
+    if (g_gap_left > 0 && g_fmt == FMT_NONE) {             /* silence between songs */
+        uint32_t n = g_gap_left < 4800 ? g_gap_left : 4800, i;
+        for (i = 0; i < n; i++) {
+            uint32_t w = g_w % MUSIC_RING_FRAMES;
+            g_ring[w * 2] = 0.0f; g_ring[w * 2 + 1] = 0.0f;
+            __sync_synchronize();
+            g_w = g_w + 1;
+        }
+        g_gap_left -= n;
+        return 0;
+    }
     if (g_fmt == FMT_NONE && !next_track()) return 200;
     if (g_fmt == FMT_MP3) {
         int k;

@@ -16,7 +16,7 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
     } else if (panel == PANEL_FLOW) {
         tmp[n++] = ROW_F_AUTOPLAY; tmp[n++] = ROW_F_OFFLINE; tmp[n++] = ROW_F_SFX; tmp[n++] = ROW_F_VOLUME; tmp[n++] = ROW_F_SHUFFLE;
         tmp[n++] = ROW_F_BACKGROUND; tmp[n++] = ROW_F_UI_COLOR; tmp[n++] = ROW_F_INFO; tmp[n++] = ROW_F_CASES; tmp[n++] = ROW_F_REFLECT; tmp[n++] = ROW_F_SLEEP; tmp[n++] = ROW_F_COVERS; tmp[n++] = ROW_F_IGNORE_THE;
-        tmp[n++] = ROW_F_XMB_TOP; tmp[n++] = ROW_F_RESCAN; tmp[n++] = ROW_F_QUIT;
+        tmp[n++] = ROW_F_XMB_TOP; tmp[n++] = ROW_F_RESCAN; tmp[n++] = ROW_F_PERFTEST; tmp[n++] = ROW_F_QUIT;
         tmp[n++] = ROW_F_POWEROFF;
     }
     if (n > max) n = max;
@@ -47,6 +47,7 @@ const char *menu_label(RowKind k)
     case ROW_F_IGNORE_THE: return "Ignore \"The\" When Sorting";
     case ROW_F_XMB_TOP: return "Pin to Top of XMB";
     case ROW_F_RESCAN: return "Rescan Library";
+    case ROW_F_PERFTEST: return "Performance Test";
     case ROW_F_QUIT: return "Quit to XMB";
     case ROW_F_POWEROFF: return "Power Off PS3";
     }
@@ -55,7 +56,7 @@ const char *menu_label(RowKind k)
 
 int menu_is_action(RowKind k)
 {
-    return k == ROW_D_DISC || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
+    return k == ROW_D_DISC || k == ROW_F_COVERS || k == ROW_F_RESCAN || k == ROW_F_PERFTEST || k == ROW_F_QUIT || k == ROW_F_POWEROFF;
 }
 
 int menu_is_slider(RowKind k) { return k == ROW_F_VOLUME || k == ROW_F_SFX; }
@@ -107,6 +108,7 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
     case ROW_F_IGNORE_THE: sf_strlcpy(out, onoff(s->ignore_the), cap); break;
     case ROW_F_XMB_TOP: sf_strlcpy(out, onoff(s->xmb_top), cap); break;
     case ROW_F_RESCAN: sf_strlcpy(out, "Start", cap); break;
+    case ROW_F_PERFTEST: sf_strlcpy(out, "Start", cap); break;
     case ROW_F_QUIT: sf_strlcpy(out, "", cap); break;
     case ROW_F_POWEROFF: sf_strlcpy(out, "", cap); break;
     }
@@ -172,6 +174,7 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     case ROW_F_IGNORE_THE: s->ignore_the = cycle(s->ignore_the, 2, dir); return MENU_FX_RESORT;
     case ROW_F_XMB_TOP: s->xmb_top = cycle(s->xmb_top, 2, dir); return MENU_FX_XMB_TOP;
     case ROW_F_RESCAN: return dir == 0 ? MENU_FX_RESCAN : MENU_FX_NONE;
+    case ROW_F_PERFTEST: return dir == 0 ? MENU_FX_PERFTEST : MENU_FX_NONE;
     case ROW_F_QUIT: return dir == 0 ? MENU_FX_QUIT : MENU_FX_NONE;
     case ROW_F_POWEROFF: return dir == 0 ? MENU_FX_POWEROFF : MENU_FX_NONE;
     }

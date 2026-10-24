@@ -781,17 +781,18 @@ static int mus_play_one(const char *path, int *crossings, float *peak)
     float buf[512 * 2];
     p[0] = path;
     music_reset();
+    music_set_gap(0.0f);
     music_set_playlist(p, 1);
     music_set_volume(1.0f);
     music_set_playing(1);
     *crossings = 0; *peak = 0.0f;
-    gen0 = music_current(NULL, 0);
+    gen0 = music_decoder_current(NULL, 0);
     /* decode until the 2nd start of the (only) track; drain the ring as we go */
     while (steps++ < 20000) {
         uint32_t before = music_buffered();
         int gen;
         music_decode_step();
-        gen = music_current(NULL, 0);
+        gen = music_decoder_current(NULL, 0);
         if (gen >= gen0 + 2) { frames += (int)before; break; }   /* frames of the first play, already counted below */
         while (music_buffered() > 512 && gen == gen0 + 1) {
             int i;
@@ -828,6 +829,7 @@ static void test_music(void)
 
     /* scan: .mp3/.wav only, one sub-folder level, no hidden files, sorted */
     music_reset();
+    music_set_gap(0.0f);
     CHECK(music_scan(mus_list, NULL, MUS_DIR) == 3);
     CHECK(music_track_count() == 3);
     CHECK(music_scan(mus_list, NULL, "/nowhere") == 0);
@@ -845,7 +847,7 @@ static void test_music(void)
     frames = mus_play_one(MUS_DIR "/Album/01 tagged.mp3", &cross, &peak);   /* 22.05 kHz, ID3v2 tag skipped */
     CHECK(frames >= 14000 && frames <= 20000);
     CHECK(music_failed() == 0);
-    music_current(name, sizeof(name));
+    music_decoder_current(name, sizeof(name));
     CHECK_STR(name, "01 tagged");
     frames = mus_play_one(MUS_DIR "/A Song.WAV", &cross, &peak);     /* 44.1 kHz 16-bit, 0.05 s */
     CHECK(frames >= 2300 && frames <= 2500);
@@ -856,6 +858,7 @@ static void test_music(void)
         const char *bad[3] = { "/m/junk.mp3", "/m/empty.wav", "/m/missing.mp3" };
         int r = 0;
         music_reset();
+    music_set_gap(0.0f);
         music_set_playlist(bad, 3);
         music_set_volume(1.0f);
         music_set_playing(1);
@@ -867,13 +870,14 @@ static void test_music(void)
     {
         const char *mixed[2] = { "/m/junk.mp3", "/m/mono48.mp3" };
         music_reset();
+    music_set_gap(0.0f);
         music_set_shuffle(0);
         music_set_playlist(mixed, 2);
         music_set_volume(1.0f);
         music_set_playing(1);
         for (i = 0; i < 40; i++) music_decode_step();
         CHECK(music_buffered() > 10000);
-        music_current(name, sizeof(name));
+        music_decoder_current(name, sizeof(name));
         CHECK_STR(name, "mono48");
     }
 
@@ -881,6 +885,7 @@ static void test_music(void)
     {
         const char *one[1] = { "/m/mono48.mp3" };
         music_reset();
+    music_set_gap(0.0f);
         music_set_playlist(one, 1);
         music_set_volume(0.0f);
         music_set_playing(1);
@@ -929,12 +934,13 @@ static void test_music(void)
     {
         const char *two[2] = { "/m/mono48.mp3", MUS_DIR "/b tone.mp3" };
         music_reset();
+    music_set_gap(0.0f);
         music_set_shuffle(0);
         music_set_playlist(two, 2);
         music_set_volume(1.0f);
         music_set_playing(1);
         for (i = 0; i < 3; i++) music_decode_step();
-        gen = music_current(name, sizeof(name));
+        gen = music_decoder_current(name, sizeof(name));
         CHECK_STR(name, "b tone");                 /* sorted by full path: "/dev_hdd0/..." < "/m/..." */
         CHECK(music_buffered() > 10000);
         {
@@ -947,7 +953,7 @@ static void test_music(void)
             CHECK(music_buffered() == now - had - 256);
             CHECK(fabsf(buf[0]) < 0.001f);         /* and the new one fades in */
         }
-        CHECK(music_current(name, sizeof(name)) == gen + 1);
+        CHECK(music_decoder_current(name, sizeof(name)) == gen + 1);
         CHECK_STR(name, "mono48");
     }
 
@@ -964,16 +970,17 @@ static void test_music(void)
         }
         for (round = 0; round < 2; round++) {
             music_reset();
+    music_set_gap(0.0f);
             music_set_seed(1234u + (uint32_t)round);
             music_set_shuffle(round == 0);
             music_set_playlist(pp, 6);
             music_set_volume(1.0f);
             music_set_playing(1);
             for (k = 0; k < 12; k++) {
-                int g0 = music_current(NULL, 0), guard = 0;
+                int g0 = music_decoder_current(NULL, 0), guard = 0;
                 if (k) music_next();
-                while (music_current(NULL, 0) == g0 && guard++ < 50) { music_decode_step(); music_mix(buf, 256); }
-                music_current(seen[k], sizeof(seen[k]));
+                while (music_decoder_current(NULL, 0) == g0 && guard++ < 50) { music_decode_step(); music_mix(buf, 256); }
+                music_decoder_current(seen[k], sizeof(seen[k]));
             }
             if (round == 0) {
                 for (k = 0; k < 12; k++) {
@@ -992,6 +999,7 @@ static void test_music(void)
         }
     }
     music_reset();
+    music_set_gap(0.0f);
     memfs_reset();
 }
 
@@ -1224,6 +1232,19 @@ static void test_ps2_config(void)
         tap(SFB_CIRCLE); run_frames(0, 0.4f);
     }
 
+    /* webMAN's own lookup turned off in its setup: Auto says so */
+    memset(&g_fake_wm, 0, sizeof(g_fake_wm));
+    g_fake_wm.valid = 1; g_fake_wm.ps2config_off = 1;
+    g_app.host.read_wm_config = fake_wm_config;
+    cfg_remove(OKAMI_CFG);
+    cfg_open_row();
+    tap(SFB_LEFT); tap(SFB_LEFT);
+    while (g_app.panel_cfg.ps2cfg != PS2CFG_AUTO) tap(SFB_RIGHT);
+    app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
+    CHECK_STR(v, "Auto (off in webMAN)");
+    tap(SFB_CIRCLE); run_frames(0, 0.4f);
+    g_app.host.read_wm_config = NULL;
+
     /* no title ID (and none inside the image): not available, ✖ explains */
     app_select(&g_app, PLAT_PS2, idx_of(PLAT_PS2, "God Hand"), 0);
     cfg_open_row();
@@ -1262,4 +1283,97 @@ static void test_panel_back(void)
     CHECK(g_app.panel == PANEL_GAME);                           /* nor opens Flow Settings over it */
     tap(SFB_CIRCLE); run_frames(0, 0.4f);
     CHECK(g_app.panel == PANEL_NONE && !g_app.exiting);
+}
+
+/* 0.6.3: performance test */
+static int g_perf_calls, g_perf_last_phase;
+static unsigned g_perf_last_flags;
+static void fake_perf(int phase, unsigned flags) { g_perf_calls++; g_perf_last_phase = phase; g_perf_last_flags = flags; }
+
+static void test_perf_test(void)
+{
+    AppHost host;
+    int i, n = app_perf_phase_count();
+    printf("performance test\n");
+    lib_clear(&g_lib);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = cfg_list;
+    host.perf_phase = fake_perf;
+    g_perf_calls = 0;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    CHECK(g_app.perf_phase == -1 && g_app.perf_flags == 0);
+    tap(SFB_START); run_frames(0, 0.3f);
+    for (i = 0; i < 25 && g_app.rows[g_app.row] != ROW_F_PERFTEST; i++) tap(SFB_DOWN);
+    CHECK(g_app.rows[g_app.row] == ROW_F_PERFTEST);
+    tap(SFB_CROSS);
+    CHECK(g_app.perf_phase == 0 && g_perf_calls == 1 && g_perf_last_phase == 0 && !g_app.panel_open);
+    run_frames(0, PERF_PHASE_TIME + 0.1f);
+    CHECK(g_app.perf_phase == 1 && g_perf_last_flags == PERF_NO_DEPTH);
+    tap(SFB_TRIANGLE); tap(SFB_START);                 /* other buttons do nothing meanwhile */
+    CHECK(g_app.panel == PANEL_NONE && g_app.perf_phase == 1);
+    for (i = 0; i < 4; i++) ui_draw(&g_app);           /* every variant draws */
+    run_frames(0, PERF_PHASE_TIME * (float)(n - 1));
+    CHECK(g_app.perf_phase == -1 && g_perf_last_phase == -1 && g_app.perf_flags == 0);
+    CHECK(strstr(g_app.toast, "send the log") != NULL);
+    CHECK(g_perf_calls == n + 1);
+    /* ◯ stops it early, and it never exits the app */
+    tap(SFB_START); run_frames(0, 0.3f);
+    for (i = 0; i < 25 && g_app.rows[g_app.row] != ROW_F_PERFTEST; i++) tap(SFB_DOWN);
+    tap(SFB_CROSS);
+    run_frames(0, 0.5f);
+    for (i = 0; i < n; i++) { g_app.perf_flags = app_perf_phase_flags(i); ui_draw(&g_app); }
+    tap(SFB_CIRCLE);
+    CHECK(g_app.perf_phase == -1 && !g_app.exiting && strstr(g_app.toast, "stopped") != NULL);
+}
+
+/* 0.6.4: a 2 s pause before the next song; the song shows once it's heard */
+static void test_music_gap(void)
+{
+    const char *two[2] = { "/m/mono48.mp3", MUS_DIR "/b tone.mp3" };
+    float buf[512 * 2];
+    long pos = 0, last_loud1 = -1, pub2 = -1, first_loud2 = -1;
+    int i, steps = 0;
+    char name[64];
+    printf("music: pause between songs\n");
+    memfs_reset();
+    memfs_put("/m/mono48.mp3", k_m48_mp3, sizeof(k_m48_mp3));
+    memfs_put(MUS_DIR "/b tone.mp3", k_s44_mp3, sizeof(k_s44_mp3));
+    music_init(mem_read_at, NULL);
+    music_reset();                                  /* gap back to MUSIC_GAP_SECONDS */
+    music_set_shuffle(0);
+    music_set_playlist(two, 2);
+    music_set_volume(1.0f);
+    music_set_playing(1);
+    while (steps++ < 4000 && (first_loud2 < 0 || pos < first_loud2 + 4800)) {
+        int g;
+        for (i = 0; i < 3; i++) music_decode_step();
+        memset(buf, 0, sizeof(buf));
+        music_mix(buf, 512);
+        g = music_current(name, sizeof(name));
+        for (i = 0; i < 512; i++) {
+            int loud = fabsf(buf[i * 2]) > 0.002f;
+            if (loud && pub2 < 0) last_loud1 = pos + i;
+            if (loud && pub2 >= 0 && first_loud2 < 0) first_loud2 = pos + i;
+        }
+        pos += 512;
+        if (g == 2 && pub2 < 0) { pub2 = pos; CHECK_STR(name, "mono48"); }   /* sorted: /dev_hdd0 first */
+    }
+    CHECK(pub2 > 0 && first_loud2 > 0);
+    CHECK(pub2 - last_loud1 > 94000 && pub2 - last_loud1 < 101000);   /* ~2 s of silence */
+    CHECK(first_loud2 - pub2 < 3000);               /* shown as it starts, not 2 s early */
+    /* skipping doesn't wait */
+    {
+        int g0 = music_current(NULL, 0);
+        long at = pos;
+        music_next();
+        for (steps = 0; steps < 50 && music_current(NULL, 0) == g0; steps++) {
+            for (i = 0; i < 3; i++) music_decode_step();
+            music_mix(buf, 512);
+            pos += 512;
+        }
+        CHECK(music_current(NULL, 0) == g0 + 1 && pos - at < 4096);
+    }
+    music_reset();
+    memfs_reset();
 }

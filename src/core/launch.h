@@ -35,9 +35,12 @@ typedef struct {
     int ps1_netemu;     /* [581] 0 = ps1_emu, 1 = ps1_netemu */
     int autoplay;       /* [582] 1 = webMAN starts games after mounting */
     int ps2_netemu;     /* [583] 0 = ps2_emu, 1 = ps2_netemu */
+    int ps2config_off;  /* [584] 1 = webMAN's automatic PS2 CONFIG lookup is off */
 } WmConfig;
 
-/* Parse wm_config.bin (version 0x1337, big-endian). Returns cfg->valid. */
+/* Parse wm_config.bin (big-endian). Its first u16 is 0x1337 when written by
+ * a recent webMAN; files kept from older versions have 0 there but the same
+ * layout (1024 bytes), so those are read too. Returns cfg->valid. */
 int launch_parse_wm_config(const unsigned char *buf, size_t len, WmConfig *cfg);
 
 /* Percent-encode a path for a webMAN URL (keeps letters, digits, / - _ . ~ ( )

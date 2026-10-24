@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "0.6.1"
+#define APP_VERSION     "0.6.4"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -75,6 +75,9 @@ typedef struct {
      * needs read_at. The host runs music_decode_step() on a thread and
      * music_mix() in its audio callback. NULL = no music. */
     const char *music_dir;
+    /* optional: performance test variant changed (PERF_* in render.h, the
+     * backend's part); phase = test step, -1 = test over */
+    void (*perf_phase)(int phase, unsigned flags);
     /* optional: small file operations for the PS2 config picker (with
      * read_at). is_file gets fs_ctx; write_file replaces the file; both
      * return 0 / 1 as named. Without them the PS2 Config row is unavailable. */
@@ -149,11 +152,15 @@ typedef struct {
     unsigned ps2cfg_avail;  /* bit n: PS2CFG type n exists for this game (bit 0 = Auto, always) */
     int ps2cfg_auto;        /* what Auto gives: -1 nothing, a PS2CFG_* type or PS2CFG_OWN */
     char ps2cfg_gid[16];    /* SLUS_209.14 */
+    int ps2cfg_wm_off;      /* webMAN's own CONFIG lookup is turned off (its setup) */
 
     /* overlays */
     char letter[4];
     int letter_bucket, letter_prev_bucket;   /* the A-Z rail glides from the previous letter */
     int music_gen;          /* last track counter seen (music_current) */
+    int perf_phase;         /* performance test step, -1 = not running */
+    float perf_t;           /* time in this step */
+    unsigned perf_flags;    /* PERF_* of this step (render.h) */
     int music_scanned;      /* the music folder has been read */
     char music_name[128];   /* song shown on the now-playing card */
     float music_card_t;     /* time since the card appeared (>= music_card_len: hidden) */
@@ -185,6 +192,10 @@ void app_update(App *a, uint32_t held, float dt);
 /* Request a clean exit (sysutil exit event, Quit row...). */
 void app_request_exit(App *a, const char *why);
 float music_gain(int percent);
+#define PERF_PHASE_TIME 5.0f
+int app_perf_phase_count(void);
+unsigned app_perf_phase_flags(int phase);
+const char *app_perf_phase_name(int phase);
 /* Text of a settings row's value as shown (the PS2 Config row knows more
  * than menu_value_text: what exists for this game and what Auto picks). */
 void app_row_value(const App *a, RowKind k, char *out, size_t cap);   /* Music Volume setting -> music_set_volume() */

@@ -8,11 +8,14 @@
 int launch_parse_wm_config(const unsigned char *buf, size_t len, WmConfig *cfg)
 {
     memset(cfg, 0, sizeof(*cfg));
-    if (!buf || len < 584) return 0;
-    if (((buf[0] << 8) | buf[1]) != 0x1337) return 0;
+    unsigned ver;
+    if (!buf || len < 585) return 0;
+    ver = (unsigned)((buf[0] << 8) | buf[1]);
+    if (ver != 0x1337 && !(ver == 0 && len == 1024)) return 0;
     cfg->ps1_netemu = buf[581] ? 1 : 0;
     cfg->autoplay = buf[582] ? 1 : 0;
     cfg->ps2_netemu = buf[583] ? 1 : 0;
+    cfg->ps2config_off = buf[584] ? 1 : 0;
     cfg->valid = 1;
     return 1;
 }

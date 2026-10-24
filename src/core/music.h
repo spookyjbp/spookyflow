@@ -24,6 +24,7 @@
 #define MUSIC_PATH_MAX     512
 #define MUSIC_RATE         48000
 #define MUSIC_RING_FRAMES  (MUSIC_RATE * 2)
+#define MUSIC_GAP_SECONDS  2.0f    /* pause before the next song (not when skipping) */
 
 /* io for reading the files (decoder thread). Call once. */
 void music_init(ReadAtFn rd, void *ctx);
@@ -42,8 +43,10 @@ void music_set_playing(int on);   /* start / stop (both fade) */
 void music_set_seed(uint32_t seed);
 void music_next(void);            /* skip to the next track */
 /* Name of the track playing (file name without extension); returns a
- * counter that changes whenever a new track starts (0 = none yet). */
+ * counter that changes whenever a new track starts to be heard (0 = none
+ * yet). Main thread. */
 int  music_current(char *name, size_t cap);
+void music_set_gap(float seconds);   /* pause between songs, default MUSIC_GAP_SECONDS */
 
 /* Decoder thread: do a slice of work. Returns how many ms to sleep before
  * the next call (0 = call again right away). */
@@ -53,6 +56,7 @@ int  music_decode_step(void);
 void music_mix(float *out, int frames);
 
 /* tests */
+int      music_decoder_current(char *name, size_t cap);   /* like music_current, as decoded (ahead) */
 uint32_t music_buffered(void);    /* frames waiting in the ring */
 int      music_failed(void);      /* files that could not be played */
 void     music_reset(void);       /* back to the state after init (tests) */

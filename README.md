@@ -305,7 +305,8 @@ played:
   are skipped.
 - **.wav** — 16-bit PCM, mono or stereo, any sample rate.
 
-Music starts when the cover flow appears and loops through the folder.
+Music starts when the cover flow appears and loops through the folder,
+with a 2-second pause between songs (skipping with SELECT is immediate).
 **Shuffle music** On plays every song once in a random order before any
 repeats; Off plays them by file name. **Music volume** sets the level (the
 UI sounds have their own volume); 0% stops it. The scale is gentle: 50% is
@@ -452,7 +453,19 @@ contents (or attach it) in our chat.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
-15. **0.6.1:** only ◯ closes Game Settings and Flow Settings (▲ and START
+15. **0.6.4:** a 2-second pause between songs; the Now Playing card now
+    appears when the song is actually heard (it used to show up to 2 s early).
+    **0.6.3 — Performance Test:** Flow Settings → **Performance Test** (✖)
+    runs 10 steps of 5 s each (under a minute) while you leave the pad
+    alone: the cover flow as is, then with a few drawing changes, then with
+    parts left out (background, cover row, reflections, case images, bar).
+    A small label in the top right shows the step; ◯ stops it. The log gets
+    one `perf test: step N` line per step with the frame rate and where the
+    time goes. Run it on the Stage background at 1080p and send the log.
+    **0.6.2:** webMAN's settings file is read on your console too (it was
+    kept from an older webMAN, without the version mark); PS2 Config shows
+    “Auto (off in webMAN)” when webMAN's own CONFIG lookup is turned off.
+    **0.6.1:** only ◯ closes Game Settings and Flow Settings (▲ and START
     no longer do); the kittens on the Now Playing card have no glow behind them.
     **0.6.0:** Game Settings → PS2 Config picks the CONFIG for PS2 ISOs
     (Auto / CUSTOM / NET / GX / SOFT); SELECT “Next Song” is on the controls

@@ -583,7 +583,7 @@ static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p,
     if (tex < 0) art = 0.0f;
     case_window(plat, x, y, w, h, &win);
     /* reflection first (it lies under everything) */
-    if (a->settings.reflections) {
+    if (a->settings.reflections && !(a->perf_flags & PERF_NO_REFLECT)) {
         float A = y + h, depth = h * REFLECT_DEPTH, k = REFLECT_ALPHA * alpha * b;
         uint32_t white = 0xFFFFFFFFu;
         if (art < 1.0f) reflect_rect(win.x, win.y, win.w, win.h, A, depth, 0x1E1F24FFu, k * (1.0f - art));
@@ -1325,36 +1325,44 @@ void ui_draw(App *a)
     int animated = 1;
     ui_set_color(a->settings.ui_color);
     set_glow(a->time);
-    layout_use_case_images(a->settings.cases);
+    layout_use_case_images(a->settings.cases && !(a->perf_flags & PERF_NO_CASES));
     layout_set_floor(a->settings.background == BG_STAGE);   /* Stage: on its floor; others: centered */
     layout_ui(d_screen(), &m);
-    draw_background(a, 1.0f, animated);
+    if (a->perf_flags & PERF_NO_BG) d_rect(0, 0, W(), H(), 0x000000FFu);
+    else draw_background(a, 1.0f, animated);
 
     if (a->mode == MODE_LOADING) {
         draw_loading(a, 1.0f);
     } else {
         intro = ease_out_cubic(a->intro);
         ia = ease_in_out(sf_clampf(a->intro * 1.4f - 0.25f, 0.0f, 1.0f));   /* UI fades in as the loading screen fades out */
+        int ui_on = !(a->perf_flags & PERF_NO_UI);
         /* tabs */
-        draw_tabs(a, ia, -(1.0f - intro) * 0.05f * H());
+        if (ui_on) draw_tabs(a, ia, -(1.0f - intro) * 0.05f * H());
         /* cover rows (tab switch: old slides out, new slides in) */
-        if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
+        if (a->perf_flags & PERF_NO_FLOW) {
+        } else if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
             float e = ease_out_cubic(a->tab_anim), dist = W() * 0.45f;
             draw_flow_row(a, a->tab_prev, -(float)a->tab_dir * e * dist, (1.0f - e) * ia);
             draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist, e * ia);
         } else {
             draw_flow_row(a, a->tab, (1.0f - intro) * W() * 0.12f, ia);
         }
-        draw_info(a, ia, &m);
+        if (ui_on) draw_info(a, ia, &m);
         if (a->panel != PANEL_NONE) {
             float pe = ease_out_cubic(a->panel_anim);
             d_rect(0, 0, W(), H(), sf_col_alpha(TH_DIM_OVERLAY, TH_DIM_MAX * pe));
             draw_panel(a);
         }
-        draw_bar(a, ia);
+        if (ui_on) draw_bar(a, ia);
         draw_letter(a);
         draw_music_card(a, ia);
         draw_toast(a);
+        if (a->perf_phase >= 0) {      /* small label while the performance test runs */
+            char t[96];
+            snprintf(t, sizeof(t), "Performance test %d/%d  \xC2\xB7  Circle stops", a->perf_phase + 1, app_perf_phase_count());
+            d_text(&g_font_main, W() * 0.985f, H() * 0.035f, 0.022f * H(), TH_TEXT_DIM, t, ALIGN_RIGHT);
+        }
         if (a->intro < 1.0f) {
             /* the loading screen (with its own background) cross-fades out on top */
             float la = 1.0f - ease_in_out(sf_clampf(a->intro * 1.25f, 0.0f, 1.0f));

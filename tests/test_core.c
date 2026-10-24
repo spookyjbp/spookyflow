@@ -481,9 +481,9 @@ static void test_menu(void)
     CHECK(r[1] == ROW_G_EMULATOR && r[2] == ROW_G_OFFLINE && r[3] == ROW_G_PS2CFG);
     CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 2);
     CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_OFFLINE);
-    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 17);
+    CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 18);
     CHECK(r[1] == ROW_F_OFFLINE && r[2] == ROW_F_SFX && r[6] == ROW_F_UI_COLOR && r[7] == ROW_F_INFO && r[8] == ROW_F_CASES && r[9] == ROW_F_REFLECT && r[10] == ROW_F_SLEEP &&
-          r[13] == ROW_F_XMB_TOP && r[15] == ROW_F_QUIT && r[16] == ROW_F_POWEROFF);
+          r[13] == ROW_F_XMB_TOP && r[15] == ROW_F_PERFTEST && r[16] == ROW_F_QUIT && r[17] == ROW_F_POWEROFF);
     settings_defaults(&s);
     memset(&g, 0, sizeof(g));
     menu_value_text(ROW_G_EMULATOR, PLAT_PS1, &s, &g, v, sizeof(v)); CHECK_STR(v, "Standard");
@@ -1106,24 +1106,24 @@ static void test_app(void)
         char key[SET_KEY_MAX];
         sf_strlcpy(key, lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), sizeof(key));
         tap(SFB_START);
-        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 17);
+        CHECK(g_app.panel == PANEL_FLOW && g_app.nrows == 18);
         for (i = 0; i < 12; i++) tap(SFB_DOWN);
         CHECK(g_app.rows[g_app.row] == ROW_F_IGNORE_THE);
         tap(SFB_CROSS);
         CHECK(g_app.settings.ignore_the == 1);
         CHECK_STR(lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), key);
         run_frames(0, 0.5f);
-        CHECK(fabsf(g_app.list_scroll.x - 7.0f) < 0.01f);   /* row 13 of 17: scrolled by seven */
-        tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN); run_frames(0, 0.5f);
+        CHECK(fabsf(g_app.list_scroll.x - 7.0f) < 0.01f);   /* row 13 of 18: scrolled by seven */
+        tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN); tap(SFB_DOWN); run_frames(0, 0.5f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
-        CHECK(fabsf(g_app.list_scroll.x - 10.0f) < 0.01f);  /* scrolled to keep row 16 visible */
+        CHECK(fabsf(g_app.list_scroll.x - 11.0f) < 0.01f);  /* scrolled to keep row 17 visible */
         /* the menus ignore the stick, and holding the D-pad moves only one row */
         run_frames(SFB_STICK_UP, 1.0f); run_frames(0, 0.1f);
         CHECK(g_app.rows[g_app.row] == ROW_F_QUIT);
         run_frames(SFB_STICK_LEFT, 1.0f); run_frames(SFB_STICK_RIGHT, 1.0f); run_frames(0, 0.1f);
         CHECK(g_app.settings.ignore_the == 1 && g_app.settings.autoplay == 0);
         run_frames(SFB_UP, 1.5f); run_frames(0, 0.1f);
-        CHECK(g_app.rows[g_app.row] == ROW_F_RESCAN);
+        CHECK(g_app.rows[g_app.row] == ROW_F_PERFTEST);          /* one row up, held */
         tap(SFB_DOWN);
         /* power off: one press, no confirmation */
         tap(SFB_DOWN);
@@ -1260,8 +1260,10 @@ int main(void)
     test_bg_and_reflect();
     test_music();
     test_music_app();
+    test_music_gap();
     test_ps2_config();
     test_panel_back();
+    test_perf_test();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

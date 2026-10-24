@@ -10,7 +10,7 @@ typedef enum {
     ROW_G_AUTOPLAY, ROW_G_EMULATOR, ROW_G_OFFLINE, ROW_G_PS2CFG,
     /* Flow settings (global) */
     ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT, ROW_F_SLEEP, ROW_F_COVERS,
-    ROW_F_IGNORE_THE, ROW_F_XMB_TOP, ROW_F_RESCAN, ROW_F_QUIT, ROW_F_POWEROFF,
+    ROW_F_IGNORE_THE, ROW_F_XMB_TOP, ROW_F_RESCAN, ROW_F_PERFTEST, ROW_F_QUIT, ROW_F_POWEROFF,
     /* Choose Disc (multi-disc games): row i = disc i */
     ROW_D_DISC
 } RowKind;
@@ -29,7 +29,8 @@ enum {
     MENU_FX_COVERS_STUB,
     MENU_FX_PS2CFG,         /* PS2 config row: the app knows which configs exist */
     MENU_FX_XMB_TOP,        /* pin-to-top changed: patch our PARAM.SFO */
-    MENU_FX_POWEROFF        /* power off the console (app asks for a second press) */
+    MENU_FX_POWEROFF,       /* power off the console */
+    MENU_FX_PERFTEST        /* run the performance test */
 };
 
 int  menu_rows(int panel, int plat, RowKind *out, int max);

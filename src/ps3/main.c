@@ -183,6 +183,51 @@ static void frame_stats(float dt, double draw_s, double wait_s)
     }
 }
 
+/* Performance test (Flow Settings): per step, the frame times split into
+ * app update / CPU drawing / waiting for the GPU / tiny3d_Flip, and what
+ * the frame sent to the RSX. The first second of a step is not counted. */
+typedef struct {
+    int phase, frames;
+    double t0, dt, upd, draw, wait, flip, worst;
+    double batches, binds, shaders, verts;
+} PerfAcc;
+static PerfAcc g_pacc = { -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+static void perf_log_step(void)
+{
+    PerfAcc *p = &g_pacc;
+    double n;
+    if (p->phase < 0) return;
+    if (p->frames < 10) { log_printf("perf test: step %d: too few frames", p->phase + 1); return; }
+    n = (double)p->frames;
+    log_printf("perf test: step %d %-30s %5.1f fps | frame %.1f ms (worst %.0f): update %.1f, draw %.1f, gpu wait %.1f, flip %.1f | "
+               "batches %.0f, texture binds %.0f, shader switches %.0f, vertices %.0f",
+               p->phase + 1, app_perf_phase_name(p->phase), n / p->dt, p->dt * 1000.0 / n, p->worst * 1000.0,
+               p->upd * 1000.0 / n, p->draw * 1000.0 / n, p->wait * 1000.0 / n, p->flip * 1000.0 / n,
+               p->batches / n, p->binds / n, p->shaders / n, p->verts / n);
+}
+
+static void host_perf_phase(int phase, unsigned flags)
+{
+    perf_log_step();
+    memset(&g_pacc, 0, sizeof(g_pacc));
+    g_pacc.phase = phase;
+    g_pacc.t0 = now_seconds();
+    ps3_render_set_perf(flags);
+    if (phase < 0) log_printf("perf test: over, back to normal drawing");
+}
+
+static void perf_frame(double dt, double upd, double draw, double wait, double flip)
+{
+    PerfAcc *p = &g_pacc;
+    if (p->phase < 0 || now_seconds() - p->t0 < 1.0) return;
+    p->frames++;
+    p->dt += dt; p->upd += upd; p->draw += draw; p->wait += wait; p->flip += flip;
+    if (dt > p->worst) p->worst = dt;
+    p->batches += g_r3_stats.batches; p->binds += g_r3_stats.tex_binds;
+    p->shaders += g_r3_stats.shader_switches; p->verts += g_r3_stats.vertices;
+}
+
 static void setup_screen(void)
 {
     Screen s;
@@ -245,12 +290,13 @@ int main(int argc, const char *argv[])
     host.is_file = ps3_fs_is_file;
     host.write_file = ps3_fs_write_file;
     host.remove_file = ps3_fs_remove_file;
+    host.perf_phase = host_perf_phase;
     host.covers = ps3_covers_start();
     app_init(&g_app, &g_lib, &host);
 
     prev = now_seconds();
     while (!g_app.quit) {
-        double t = now_seconds(), tw0, tw1, td1;
+        double t = now_seconds(), tw0, tw1, td1, td2, raw_dt = t - prev;
         float dt = (float)(t - prev);
         uint32_t held;
         prev = t;
@@ -280,7 +326,9 @@ int main(int argc, const char *argv[])
         ui_draw(&g_app);
         td1 = now_seconds();
         tiny3d_Flip();
+        td2 = now_seconds();
         frame_stats(dt, td1 - tw1, tw1 - tw0);
+        perf_frame(raw_dt, tw0 - t, td1 - tw1, tw1 - tw0, td2 - td1);
     }
 
     if (g_app.poweroff) log_printf("main loop finished, webMAN is powering the system off");

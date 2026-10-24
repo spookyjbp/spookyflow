@@ -1018,7 +1018,7 @@ static void test_launch(void)
     char out[LAUNCH_CMD_MAX], small[40];
     LaunchReq r;
     WmConfig wm;
-    unsigned char cfg[600];
+    unsigned char cfg[1024];
     printf("launching through webMAN\n");
     /* URL encoding: spaces, + & ? # % ; [ ] and non-ASCII are escaped */
     CHECK(launch_url_encode("/dev_hdd0/PS2ISO/God of War (USA).iso", out, sizeof(out)) == 0);
@@ -1030,10 +1030,15 @@ static void test_launch(void)
     CHECK(launch_url_encode("/dev_hdd0/PS2ISO/a much longer name here.iso", small, sizeof(small)) == -1 && small[0] == '\0');
     /* webMAN config: version 0x1337, ps1emu [581], autoplay [582], ps2emu [583] */
     memset(cfg, 0, sizeof(cfg));
+    cfg[0] = 0x12; cfg[1] = 0x34;
     CHECK(!launch_parse_wm_config(cfg, sizeof(cfg), &wm) && !wm.valid);       /* wrong version */
     cfg[0] = 0x13; cfg[1] = 0x37; cfg[581] = 1; cfg[582] = 0; cfg[583] = 1;
     CHECK(launch_parse_wm_config(cfg, sizeof(cfg), &wm) && wm.valid && wm.ps1_netemu && !wm.autoplay && wm.ps2_netemu);
-    CHECK(!launch_parse_wm_config(cfg, 583, &wm));                             /* too short */
+    CHECK(!launch_parse_wm_config(cfg, 584, &wm));                             /* too short */
+    /* 0.6.2: an older webMAN's file (version 0, 1024 bytes) is read too */
+    cfg[0] = 0; cfg[1] = 0; cfg[582] = 1; cfg[584] = 1;
+    CHECK(launch_parse_wm_config(cfg, 1024, &wm) && wm.autoplay && wm.ps2config_off);
+    CHECK(!launch_parse_wm_config(cfg, 1000, &wm));                            /* version 0 + other size: no */
     CHECK(!launch_parse_wm_config(NULL, 0, &wm));
     /* PS3 ISO, Auto-play: wait for the XMB, mount, then play */
     memset(&r, 0, sizeof(r));

@@ -26,6 +26,19 @@ static int g_pending_type = -1;   /* polygon type to open on first vertex, -1 = 
 static int g_open;                /* SetPolygon issued for this batch */
 static int g_cur_tex = -1;
 
+/* performance test (Flow Settings > Performance Test): variants + counters */
+static unsigned g_perf;                 /* PERF_* flags (app.h) */
+static int g_bound_tex = -1;            /* texture last given to the RSX this frame */
+static int g_last_kind = -1;            /* 0 = color triangles, 1 = textured quads (Tiny3D shader) */
+R3Stats g_r3_stats;
+
+/* Tiny3D's own RSX command helpers (lib/source/commands.c, not in tiny3d.h):
+ * used to turn the depth test off for the 2D UI, which is drawn in order. */
+void rsxtiny_DepthTestEnable(void *context, uint32_t enable);
+void rsxtiny_DepthWriteEnable(void *context, uint32_t enable);
+
+void ps3_render_set_perf(unsigned flags) { g_perf = flags; }
+
 int ps3_render_init(u32 pool_bytes)
 {
     g_pool = (u8 *)tiny3d_AllocTexture(pool_bytes);
@@ -71,7 +84,19 @@ void r_cover_define(int slot, int w, int h)
     t->valid = 1;
 }
 
-void ps3_render_frame_begin(void) { g_z = 65000.0f; }
+void ps3_render_frame_begin(void)
+{
+    g_z = 65000.0f;
+    g_bound_tex = -1;
+    g_last_kind = -1;
+    memset(&g_r3_stats, 0, sizeof(g_r3_stats));
+    if (g_perf & PERF_NO_DEPTH) {
+        /* after tiny3d_Clear (which turns it on): painter's order needs no depth */
+        void *ctx = tiny3d_Get_GCM_Context();
+        rsxtiny_DepthTestEnable(ctx, 0);
+        rsxtiny_DepthWriteEnable(ctx, 0);
+    }
+}
 
 static float next_z(void)
 {
@@ -125,8 +150,16 @@ int r_texture_upload_rgba(int tex, int w, int h, const unsigned char *rgba)
 static void open_if_needed(void)
 {
     if (g_open || g_pending_type < 0) return;
-    if (g_cur_tex >= 0) {
+    g_r3_stats.batches++;
+    {
+        int kind = g_cur_tex >= 0 ? 1 : 0;
+        if (kind != g_last_kind) g_r3_stats.shader_switches++;
+        g_last_kind = kind;
+    }
+    if (g_cur_tex >= 0 && !((g_perf & PERF_TEX_CACHE) && g_cur_tex == g_bound_tex)) {
         const T3Tex *t = &g_tex[g_cur_tex];
+        g_r3_stats.tex_binds++;
+        g_bound_tex = g_cur_tex;
         /* CLAMP, not tiny3d_SetTexture's REPEAT: with repeat, filtering at an
          * image's edge blends in the opposite edge, which drew thin lines
          * across trimmed tab logos (tiny3d.h: tiny3d_SetTextureWrap, TEXTWRAP_CLAMP) */
@@ -150,6 +183,7 @@ void r_vtx(float x, float y, uint32_t rgba)
     open_if_needed();
     tiny3d_VertexPos(x, y, g_z);
     tiny3d_VertexColor(rgba);
+    g_r3_stats.vertices++;
 }
 
 void r_tris_end(void)
@@ -175,6 +209,7 @@ void r_qvtx(float x, float y, float u, float v, uint32_t rgba)
     tiny3d_VertexPos(x, y, g_z);
     tiny3d_VertexColor(rgba);
     tiny3d_VertexTexture(u, v);
+    g_r3_stats.vertices++;
 }
 
 void r_quads_end(void)

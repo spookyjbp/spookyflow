@@ -4,6 +4,7 @@
 #include "sound.h"
 #include "music.h"
 #include "discid.h"
+#include "render.h"
 #include "log.h"
 #include "title.h"
 #include "util.h"
@@ -75,6 +76,7 @@ void app_init(App *a, Library *lib, const AppHost *host)
     a->toast_t = TOAST_TIME;
     a->music_card_t = MUSIC_CARD_TIME;
     a->music_card_len = MUSIC_CARD_TIME;
+    a->perf_phase = -1;
     sf_strlcpy(a->load_status, "Starting\xE2\x80\xA6", sizeof(a->load_status));
 }
 
@@ -135,9 +137,12 @@ void app_save(App *a)
         log_printf("settings: could not write %s", a->host.settings_path);
 }
 
+static void perf_enter(App *a, int phase);
+
 void app_request_exit(App *a, const char *why)
 {
     if (a->exiting) return;
+    if (a->perf_phase >= 0) perf_enter(a, -1);
     a->exiting = 1;
     a->exit_fade = 0.0f;
     log_printf("exit requested (%s)", why);
@@ -532,6 +537,7 @@ static int cfg_auto_pick(App *a, const char *iso, const char *gid)
     snprintf(p, sizeof(p), "%s.CONFIG", iso);
     n = cfg_read(a, p, g_cfg_a, (int)sizeof(g_cfg_a));
     if (n >= 0 && !cfg_is_standard(a, gid, g_cfg_a, n)) return PS2CFG_OWN;
+    if (a->ps2cfg_wm_off) return -1;                          /* webMAN won't copy one */
     for (t = 0; t < 5; t++) if (ps2cfg_find(order[t], gid, host_is_file, NULL, p, sizeof(p))) return order[t];
     return -1;
 }
@@ -543,10 +549,16 @@ static void ps2cfg_probe(App *a, const Game *g)
     const char *lid = lib_str(a->lib, d ? d->id : g->id);
     char p[COVER_PATH_MAX];
     int t;
-    a->ps2cfg_ok = 0; a->ps2cfg_avail = 1u; a->ps2cfg_auto = -1; a->ps2cfg_gid[0] = '\0';
+    a->ps2cfg_ok = 0; a->ps2cfg_avail = 1u; a->ps2cfg_auto = -1; a->ps2cfg_gid[0] = '\0'; a->ps2cfg_wm_off = 0;
     if ((g->flags & GAME_DEMO) || !ps2cfg_is_iso(path)) return;
     if (!a->host.is_file || !a->host.read_at || !a->host.write_file || !a->host.remove_file) return;
     if (!ps2_disc_id(a, path, lid, a->ps2cfg_gid, sizeof(a->ps2cfg_gid))) return;
+    {
+        WmConfig wm;
+        memset(&wm, 0, sizeof(wm));
+        if (a->host.read_wm_config) a->host.read_wm_config(&wm);
+        a->ps2cfg_wm_off = wm.valid && wm.ps2config_off;
+    }
     g_isfile_app = a;
     for (t = PS2CFG_CUSTOM; t < PS2CFG_COUNT; t++)
         if (ps2cfg_find(t, a->ps2cfg_gid, host_is_file, NULL, p, sizeof(p))) a->ps2cfg_avail |= 1u << t;
@@ -597,7 +609,7 @@ void app_row_value(const App *a, RowKind k, char *out, size_t cap)
     else if (a->panel_cfg.ps2cfg > 0)
         snprintf(out, cap, "%s (missing)", ps2cfg_name(a->panel_cfg.ps2cfg));
     else if (a->ps2cfg_auto < 0)
-        sf_strlcpy(out, "Auto (none found)", cap);
+        sf_strlcpy(out, a->ps2cfg_wm_off ? "Auto (off in webMAN)" : "Auto (none found)", cap);
     else
         snprintf(out, cap, "Auto (%s)", ps2cfg_name(a->ps2cfg_auto));
 }
@@ -643,6 +655,64 @@ static void ps2cfg_apply(App *a, const char *iso, const char *lib_id, int type)
     }
     if (cfg_copy(a, src, cfg) == 0) log_printf("ps2 config: %s -> %s", src, cfg);
     else log_printf("ps2 config: couldn't write %s", cfg);
+}
+
+/* ------------------------------------------------------------------ */
+/* Performance test: a few seconds of each variant; the host logs the
+ * frame times of each step (src/ps3/main.c) */
+
+static const struct { unsigned flags; const char *name; } k_perf[] = {
+    { 0,                                                   "as is" },
+    { PERF_NO_DEPTH,                                       "depth test off" },
+    { PERF_TEX_CACHE,                                      "texture binds cached" },
+    { PERF_NO_DEPTH | PERF_TEX_CACHE,                      "depth off + texture cache" },
+    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_BG,         "  ...without the background" },
+    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_FLOW,       "  ...without the cover row" },
+    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_REFLECT,    "  ...without reflections" },
+    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_CASES,      "  ...without case images" },
+    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_UI,         "  ...without tabs/title/bar" },
+    { PERF_NO_DEPTH | PERF_TEX_CACHE | PERF_NO_BG | PERF_NO_FLOW | PERF_NO_UI, "  ...nothing drawn (floor)" },
+};
+int app_perf_phase_count(void) { return (int)(sizeof(k_perf) / sizeof(k_perf[0])); }
+unsigned app_perf_phase_flags(int phase) { return (phase >= 0 && phase < app_perf_phase_count()) ? k_perf[phase].flags : 0u; }
+const char *app_perf_phase_name(int phase) { return (phase >= 0 && phase < app_perf_phase_count()) ? k_perf[phase].name : ""; }
+
+static void perf_enter(App *a, int phase)
+{
+    a->perf_phase = phase;
+    a->perf_t = 0.0f;
+    a->perf_flags = phase >= 0 ? k_perf[phase].flags : 0u;
+    if (phase >= 0) log_printf("perf test: step %d/%d, %s (flags %u)", phase + 1, app_perf_phase_count(), k_perf[phase].name, a->perf_flags);
+    if (a->host.perf_phase) a->host.perf_phase(phase, a->perf_flags);
+}
+
+static void perf_start(App *a)
+{
+    log_printf("perf test: start (background %s, %s tab, %d games)", settings_background_name(a->settings.background),
+               k_plat_name[a->tab], a->lib->tab[a->tab].count);
+    perf_enter(a, 0);
+}
+
+static void perf_stop(App *a, const char *why)
+{
+    if (a->perf_phase < 0) return;
+    perf_enter(a, -1);
+    log_printf("perf test: %s", why);
+    app_show_toast(a, strcmp(why, "done") == 0 ? "Performance test done: please send the log" : "Performance test stopped");
+}
+
+/* 1 while the test runs (it takes the input: only ◯ stops it) */
+static int perf_update(App *a, float dt)
+{
+    if (a->perf_phase < 0) return 0;
+    a->idle_t = 0.0f;                                  /* no sleep during the test */
+    if (a->input.pressed & SFB_CIRCLE) { perf_stop(a, "stopped with circle"); return 1; }
+    a->perf_t += dt;
+    if (a->perf_t >= PERF_PHASE_TIME) {
+        if (a->perf_phase + 1 < app_perf_phase_count()) perf_enter(a, a->perf_phase + 1);
+        else perf_stop(a, "done");
+    }
+    return 1;
 }
 
 static void apply_fx(App *a, RowKind k, int fx)
@@ -699,6 +769,10 @@ static void apply_fx(App *a, RowKind k, int fx)
         else app_show_toast(a, a->settings.xmb_top ? "Pinned to the top of the XMB" : "No longer pinned in the XMB");
         break;
     case MENU_FX_PS2CFG:        /* handled in panel_input (needs the direction) */
+        break;
+    case MENU_FX_PERFTEST:
+        app_close_panel(a);
+        perf_start(a);
         break;
     }
 }
@@ -940,6 +1014,7 @@ void app_update(App *a, uint32_t held, float dt)
     sound_set_enabled(a->settings.sfx_volume > 0);
     sound_set_volume((float)a->settings.sfx_volume / 100.0f);
     if (a->mode == MODE_LOADING) { loading_update(a, dt); return; }
+    if (perf_update(a, dt)) { animate(a, dt); return; }
 
     /* evaluated BEFORE handling this frame's input, so a ◯ press that closes a
      * panel cannot arm the exit hold */
