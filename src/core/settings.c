@@ -1,0 +1,260 @@
+/* settings.c - global settings + per-game settings, simple text file.
+ *
+ * Format (one entry per line, '#' comments):
+ *   autoplay=0
+ *   music_volume=60
+ *   ...
+ *   last_key_ps2=SCUS97328
+ *   game <autoplay> <emulator> <offline> <unused, 0> <key to end of line>
+ *   (the 4th number was an RSX clock preset, removed in milestone 3)
+ * The key is last on "game" lines so it may contain spaces, '=', etc. */
+#include "settings.h"
+#include "util.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+const char *settings_color_name(int c)
+{
+    static const char *const names[UI_COLOR_COUNT] = {
+        "Blue", "Red", "Green", "Purple", "Pink", "Orange", "White"
+    };
+    return (c >= 0 && c < UI_COLOR_COUNT) ? names[c] : "";
+}
+
+int settings_cfg_copy_has(const Settings *s, uint32_t h)
+{
+    int i;
+    for (i = 0; i < s->cfg_copy_count; i++) if (s->cfg_copies[i] == h) return 1;
+    return 0;
+}
+
+void settings_cfg_copy_add(Settings *s, uint32_t h)
+{
+    if (settings_cfg_copy_has(s, h)) return;
+    if (s->cfg_copy_count == SET_MAX_CFG_COPIES) {          /* full: forget the oldest */
+        memmove(s->cfg_copies, s->cfg_copies + 1, sizeof(s->cfg_copies[0]) * (SET_MAX_CFG_COPIES - 1));
+        s->cfg_copy_count--;
+    }
+    s->cfg_copies[s->cfg_copy_count++] = h;
+}
+
+void settings_cfg_copy_remove(Settings *s, uint32_t h)
+{
+    int i;
+    for (i = 0; i < s->cfg_copy_count; i++) {
+        if (s->cfg_copies[i] != h) continue;
+        memmove(s->cfg_copies + i, s->cfg_copies + i + 1, sizeof(s->cfg_copies[0]) * (size_t)(s->cfg_copy_count - i - 1));
+        s->cfg_copy_count--;
+        return;
+    }
+}
+
+void settings_defaults(Settings *s)
+{
+    memset(s, 0, sizeof(*s));
+    s->autoplay = 0;
+    s->music_volume = 50;
+    s->shuffle = 1;
+    s->sfx_volume = 50;
+    s->background = BG_STAGE;
+    s->ui_color = UI_COLOR_BLUE;
+    s->cases = 1;
+    s->reflections = 1;
+    s->case_light = CASE_LIGHT_SOFT;
+    s->sleep_min = 5;
+    s->show_info = 1;
+    s->ignore_the = 0;
+    s->last_tab = PLAT_PS2;
+}
+
+static int parse_int(const char *v, int lo, int hi, int def)
+{
+    char *end;
+    long n = strtol(v, &end, 10);
+    if (end == v) return def;
+    if (n < lo) n = lo;
+    if (n > hi) n = hi;
+    return (int)n;
+}
+
+static const char *const k_plat_suffix[PLAT_COUNT] = { "ps1", "ps2", "ps3" };
+
+void settings_parse_line(Settings *s, const char *line_in)
+{
+    char line[512];
+    char *eq, *key, *val;
+    size_t n;
+    sf_strlcpy(line, line_in, sizeof(line));
+    n = strlen(line);
+    while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) line[--n] = '\0';
+    key = line;
+    while (*key == ' ' || *key == '\t') key++;
+    if (*key == '#' || *key == '\0') return;
+
+    if (strncmp(key, "game ", 5) == 0) {
+        GameCfg g;
+        int a, e, o, r, consumed = 0;
+        memset(&g, 0, sizeof(g));
+        if (sscanf(key + 5, "%d %d %d %d %n", &a, &e, &o, &r, &consumed) == 4 && consumed > 0) {
+            const char *k = key + 5 + consumed;
+            if (*k) {
+                sf_strlcpy(g.key, k, sizeof(g.key));
+                g.autoplay = (signed char)sf_clampi(a, 0, 2);
+                g.emulator = (signed char)sf_clampi(e, 0, 1);
+                /* 0 = Default, 1 = On, 2 = Off. Files from before the global
+                 * option stored 0 = Off: that now reads as Default, which is
+                 * Off unless the global option is turned on. */
+                g.offline = (signed char)sf_clampi(o, 0, 2);
+                /* 4th column: before 0.3.0 the RSX clock preset (ignored, < 100);
+                 * since 0.6.0 100 + the PS2 config choice */
+                g.ps2cfg = (signed char)(r >= 100 ? sf_clampi(r - 100, 0, SET_PS2CFG_MAX) : 0);
+                settings_game_set(s, &g);
+            }
+        }
+        return;
+    }
+
+    eq = strchr(key, '=');
+    if (!eq) return;
+    *eq = '\0';
+    val = eq + 1;
+    if (strcmp(key, "autoplay") == 0) s->autoplay = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "offline") == 0) s->offline = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "music_volume") == 0) s->music_volume = parse_int(val, 0, 100, 50);
+    else if (strcmp(key, "shuffle") == 0) s->shuffle = parse_int(val, 0, 1, 1);
+    else if (strcmp(key, "sound_effects") == 0) { if (parse_int(val, 0, 1, 1) == 0) s->sfx_volume = 0; }   /* fix 13 on/off */
+    else if (strcmp(key, "sfx_volume") == 0) s->sfx_volume = parse_int(val, 0, 100, 50);
+    /* "background2" since fix 13 (Stage became the default; the old
+     * "background" key is ignored so everyone gets it once) */
+    else if (strcmp(key, "background2") == 0) {
+        s->background = parse_int(val, 0, BG_COUNT - 1, BG_STAGE);   /* 1 = a picture: the app checks it exists */
+    }
+    else if (strcmp(key, "background_image") == 0) sf_strlcpy(s->bg_image, val, sizeof(s->bg_image));
+    else if (strcmp(key, "ps2cfg_copy") == 0) settings_cfg_copy_add(s, (uint32_t)strtoul(val, NULL, 16));
+    else if (strcmp(key, "ui_color") == 0) s->ui_color = parse_int(val, 0, UI_COLOR_COUNT - 1, UI_COLOR_BLUE);
+    else if (strcmp(key, "reflections") == 0) s->reflections = parse_int(val, 0, 1, 1);
+    else if (strcmp(key, "custom_cases") == 0) s->cases = parse_int(val, 0, 1, 1);
+    else if (strcmp(key, "sleep_minutes") == 0) s->sleep_min = parse_int(val, 0, 60, 5);
+    else if (strcmp(key, "show_game_info") == 0) s->show_info = parse_int(val, 0, 1, 1);
+    else if (strcmp(key, "hide_ui") == 0) s->hide_ui = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "case_light") == 0) s->case_light = parse_int(val, 0, CASE_LIGHT_COUNT - 1, CASE_LIGHT_SOFT);
+    else if (strcmp(key, "ignore_the") == 0) s->ignore_the = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "xmb_top") == 0) s->xmb_top = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "last_tab") == 0) s->last_tab = parse_int(val, 0, PLAT_COUNT - 1, PLAT_PS2);
+    else if (strncmp(key, "last_key_", 9) == 0) {
+        int p;
+        for (p = 0; p < PLAT_COUNT; p++)
+            if (strcmp(key + 9, k_plat_suffix[p]) == 0) sf_strlcpy(s->last_key[p], val, SET_KEY_MAX);
+    }
+}
+
+int settings_load(Settings *s, const char *path)
+{
+    char line[512];
+    FILE *f = fopen(path, "r");
+    if (!f) return -1;
+    while (fgets(line, sizeof(line), f)) {
+        /* drop the remainder of over-long lines */
+        if (!strchr(line, '\n') && !feof(f)) {
+            int c;
+            while ((c = fgetc(f)) != EOF && c != '\n') { }
+        }
+        settings_parse_line(s, line);
+    }
+    fclose(f);
+    return 0;
+}
+
+int settings_save(const Settings *s, const char *path)
+{
+    int i, p;
+    FILE *f = fopen(path, "w");
+    if (!f) return -1;
+    fprintf(f, "# spookyflow settings\n");
+    fprintf(f, "autoplay=%d\n", s->autoplay);
+    fprintf(f, "offline=%d\n", s->offline);
+    fprintf(f, "music_volume=%d\n", s->music_volume);
+    fprintf(f, "shuffle=%d\n", s->shuffle);
+    fprintf(f, "sfx_volume=%d\n", s->sfx_volume);
+    fprintf(f, "background2=%d\n", s->background);
+    if (s->bg_image[0] && !strchr(s->bg_image, '\n')) fprintf(f, "background_image=%s\n", s->bg_image);
+    fprintf(f, "ui_color=%d\n", s->ui_color);
+    fprintf(f, "custom_cases=%d\n", s->cases);
+    fprintf(f, "reflections=%d\n", s->reflections);
+    fprintf(f, "sleep_minutes=%d\n", s->sleep_min);
+    fprintf(f, "show_game_info=%d\n", s->show_info);
+    fprintf(f, "hide_ui=%d\n", s->hide_ui);
+    fprintf(f, "case_light=%d\n", s->case_light);
+    fprintf(f, "ignore_the=%d\n", s->ignore_the);
+    fprintf(f, "xmb_top=%d\n", s->xmb_top);
+    fprintf(f, "last_tab=%d\n", s->last_tab);
+    for (p = 0; p < PLAT_COUNT; p++)
+        if (s->last_key[p][0] && !strchr(s->last_key[p], '\n'))
+            fprintf(f, "last_key_%s=%s\n", k_plat_suffix[p], s->last_key[p]);
+    for (i = 0; i < s->cfg_copy_count; i++) fprintf(f, "ps2cfg_copy=%08x\n", (unsigned)s->cfg_copies[i]);
+    fprintf(f, "# game <autoplay 0=default 1=on 2=off> <emulator> <offline 0=default 1=on 2=off> <ps2 config: 0=auto, 100+n> <key>\n");
+    for (i = 0; i < s->game_count; i++) {
+        const GameCfg *g = &s->games[i];
+        if (strchr(g->key, '\n')) continue;
+        fprintf(f, "game %d %d %d %d %s\n", g->autoplay, g->emulator, g->offline, g->ps2cfg > 0 ? 100 + g->ps2cfg : 0, g->key);
+    }
+    fflush(f);
+    fclose(f);
+    return 0;
+}
+
+static int find_game(const Settings *s, const char *key)
+{
+    int i;
+    for (i = 0; i < s->game_count; i++) if (strcmp(s->games[i].key, key) == 0) return i;
+    return -1;
+}
+
+GameCfg settings_game_get(const Settings *s, const char *key)
+{
+    GameCfg g;
+    int i = find_game(s, key);
+    if (i >= 0) return s->games[i];
+    memset(&g, 0, sizeof(g));
+    sf_strlcpy(g.key, key, sizeof(g.key));
+    return g;
+}
+
+int settings_game_set(Settings *s, const GameCfg *cfg)
+{
+    int i = find_game(s, cfg->key);
+    int is_default = cfg->autoplay == 0 && cfg->emulator == 0 && cfg->offline == 0 && cfg->ps2cfg == 0;
+    if (!cfg->key[0]) return -1;
+    if (i >= 0) {
+        if (is_default) {
+            s->games[i] = s->games[s->game_count - 1];
+            s->game_count--;
+        } else s->games[i] = *cfg;
+        return 0;
+    }
+    if (is_default) return 0;
+    if (s->game_count >= SET_MAX_GAMES) return -1;
+    s->games[s->game_count++] = *cfg;
+    return 0;
+}
+
+int settings_offline_effective(const Settings *s, const GameCfg *cfg)
+{
+    if (cfg->offline == AP_ON) return 1;
+    if (cfg->offline == AP_OFF) return 0;
+    return s->offline ? 1 : 0;
+}
+
+int settings_autoplay_effective(const Settings *s, const GameCfg *cfg)
+{
+    if (cfg->autoplay == AP_ON) return 1;
+    if (cfg->autoplay == AP_OFF) return 0;
+    return s->autoplay ? 1 : 0;
+}
+
+const char *settings_background_name(int bg)
+{
+    static const char *const names[BG_COUNT] = { "Drift", "Picture", "Aurora", "Fireflies", "Ribbons", "Halo", "Twilight", "Stage" };
+    return (bg >= 0 && bg < BG_COUNT) ? names[bg] : "Stage";
+}

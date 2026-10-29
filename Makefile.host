@@ -1,0 +1,32 @@
+# Makefile.host - build and run the portable core on the host (Linux/macOS).
+#   make -f Makefile.host test      unit tests
+#   make -f Makefile.host preview   render PNG mockups into preview/
+CC      ?= gcc
+CFLAGS  ?= -std=c99 -O2 -g -Wall -Wextra -Wshadow -Wpointer-arith -Wstrict-prototypes -Werror=implicit-function-declaration
+SANFLAGS ?= -fsanitize=address,undefined -fno-omit-frame-pointer
+CORE    := $(wildcard src/core/*.c)
+OUT     := build-host
+
+.PHONY: all test preview clean
+
+all: test preview
+
+$(OUT):
+	mkdir -p $(OUT)
+
+$(OUT)/test_core: $(CORE) $(wildcard src/core/*.h) tests/test_core.c tests/test_covers.h tests/test_music.h tests/null_render.c Makefile.host | $(OUT)
+	$(CC) $(CFLAGS) $(SANFLAGS) -Isrc/core -o $@ $(CORE) tests/test_core.c tests/null_render.c -lm -lpthread
+
+$(OUT)/preview: $(CORE) $(wildcard src/core/*.h) $(wildcard tools/preview/*.c tools/preview/*.h) Makefile.host | $(OUT)
+	$(CC) $(CFLAGS) -Isrc/core -o $@ $(CORE) tools/preview/preview.c tools/preview/render_soft.c -lm
+
+test: $(OUT)/test_core
+	./$(OUT)/test_core
+
+preview: $(OUT)/preview
+	mkdir -p preview
+	./$(OUT)/preview preview
+	python3 -c 'import os,sys; from PIL import Image; d=sys.argv[1]; [(Image.open(os.path.join(d,n)).save(os.path.join(d,n[:-4]+".png")), os.remove(os.path.join(d,n))) for n in sorted(os.listdir(d)) if n.endswith(".ppm")]' preview
+
+clean:
+	rm -rf $(OUT)
