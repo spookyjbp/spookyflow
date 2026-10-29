@@ -1,0 +1,9 @@
+build/
+build-host/
+ps3dev/
+*.elf
+*.self
+*.pkg
+*.map
+preview/*.ppm
+__pycache__/
