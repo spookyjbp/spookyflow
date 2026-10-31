@@ -500,20 +500,21 @@ Next: release years.
       on each drive it finds, scans PS3ISO, GAMES, GAMEZ, PS2ISO, PSXISO and
       PSXGAMES at the drive's root. The log says `scan: USB drive
       /dev_usb000` per drive (or `no USB drives (FAT32) connected`).
-    - About: "PS1, PS2 and PS3 games on the internal drive, PS2 ISOs
-      included" and "PS1 and PS3 games on FAT32 USB drives, PS1 and PS3 ISOs
+    - About: "PS1, PS2 and PS3 games on the internal drive" and "PS1 and PS3 games on FAT32 USB drives, PS1 and PS3 ISOs
       on NTFS / exFAT" (PS1 ISOs on NTFS / exFAT drives always worked,
       through webMAN's index: a PSXISO folder on the drive).
     - **PS3 Games Only** (Flow Settings > Games & Library): the cover flow
       slides over to the PS3 tab and stays there; L1 / R1 do nothing and
       the console tabs fade out. Off: the tabs fade back in. Saved
-      (`ps3_only`). **Storage** moved to System to make room.
+      (`ps3_only`). **Storage** moved to System to make room. Turned on
+      from another tab, the cover flow slides over to PS3 beside the open
+      drawer (a tab switch used to draw the rows centred, so they jumped
+      out from behind the drawer and back).
     - The A–Z rail (L2 / R2) has no glow behind the letter any more.
-    - **Stage: the light streaks glow.** A wide, soft halo of light around
-      each set of streaks and a glow over them, breathing slowly (each side
-      at its own pace). The soft glow map is now a texture on the PS3 too
-      (it was only baked into the streaks). Two more soft layers per side:
-      check the frame rate on Stage.
+    - **Stage: the light streaks glow.** Their halo is baked into the
+      streaks image stronger (and reaching further out), when the Stage is
+      made for a colour, so it costs nothing per frame. (A first try drew it
+      as two extra layers per side every frame: 30-48 fps on the PS3.)
     Check: hide a game and close Game Settings; Show Hidden Games on and
     off; restart twice and compare the first songs; watch the Stage
     opening after a restart; a FAT32 USB drive with games in PS3ISO /

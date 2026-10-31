@@ -583,10 +583,6 @@ void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsig
     g_src_base = base; g_src_bw = bw; g_src_bh = bh;
     g_src_rib = rib; g_src_rw = rw; g_src_rh = rh;
     g_src_glow = glow; g_src_gw = gw; g_src_gh = gh;
-    /* 1.1: the soft glow map as a texture too (the streaks' glowing halo);
-     * it was only baked into the composites */
-    if (glow && gw > 0 && gh > 0 && g_stage_glow < 0 && r_texture_upload_alpha(TEX_STAGE_GLOW, gw, gh, glow) == 0)
-        g_stage_glow = TEX_STAGE_GLOW;
     g_stage_baked = 0;
     free(g_prep_glow); free(g_prep_rib);
     g_prep_glow = g_prep_rib = NULL;
@@ -623,7 +619,8 @@ static void glow_resample(unsigned char *out, int w, int h, int gx0, int gw_r, i
             a = r0[x0] * (256 - fx) + r0[x1] * fx;
             b = r1[x0] * (256 - fx) + r1[x1] * fx;
             v = (a * (256 - fy) + b * fy) >> 16;          /* 0..255 */
-            out[(size_t)y * w + x] = (unsigned char)((v * k) >> 8);
+            v = (v * k) >> 8;
+            out[(size_t)y * w + x] = (unsigned char)(v > 255 ? 255 : v);   /* 1.1: k may go past 256 */
         }
     }
 }
@@ -637,6 +634,10 @@ static void glow_resample(unsigned char *out, int w, int h, int gx0, int gw_r, i
  *            body / core in one "over" layer
  *   phase 2  the scene in the job's tint
  *   phase 3  the ribbons in the job's tint, then both textures are updated */
+/* 1.1: the light streaks glow: their halo is baked in stronger (0.55 before;
+ * past 1.0 the faint edges of the glow map reach out further). Drawing it as
+ * extra layers every frame cost the PS3 a third of its frame rate. */
+#define STAGE_RIB_GLOW  560
 #define STAGE_JOB_STEPS 8           /* a phase takes about this many frames (0.8.7: 12; the steps are cheaper now) */
 static unsigned char *g_bake_rib, *g_gl_tmp;
 static uint32_t g_job_tint;
@@ -717,7 +718,7 @@ static int stage_job(uint32_t tint, int sync)
             if (y1 > rh) y1 = rh;
             for (i = 0; i < 2; i++)
                 glow_resample(g_gl_tmp + (size_t)i * half * rh, half, rh, i * (g_src_gw / 2) * 256, (g_src_gw / 2) * 256,
-                              split * 256, (g_src_gh - split) * 256, 141, g_job_row, y1);
+                              split * 256, (g_src_gh - split) * 256, STAGE_RIB_GLOW, g_job_row, y1);
             for (y = g_job_row; y < y1; y++) {
                 const unsigned char *body = g_src_rib + (size_t)y * rw, *core = g_src_rib + (size_t)(y + rh) * rw;
                 for (i = 0; i < 2; i++) {
@@ -937,17 +938,9 @@ static void bg_stage(float t, float alpha)
             float al = alpha * (0.80f + 0.20f * sinf(t * 0.21f + ph));
             float u0 = (float)i * 0.5f;
             if (g_stage_baked) {      /* glow, body and core in one texture */
-                float pulse = 0.5f + 0.5f * sinf(t * 0.55f + ph * 1.3f);
-                uint32_t gc = sf_col_mix(lite, 0xFFFFFFFFu, 0.20f + 0.15f * pulse);
-                if (g_stage_glow >= 0)    /* 1.1: a wide halo of light around the streaks, breathing */
-                    d_image_rot(g_stage_glow, cx, cy - h * 0.03f, w * 1.16f, h * 1.22f, ang, u0, u0 + 0.5f, STAGE_GLOW_SPLIT, 1.0f,
-                                sf_col_alpha(gc, al * (0.55f + 0.30f * pulse)));
                 if (xf < 1.0f && g_stage_prev_rib >= 0)
                     d_image_rot(g_stage_prev_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al * (1.0f - xf)));
                 d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al * xf));
-                if (g_stage_glow >= 0)    /* ... and the streaks themselves lit up by it */
-                    d_image_rot(g_stage_glow, cx, cy, w, h, ang, u0, u0 + 0.5f, STAGE_GLOW_SPLIT, 1.0f,
-                                sf_col_alpha(gc, al * (0.16f + 0.22f * pulse)));
                 continue;
             }
             if (g_stage_glow >= 0)    /* the ribbons' own glow moves with them */
@@ -2404,7 +2397,7 @@ static void draw_panel(App *a)
 /* ---- About spookyflow (0.8.2): a centered card over Flow Settings ---- */
 static const char *const k_about_features[] = {
     "Your PS1, PS2 and PS3 games in one cover flow, with their covers and cases",
-    "PS1, PS2 and PS3 games on the internal drive, PS2 ISOs included",
+    "PS1, PS2 and PS3 games on the internal drive",
     "PS1 and PS3 games on FAT32 USB drives, PS1 and PS3 ISOs on NTFS / exFAT",
     "Launched through webMAN MOD, with Auto-Play, emulator, offline and PS2 config options",
     "Download Missing Covers, multi-disc games, display mode and the A\xE2\x80\x93Z jump",
@@ -2991,8 +2984,10 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
     /* cover rows (tab switch: old slides out, new slides in) */
     if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
         float e = ease_out_cubic(a->tab_anim), dist = W() * 0.45f;
-        draw_flow_row(a, a->tab_prev, -(float)a->tab_dir * e * dist, (1.0f - e) * ia);
-        draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist, e * ia);
+        /* 1.1: with the drawer open (PS3 Games Only switches tabs from it)
+         * both rows keep the drawer's shift: they jumped to the middle */
+        draw_flow_row(a, a->tab_prev, -(float)a->tab_dir * e * dist + flow_dx, (1.0f - e) * ia);
+        draw_flow_row(a, a->tab, (float)a->tab_dir * (1.0f - e) * dist + flow_dx, e * ia);
     } else {
         /* after the kittens' loading screens the selected case appears where they stood */
         float rx = (a->reveal_start > -999.0f ? 0.0f : (1.0f - intro) * W() * 0.12f) + flow_dx;

@@ -298,6 +298,20 @@ int main(int argc, char **argv)
         for (k = 0; k < 40; k++) { snprintf(nm, sizeof(nm), "anim_rescan_%03d", fr++); render(nm, 640, 360); step(0, 1.0f / 30.0f); }
         step(0, LOAD_MIN_TIME + 1.0f);
     }
+    if (getenv("SF_PREVIEW_PS3ONLY_SWITCH")) {   /* 1.1: PS3 Games Only turned on from the PS1 tab, frame by frame */
+        int k;
+        char nm[64];
+        g_app.music_card_t = g_app.music_card_len;
+        g_app.settings.ps3_only = 0;
+        press(SFB_L1); step(0, 0.5f); press(SFB_L1); step(0, 0.5f);       /* PS1 */
+        press(SFB_START); step(0, 0.6f);
+        press(SFB_DOWN); press(SFB_DOWN); press(SFB_CROSS); step(0, 0.5f); /* Games & Library */
+        press(SFB_DOWN); press(SFB_DOWN); step(0, 0.3f);                   /* PS3 Games Only */
+        for (k = 0; k < 3; k++) { render("ps3sw_warm", 320, 180); step(0, 0.05f); }
+        press(SFB_RIGHT);
+        for (k = 0; k < 24; k++) { snprintf(nm, sizeof(nm), "ps3sw_%02d", k); render(nm, 640, 360); step(0, 1.0f / 30.0f); }
+        press(SFB_LEFT); press(SFB_CIRCLE); press(SFB_CIRCLE); step(0, 1.0f);
+    }
     if (getenv("SF_PREVIEW_PS3ONLY")) {   /* 1.1: PS3 Games Only (tabs fade out), the A-Z rail */
         int k;
         g_app.music_card_t = g_app.music_card_len;
