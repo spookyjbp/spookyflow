@@ -29,6 +29,38 @@ const ScanRoot *scanner_default_roots(int *n)
     return k_roots;
 }
 
+const ScanRoot *scanner_roots_with_usb(const ScanRoot *base, int nbase, FsListFn list, void *ctx, int *n, int *ndrives)
+{
+    static const struct { const char *dir; int plat, kind; } k_usb[] = {
+        { "PS3ISO", PLAT_PS3, SRC_HDD_ISO_DIR }, { "GAMES", PLAT_PS3, SRC_HDD_GAME_FOLDERS },
+        { "GAMEZ", PLAT_PS3, SRC_HDD_GAME_FOLDERS }, { "PS2ISO", PLAT_PS2, SRC_HDD_ISO_DIR },
+        { "PSXISO", PLAT_PS1, SRC_HDD_ISO_DIR }, { "PSXGAMES", PLAT_PS1, SRC_HDD_ISO_DIR },
+    };
+    enum { NU = (int)(sizeof(k_usb) / sizeof(k_usb[0])), MAXR = 32 + SCAN_USB_PORTS * NU };
+    static ScanRoot roots[MAXR];
+    static char paths[SCAN_USB_PORTS * NU][32];
+    int i, p, m = 0, np = 0;
+    *ndrives = 0;
+    for (i = 0; i < nbase && m < 32; i++) roots[m++] = base[i];
+    for (p = 0; p < SCAN_USB_PORTS && list; p++) {
+        char dev[16];
+        FsEntry one;
+        snprintf(dev, sizeof(dev), "/dev_usb%03d", p);
+        if (list(ctx, dev, &one, 1) <= 0) continue;         /* nothing in that port (or an empty drive) */
+        (*ndrives)++;
+        log_printf("scan: USB drive %s", dev);
+        for (i = 0; i < NU; i++) {
+            snprintf(paths[np], sizeof(paths[np]), "%s/%s", dev, k_usb[i].dir);
+            roots[m].plat = k_usb[i].plat;
+            roots[m].path = paths[np];
+            roots[m].kind = k_usb[i].kind;
+            m++; np++;
+        }
+    }
+    *n = m;
+    return roots;
+}
+
 void scanner_begin(Scanner *s, const ScanRoot *roots, int nroots)
 {
     memset(s, 0, sizeof(*s));

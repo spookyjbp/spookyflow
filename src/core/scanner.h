@@ -66,6 +66,15 @@ typedef struct {
 /* Default /dev_hdd0 roots. */
 const ScanRoot *scanner_default_roots(int *n);
 
+/* 1.1: FAT32 USB drives. The PS3 mounts them itself as /dev_usb000 ...
+ * /dev_usb010 (NTFS / exFAT drives never show up there: those come through
+ * webMAN's NTFS index). Returns base's roots plus, for each port with a
+ * drive in it, its PS3ISO, GAMES, GAMEZ, PS2ISO, PSXISO and PSXGAMES folders
+ * (the folders webMAN MOD plays from USB). Static storage: valid until the
+ * next call. *ndrives = drives found. */
+#define SCAN_USB_PORTS   11
+const ScanRoot *scanner_roots_with_usb(const ScanRoot *base, int nbase, FsListFn list, void *ctx, int *n, int *ndrives);
+
 void  scanner_begin(Scanner *s, const ScanRoot *roots, int nroots);
 /* Let the scanner read files (call after scanner_begin). Without it, NTFS
  * games still show, but with no size and no title ID from their .SFO. */

@@ -1015,6 +1015,52 @@ static void test_ntfs_rescan(void)
     CHECK(g_ntfs_refreshes == 1 && g_app.mode == MODE_FLOW);
 }
 
+/* 1.1: FAT32 USB drives (/dev_usb000...): the ports with a drive in them,
+ * their PS3ISO / PS2ISO / PSXISO... folders, launched from there */
+static void test_usb_drives(void)
+{
+    AppHost host;
+    int nb, n, nd, t, found3 = 0, found1 = 0, i;
+    const ScanRoot *base = scanner_default_roots(&nb), *r;
+    printf("USB drives\n");
+    memfs_reset();
+    lib_clear(&g_lib);
+    r = scanner_roots_with_usb(base, nb, mem_list, NULL, &n, &nd);
+    CHECK(nd == 0 && n == nb);                                   /* nothing plugged in */
+    memfs_put("/dev_usb001/readme.txt", "x", 1);
+    memfs_put("/dev_usb001/PS3ISO/Demon's Souls [BLUS30443].iso", "iso", 3);
+    memfs_put("/dev_usb001/PSXISO/Spyro (USA).iso", "iso", 3);
+    memfs_put("/dev_usb006/note.txt", "x", 1);
+    r = scanner_roots_with_usb(base, nb, mem_list, NULL, &n, &nd);
+    CHECK(nd == 2 && n == nb + 12);
+    CHECK_STR(r[nb].path, "/dev_usb001/PS3ISO");
+    CHECK(r[nb].plat == PLAT_PS3 && r[nb + 4].plat == PLAT_PS1 && r[nb + 3].plat == PLAT_PS2);
+    CHECK_STR(r[nb + 6].path, "/dev_usb006/PS3ISO");
+    memset(&host, 0, sizeof(host));
+    host.fs_list = mem_list;
+    host.read_at = mem_read_at;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    CHECK(g_app.mode == MODE_FLOW);
+    for (t = 0; t < PLAT_COUNT; t++)
+        for (i = 0; i < g_lib.tab[t].count; i++) {
+            const char *p = lib_path(&g_lib, &g_lib.tab[t].games[i]);
+            if (t == PLAT_PS3 && strcmp(p, "/dev_usb001/PS3ISO/Demon's Souls [BLUS30443].iso") == 0) found3 = 1;
+            if (t == PLAT_PS1 && strcmp(p, "/dev_usb001/PSXISO/Spyro (USA).iso") == 0) found1 = 1;
+        }
+    CHECK(found3 && found1);
+    {
+        LaunchReq q;
+        char out[LAUNCH_CMD_MAX];
+        memset(&q, 0, sizeof(q));
+        q.plat = PLAT_PS3; q.path = "/dev_usb001/PS3ISO/Game.iso"; q.autoplay = 1;
+        CHECK(launch_build(&q, NULL, out, sizeof(out)) == 0);
+        CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_usb001/PS3ISO/Game.iso?random=0;/wait.ps3?2;/play.ps3");
+    }
+    memfs_reset();
+    lib_clear(&g_lib);
+}
+
 /* milestone 3: the webMAN launch request */
 static void test_launch(void)
 {

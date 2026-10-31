@@ -24,6 +24,7 @@ typedef struct {
     signed char emulator;    /* PS1: 0 Standard 1 Netemu; PS2: 0 Default 1 Netemu */
     signed char offline;     /* AP_DEFAULT (follow the global setting), AP_ON, AP_OFF */
     signed char ps2cfg;      /* PS2: PS2CFG_* (launch.h), 0 = Auto (webMAN picks) */
+    signed char hidden;      /* 1.1: 1 = not in the cover flow (Show Hidden Games shows it) */
 } GameCfg;
 #define SET_PS2CFG_MAX   5   /* PS2CFG_COUNT - 1 */
 #define SET_MAX_CFG_COPIES 128   /* PS2 .CONFIG files spookyflow wrote itself */
@@ -42,6 +43,8 @@ typedef struct {
     int case_light;          /* 0.9.8: CASE_LIGHT_*: the background's light on the cases + the shine, default Soft */
     int show_info;           /* genre / players / size chips under the case, default 1 */
     int hide_ui;             /* 0.8.7: the cover flow shows only the cases (no tabs, title, bar), default 0 */
+    int show_hidden;         /* 1.1: games hidden in Game Settings are shown (marked), default 0 */
+    int ps3_only;            /* 1.1: only the PS3 tab, the console tabs hidden, default 0 */
     int ignore_the;          /* default 0 */
     int xmb_top;             /* pin spookyflow to the top of the XMB Game column, default 0 */
     char bg_image[128];      /* BG_CUSTOM: file name in the backgrounds folder */

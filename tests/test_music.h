@@ -2582,3 +2582,128 @@ static void test_098(void)
     g_app.settings.case_light = CASE_LIGHT_SOFT;
     draw_frames(1.0f);
 }
+
+/* 1.1: Hide Game (Game Settings) and Show Hidden Games (Flow Settings) */
+static void test_110(void)
+{
+    AppHost host;
+    Settings st, s2;
+    GameCfg g;
+    char key[SET_KEY_MAX], next_key[SET_KEY_MAX];
+    int n0, sel, i;
+    printf("1.1: hidden games\n");
+    /* settings: its own "hide" line, kept with the game's other options */
+    settings_defaults(&st);
+    settings_parse_line(&st, "game 1 0 0 0 SLUS20914");
+    settings_parse_line(&st, "hide SLUS20914");
+    settings_parse_line(&st, "hide Some Game.iso");
+    g = settings_game_get(&st, "SLUS20914");
+    CHECK(g.hidden == 1 && g.autoplay == 1);
+    CHECK(settings_game_get(&st, "Some Game.iso").hidden == 1);
+    CHECK(settings_game_get(&st, "Other").hidden == 0);
+    settings_parse_line(&st, "show_hidden=1");
+    CHECK(st.show_hidden == 1);
+    CHECK(settings_save(&st, "build-host/t110.ini") == 0);
+    settings_defaults(&s2);
+    CHECK(settings_load(&s2, "build-host/t110.ini") == 0);
+    CHECK(s2.show_hidden == 1 && settings_game_get(&s2, "SLUS20914").hidden == 1 && settings_game_get(&s2, "SLUS20914").autoplay == 1);
+    CHECK(settings_game_get(&s2, "Some Game.iso").hidden == 1);
+    g = settings_game_get(&s2, "Some Game.iso"); g.hidden = 0;
+    CHECK(settings_game_set(&s2, &g) == 0 && s2.game_count == 1);   /* back to defaults: no entry */
+    remove("build-host/t110.ini");
+    /* the cover flow: hide the selected game, it leaves as Game Settings closes */
+    memset(&host, 0, sizeof(host));
+    host.fs_list = fake_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.0f);
+    g_app.tab = PLAT_PS1;                                          /* three games there */
+    run_frames(0, 0.3f);
+    CHECK(g_app.mode == MODE_FLOW && !g_lib.tab[g_app.tab].demo);
+    n0 = g_lib.tab[g_app.tab].count;
+    CHECK(n0 >= 3);
+    app_select(&g_app, g_app.tab, 1, 0);
+    sel = g_app.view[g_app.tab].sel;
+    sf_strlcpy(key, lib_key(&g_lib, app_selected_game(&g_app, g_app.tab)), sizeof(key));
+    sf_strlcpy(next_key, lib_key(&g_lib, &g_lib.tab[g_app.tab].games[sel + 1]), sizeof(next_key));
+    tap(SFB_TRIANGLE);
+    run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_GAME && g_app.rows[g_app.nrows - 1] == ROW_G_HIDE);
+    for (i = 0; i < 6; i++) tap(SFB_DOWN);
+    CHECK(g_app.rows[g_app.row] == ROW_G_HIDE);
+    tap(SFB_RIGHT);
+    CHECK(g_app.panel_cfg.hidden == 1);
+    CHECK(g_lib.tab[g_app.tab].count == n0);                       /* still there under Game Settings */
+    tap(SFB_CIRCLE);
+    run_frames(0, 0.5f);
+    CHECK(g_lib.tab[g_app.tab].count == n0 - 1 && g_lib.tab[g_app.tab].nhidden == 1);
+    CHECK(lib_find_key(&g_lib, g_app.tab, key) < 0);
+    CHECK(strcmp(lib_key(&g_lib, app_selected_game(&g_app, g_app.tab)), next_key) == 0);   /* the next game took its place */
+    CHECK(settings_game_get(&g_app.settings, key).hidden == 1);
+    /* Show Hidden Games: back, marked */
+    tap(SFB_START);
+    run_frames(0, 0.4f);
+    CHECK(flow_goto(ROW_F_SHOW_HIDDEN));
+    tap(SFB_RIGHT);
+    CHECK(g_app.settings.show_hidden == 1);
+    CHECK(g_lib.tab[g_app.tab].count == n0 && g_lib.tab[g_app.tab].nhidden == 0);
+    i = lib_find_key(&g_lib, g_app.tab, key);
+    CHECK(i >= 0 && (g_lib.tab[g_app.tab].games[i].flags & GAME_HIDDEN));
+    tap(SFB_LEFT);
+    CHECK(g_app.settings.show_hidden == 0 && g_lib.tab[g_app.tab].count == n0 - 1);
+    tap(SFB_RIGHT);
+    tap(SFB_CIRCLE); tap(SFB_CIRCLE);
+    run_frames(0, 0.6f);
+    /* shown again from its Game Settings */
+    app_select(&g_app, g_app.tab, lib_find_key(&g_lib, g_app.tab, key), 0);
+    tap(SFB_TRIANGLE);
+    run_frames(0, 0.4f);
+    for (i = 0; i < 6; i++) tap(SFB_DOWN);
+    tap(SFB_LEFT);
+    CHECK(g_app.panel_cfg.hidden == 0);
+    tap(SFB_CIRCLE);
+    run_frames(0, 0.5f);
+    i = lib_find_key(&g_lib, g_app.tab, key);
+    CHECK(i >= 0 && !(g_lib.tab[g_app.tab].games[i].flags & GAME_HIDDEN));
+    g_app.settings.show_hidden = 0;
+}
+
+/* 1.1: PS3 Games Only: the cover flow goes to the PS3 tab and stays there,
+ * saved; turning it off lets L1 / R1 move again */
+static void test_112(void)
+{
+    AppHost host;
+    Settings s2;
+    int i;
+    printf("1.1: PS3 Games Only\n");
+    settings_defaults(&s2);
+    CHECK(s2.ps3_only == 0);
+    settings_parse_line(&s2, "ps3_only=1");
+    CHECK(s2.ps3_only == 1);
+    CHECK(menu_group_of(ROW_F_PS3_ONLY) == ROW_FG_GAMES && menu_group_of(ROW_F_STORAGE) == ROW_FG_SYSTEM);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = fake_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.0f);
+    g_app.tab = PLAT_PS1;
+    run_frames(0, 0.3f);
+    tap(SFB_START);
+    run_frames(0, 0.4f);
+    CHECK(flow_goto(ROW_F_PS3_ONLY));
+    tap(SFB_RIGHT);
+    CHECK(g_app.settings.ps3_only == 1 && g_app.tab == PLAT_PS3);
+    tap(SFB_CIRCLE); tap(SFB_CIRCLE);
+    run_frames(0, 1.0f);
+    for (i = 0; i < 3; i++) { tap(SFB_L1); run_frames(0, 0.3f); }
+    CHECK(g_app.tab == PLAT_PS3);                             /* L1 does nothing */
+    for (i = 0; i < 30; i++) { ui_draw(&g_app); run_frames(0, 1.0f / 30.0f); }   /* the tabs fade out */
+    tap(SFB_START);
+    run_frames(0, 0.4f);
+    CHECK(flow_goto(ROW_F_PS3_ONLY));
+    tap(SFB_LEFT);
+    CHECK(g_app.settings.ps3_only == 0);
+    tap(SFB_CIRCLE); tap(SFB_CIRCLE);
+    run_frames(0, 1.0f);
+    tap(SFB_L1);
+    run_frames(0, 0.3f);
+    CHECK(g_app.tab == PLAT_PS2);                             /* tabs move again */
+}

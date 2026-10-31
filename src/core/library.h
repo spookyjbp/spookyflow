@@ -12,7 +12,7 @@
 #define LIB_MAX_DISCS   1024          /* discs of multi-disc games (all tabs) */
 #define LIB_DISCS_PER_GAME 8
 
-enum { GAME_DEMO = 1, GAME_DIR = 2 /* a game folder, not an image file */ };
+enum { GAME_DEMO = 1, GAME_DIR = 2 /* a game folder, not an image file */, GAME_HIDDEN = 4 /* 1.1: hidden in Game Settings */ };
 
 typedef struct {
     uint32_t title;     /* pool offset: cleaned display title */
@@ -38,6 +38,7 @@ typedef struct {
 typedef struct {
     Game games[LIB_MAX_GAMES];
     int count;
+    int nhidden;              /* 1.1: hidden games, kept after the shown ones (games[count .. count + nhidden)) */
     int first[LIB_BUCKETS];   /* first index of each bucket, -1 if empty */
     int demo;                 /* 1 if this tab shows the built-in demo list */
     int dropped;              /* games skipped because the tab was full */
@@ -67,6 +68,12 @@ const char *lib_key(const Library *lib, const Game *g);
 
 /* Sort a tab alphabetically (case-insensitive, '#' bucket first) and rebuild first[]. */
 void lib_sort(Library *lib, int plat, int ignore_the);
+/* 1.1: move the games hidden(ctx, game) says to hide behind the shown ones
+ * (order kept), count = the shown ones; show_all keeps them all shown, only
+ * marked GAME_HIDDEN. Letters are rebuilt for what's shown. Returns how
+ * many are hidden. lib_sort shows every game again (call this after it). */
+int  lib_apply_hidden(Library *lib, int plat, int (*hidden)(void *ctx, const Library *lib, const Game *g), void *ctx,
+                      int show_all);
 /* Find a game by key in a tab, -1 if absent. */
 int  lib_find_key(const Library *lib, int plat, const char *key);
 

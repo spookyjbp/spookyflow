@@ -476,6 +476,48 @@ Next: release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
+15. **1.1: hidden games, a real shuffle, the Stage opening.**
+    - **Hide Game** (Game Settings, ▲, the last row; Off / On): the game
+      leaves the cover flow when you close Game Settings, the next game
+      taking its place. **Show Hidden Games** (Flow Settings > Games &
+      Library) brings them back, marked "Hidden" in the info line, so you
+      can unhide one from its Game Settings. Saved per game as a `hide
+      <key>` line in settings.ini (older versions just skip it).
+    - **Shuffle** played the same order every start: it was seeded with the
+      app's own clock at the end of loading, which is always the same
+      number of frames in. It now takes the PS3's real clock.
+    - **Stage's opening** (the horizon line drawing out, the scene opening,
+      then the name and kittens) started 0.5 s into loading, when most TVs
+      are still black after the video mode switch, so only its end showed.
+      It now starts at 2 s like the other backgrounds' entrance and still
+      ends within the 5 s of loading.
+    - PS3 folder games on NTFS drives: not possible: webMAN MOD (which
+      mounts the games) only plays ISOs from NTFS / exFAT (its prepNTFS
+      indexes PS3ISO, PSXISO, BDISO and DVDISO), not folders.
+    - **FAT32 USB drives**: the PS3 mounts them itself (/dev_usb000 ...
+      /dev_usb010) and webMAN plays games from them, folder games included.
+      At every start (and Rescan Library) spookyflow looks at each port and,
+      on each drive it finds, scans PS3ISO, GAMES, GAMEZ, PS2ISO, PSXISO and
+      PSXGAMES at the drive's root. The log says `scan: USB drive
+      /dev_usb000` per drive (or `no USB drives (FAT32) connected`).
+    - About: "PS1, PS2 and PS3 games on the internal drive, PS2 ISOs
+      included" and "PS1 and PS3 games on FAT32 USB drives, PS1 and PS3 ISOs
+      on NTFS / exFAT" (PS1 ISOs on NTFS / exFAT drives always worked,
+      through webMAN's index: a PSXISO folder on the drive).
+    - **PS3 Games Only** (Flow Settings > Games & Library): the cover flow
+      slides over to the PS3 tab and stays there; L1 / R1 do nothing and
+      the console tabs fade out. Off: the tabs fade back in. Saved
+      (`ps3_only`). **Storage** moved to System to make room.
+    - The A–Z rail (L2 / R2) has no glow behind the letter any more.
+    - **Stage: the light streaks glow.** A wide, soft halo of light around
+      each set of streaks and a glow over them, breathing slowly (each side
+      at its own pace). The soft glow map is now a texture on the PS3 too
+      (it was only baked into the streaks). Two more soft layers per side:
+      check the frame rate on Stage.
+    Check: hide a game and close Game Settings; Show Hidden Games on and
+    off; restart twice and compare the first songs; watch the Stage
+    opening after a restart; a FAT32 USB drive with games in PS3ISO /
+    GAMES / PS2ISO / PSXISO.
 15. **1.0: the first release** (for brewology.com). The About card says
     Version 1.0 and lists what's in it now (cover downloads, PS3 ISOs on
     NTFS / exFAT drives, frosted glass, case lighting...) and what it's

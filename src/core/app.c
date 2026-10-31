@@ -57,7 +57,7 @@ void app_init(App *a, Library *lib, const AppHost *host)
     memset(a, 0, sizeof(*a));
     a->lib = lib;
     if (host) a->host = *host;
-    if (!a->host.roots) a->host.roots = scanner_default_roots(&a->host.nroots);
+    if (!a->host.roots) { a->host.roots = scanner_default_roots(&a->host.nroots); a->usb_roots = 1; }
     settings_defaults(&a->settings);
     lib_clear(lib);
     cc_init(&a->covers, CC_DEFAULT_BUDGET, a->host.covers ? load_cover : NULL, a);
@@ -176,17 +176,29 @@ static void start_loading(App *a, int rescan)
     if (!rescan) drop_covers(a);    /* a rescan drops them once the cover flow has faded out */
 }
 
+/* 1.1: a game hidden in Game Settings */
+static int game_hidden(void *ctx, const Library *lib, const Game *g)
+{
+    const App *a = (const App *)ctx;
+    GameCfg c;
+    if (a->settings.game_count == 0) return 0;
+    c = settings_game_get(&a->settings, lib_key(lib, g));
+    return c.hidden != 0;
+}
+
 static void sort_all(App *a, int keep_selection)
 {
     int t;
     for (t = 0; t < PLAT_COUNT; t++) {
         char key[SET_KEY_MAX] = "";
         const Game *g = keep_selection ? app_selected_game(a, t) : NULL;
+        int old = a->view[t].sel;
         if (g) sf_strlcpy(key, lib_key(a->lib, g), sizeof(key));
         lib_sort(a->lib, t, a->settings.ignore_the);
+        lib_apply_hidden(a->lib, t, game_hidden, a, a->settings.show_hidden);
         if (keep_selection) {
             int idx = lib_find_key(a->lib, t, key);
-            app_select(a, t, idx < 0 ? 0 : idx, 0);
+            app_select(a, t, idx < 0 ? old : idx, 0);    /* hidden: the next game takes its place */
         }
     }
     drop_covers(a);
@@ -230,6 +242,7 @@ static void finish_library(App *a)
         app_select(a, t, idx < 0 ? 0 : idx, 0);
     }
     a->tab = a->tab_prev = sf_clampi(a->settings.last_tab, 0, PLAT_COUNT - 1);
+    if (a->settings.ps3_only) a->tab = a->tab_prev = PLAT_PS3;   /* 1.1 */
     a->tab_anim = 1.0f;
     spring_snap(&a->tab_hl, (float)a->tab);
     a->info_tab = a->tab;
@@ -338,7 +351,9 @@ static void scan_music(App *a)
 {
     if (!a->host.music_dir || !a->host.fs_list || !a->host.read_at) return;
     music_init(a->host.read_at, a->host.fs_ctx);
-    music_set_seed((uint32_t)(a->time * 1000.0) ^ 0x5F0F1234u);
+    /* 1.1: the app's time here is the same on every start (fixed frames of
+     * loading), which made the shuffle play the same order each time */
+    music_set_seed((a->host.seed ? a->host.seed : (uint32_t)(a->time * 1000.0)) ^ 0x5F0F1234u);
     music_scan(a->host.fs_list, a->host.fs_ctx, a->host.music_dir);
     a->music_scanned = 1;
 }
@@ -664,6 +679,13 @@ static void loading_update(App *a, float dt)
         scan_backgrounds(a);
         sync_bg_image(a);
         lib_clear(a->lib);
+        if (a->usb_roots && a->host.fs_list) {      /* 1.1: FAT32 USB drives, whichever are in now */
+            int nb, n, nd;
+            const ScanRoot *base = scanner_default_roots(&nb);
+            const ScanRoot *r = scanner_roots_with_usb(base, nb, a->host.fs_list, a->host.fs_ctx, &n, &nd);
+            a->host.roots = r; a->host.nroots = n;
+            if (!nd) log_printf("scan: no USB drives (FAT32) connected");
+        }
         scanner_begin(&a->scanner, a->host.roots, a->host.nroots);
         scanner_set_reader(&a->scanner, a->host.read_at, a->host.fs_ctx);
         a->scan_async = 0;
@@ -780,6 +802,15 @@ void app_close_panel(App *a)
 {
     if (a->panel == PANEL_NONE) return;
     if (a->panel_open) sound_play(SND_CLOSE);
+    if (a->panel_open && a->panel == PANEL_GAME) {
+        /* 1.1: Hide Game takes effect as Game Settings closes (not under it) */
+        const Game *g = app_selected_game(a, a->tab);
+        if (g && ((g->flags & GAME_HIDDEN) != 0) != (a->panel_cfg.hidden != 0)) {
+            log_printf("game: \"%s\" %s", lib_title(a->lib, g), a->panel_cfg.hidden ? "hidden" : "shown again");
+            sort_all(a, 1);
+            a->info_tab = a->tab; a->info_idx = a->view[a->tab].sel;
+        }
+    }
     a->panel_open = 0;
 }
 
@@ -1066,7 +1097,7 @@ static void flow_leave_group(App *a)
 static void apply_fx(App *a, RowKind k, int fx)
 {
     char val[48];
-    if (fx == MENU_FX_CHANGED || fx == MENU_FX_RESORT || fx == MENU_FX_XMB_TOP) sound_play(SND_CHANGE);
+    if (fx == MENU_FX_CHANGED || fx == MENU_FX_RESORT || fx == MENU_FX_XMB_TOP || fx == MENU_FX_HIDDEN || fx == MENU_FX_PS3_ONLY) sound_play(SND_CHANGE);
     else if (fx != MENU_FX_NONE && fx != MENU_FX_QUIT && fx != MENU_FX_RESCAN && fx != MENU_FX_POWEROFF) sound_play(SND_CONFIRM);
     switch (fx) {
     case MENU_FX_NONE: return;
@@ -1083,6 +1114,24 @@ static void apply_fx(App *a, RowKind k, int fx)
         break;
     case MENU_FX_RESORT:
         log_printf("flow setting: Ignore \"The\" = %s", a->settings.ignore_the ? "On" : "Off");
+        sort_all(a, 1);
+        a->info_tab = a->tab; a->info_idx = a->view[a->tab].sel;
+        app_save(a);
+        break;
+    case MENU_FX_PS3_ONLY:
+        log_printf("flow setting: PS3 Games Only = %s", a->settings.ps3_only ? "On" : "Off");
+        if (a->settings.ps3_only && a->tab != PLAT_PS3) {   /* the cover flow slides over to PS3 */
+            a->tab_prev = a->tab;
+            a->tab = PLAT_PS3;
+            a->tab_dir = 1;
+            a->tab_anim = 0.0f;
+            spring_set(&a->tab_hl, (float)a->tab);
+            a->letter_t = LETTER_TIME;
+        }
+        app_save(a);
+        break;
+    case MENU_FX_HIDDEN:
+        log_printf("flow setting: Show Hidden Games = %s", a->settings.show_hidden ? "On" : "Off");
         sort_all(a, 1);
         a->info_tab = a->tab; a->info_idx = a->view[a->tab].sel;
         app_save(a);
@@ -1248,6 +1297,7 @@ static void launch(App *a)
 static void switch_tab(App *a, int dir)
 {
     int nt = a->tab + dir;
+    if (a->settings.ps3_only) return;           /* 1.1: PS3 Games Only: no other tab */
     if (nt < 0 || nt >= PLAT_COUNT) return;     /* tabs stop at PS1 and PS3, no wrap */
     a->tab_prev = a->tab;
     a->tab = nt;

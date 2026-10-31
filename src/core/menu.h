@@ -13,6 +13,7 @@ typedef enum {
     ROW_F_IGNORE_THE, ROW_F_XMB_TOP, ROW_F_RESCAN, ROW_F_QUIT, ROW_F_POWEROFF, ROW_F_ABOUT,
     ROW_F_HIDE_UI, ROW_F_STORAGE,          /* 0.8.7 */
     ROW_F_CASE_LIGHT,                      /* 0.9.8 */
+    ROW_G_HIDE, ROW_F_SHOW_HIDDEN, ROW_F_PS3_ONLY,   /* 1.1 */
     /* Flow settings groups (0.7.0): the first page lists these, ✖ opens one */
     ROW_FG_LOOK, ROW_FG_SOUND, ROW_FG_GAMES, ROW_FG_SYSTEM,
     /* Choose Disc (multi-disc games): row i = disc i */
@@ -36,7 +37,9 @@ enum {
     MENU_FX_POWEROFF,       /* power off the console */
     MENU_FX_GROUP,          /* open a Flow Settings group */
     MENU_FX_ABOUT,          /* the About spookyflow card (0.8.2) */
-    MENU_FX_STORAGE         /* the Storage card: sizes by console (0.8.7) */
+    MENU_FX_STORAGE,        /* the Storage card: sizes by console (0.8.7) */
+    MENU_FX_HIDDEN,         /* 1.1: Show Hidden Games changed: the cover flow again */
+    MENU_FX_PS3_ONLY        /* 1.1: PS3 Games Only changed: to the PS3 tab */
 };
 
 int  menu_rows(int panel, int plat, RowKind *out, int max);   /* PANEL_FLOW: the group page */

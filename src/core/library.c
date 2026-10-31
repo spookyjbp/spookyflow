@@ -20,7 +20,7 @@ void lib_clear_tab(Library *lib, int plat)
 {
     int b;
     GameList *gl = &lib->tab[plat];
-    gl->count = 0; gl->demo = 0; gl->dropped = 0;
+    gl->count = 0; gl->nhidden = 0; gl->demo = 0; gl->dropped = 0;
     for (b = 0; b < LIB_BUCKETS; b++) gl->first[b] = -1;
 }
 
@@ -99,6 +99,9 @@ void lib_sort(Library *lib, int plat, int ignore_the)
 {
     GameList *gl = &lib->tab[plat];
     int i, b;
+    gl->count += gl->nhidden;            /* 1.1: every game again (lib_apply_hidden hides them after) */
+    gl->nhidden = 0;
+    for (i = 0; i < gl->count; i++) gl->games[i].flags &= (uint8_t)~GAME_HIDDEN;
     s_sort_lib = lib;
     s_sort_ignore_the = ignore_the;
     if (gl->count > 1) qsort(gl->games, (size_t)gl->count, sizeof(Game), cmp_games);
@@ -108,6 +111,41 @@ void lib_sort(Library *lib, int plat, int ignore_the)
         g->bucket = (uint8_t)title_bucket(lib_title(lib, g), ignore_the);
         if (gl->first[g->bucket] < 0) gl->first[g->bucket] = i;
     }
+}
+
+static void rebuild_letters(GameList *gl)
+{
+    int i, b;
+    for (b = 0; b < LIB_BUCKETS; b++) gl->first[b] = -1;
+    for (i = 0; i < gl->count; i++)
+        if (gl->first[gl->games[i].bucket] < 0) gl->first[gl->games[i].bucket] = i;
+}
+
+int lib_apply_hidden(Library *lib, int plat, int (*hidden)(void *ctx, const Library *lib, const Game *g), void *ctx,
+                     int show_all)
+{
+    GameList *gl = &lib->tab[plat];
+    static Game tmp[LIB_MAX_GAMES];      /* one thread (the main one) */
+    int total = gl->count + gl->nhidden, i, nv = 0, nh = 0;
+    if (!hidden || gl->demo) return 0;
+    for (i = 0; i < total; i++) {
+        Game *g = &gl->games[i];
+        if (hidden(ctx, lib, g)) g->flags |= GAME_HIDDEN; else g->flags &= (uint8_t)~GAME_HIDDEN;
+        if (g->flags & GAME_HIDDEN) nh++;
+    }
+    if (show_all || nh == 0) {
+        gl->count = total; gl->nhidden = 0;
+    } else {
+        int k = 0;
+        for (i = 0; i < total; i++) if (!(gl->games[i].flags & GAME_HIDDEN)) tmp[k++] = gl->games[i];
+        nv = k;
+        for (i = 0; i < total; i++) if (gl->games[i].flags & GAME_HIDDEN) tmp[k++] = gl->games[i];
+        nh = total - nv;
+        memcpy(gl->games, tmp, sizeof(Game) * (size_t)total);
+        gl->count = nv; gl->nhidden = nh;
+    }
+    rebuild_letters(gl);
+    return show_all ? 0 : gl->nhidden;
 }
 
 int lib_find_key(const Library *lib, int plat, const char *key)

@@ -99,7 +99,7 @@ void settings_parse_line(Settings *s, const char *line_in)
         if (sscanf(key + 5, "%d %d %d %d %n", &a, &e, &o, &r, &consumed) == 4 && consumed > 0) {
             const char *k = key + 5 + consumed;
             if (*k) {
-                sf_strlcpy(g.key, k, sizeof(g.key));
+                g = settings_game_get(s, k);       /* 1.1: keeps a "hide" read before it */
                 g.autoplay = (signed char)sf_clampi(a, 0, 2);
                 g.emulator = (signed char)sf_clampi(e, 0, 1);
                 /* 0 = Default, 1 = On, 2 = Off. Files from before the global
@@ -112,6 +112,14 @@ void settings_parse_line(Settings *s, const char *line_in)
                 settings_game_set(s, &g);
             }
         }
+        return;
+    }
+
+    /* 1.1: "hide <key>": a hidden game (its own line, so older versions skip it) */
+    if (strncmp(key, "hide ", 5) == 0 && key[5]) {
+        GameCfg g = settings_game_get(s, key + 5);
+        g.hidden = 1;
+        settings_game_set(s, &g);
         return;
     }
 
@@ -138,6 +146,8 @@ void settings_parse_line(Settings *s, const char *line_in)
     else if (strcmp(key, "sleep_minutes") == 0) s->sleep_min = parse_int(val, 0, 60, 5);
     else if (strcmp(key, "show_game_info") == 0) s->show_info = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "hide_ui") == 0) s->hide_ui = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "show_hidden") == 0) s->show_hidden = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "ps3_only") == 0) s->ps3_only = parse_int(val, 0, 1, 0);
     else if (strcmp(key, "case_light") == 0) s->case_light = parse_int(val, 0, CASE_LIGHT_COUNT - 1, CASE_LIGHT_SOFT);
     else if (strcmp(key, "ignore_the") == 0) s->ignore_the = parse_int(val, 0, 1, 0);
     else if (strcmp(key, "xmb_top") == 0) s->xmb_top = parse_int(val, 0, 1, 0);
@@ -185,6 +195,8 @@ int settings_save(const Settings *s, const char *path)
     fprintf(f, "sleep_minutes=%d\n", s->sleep_min);
     fprintf(f, "show_game_info=%d\n", s->show_info);
     fprintf(f, "hide_ui=%d\n", s->hide_ui);
+    fprintf(f, "show_hidden=%d\n", s->show_hidden);
+    fprintf(f, "ps3_only=%d\n", s->ps3_only);
     fprintf(f, "case_light=%d\n", s->case_light);
     fprintf(f, "ignore_the=%d\n", s->ignore_the);
     fprintf(f, "xmb_top=%d\n", s->xmb_top);
@@ -199,6 +211,8 @@ int settings_save(const Settings *s, const char *path)
         if (strchr(g->key, '\n')) continue;
         fprintf(f, "game %d %d %d %d %s\n", g->autoplay, g->emulator, g->offline, g->ps2cfg > 0 ? 100 + g->ps2cfg : 0, g->key);
     }
+    for (i = 0; i < s->game_count; i++)          /* 1.1: hidden games, after their "game" lines */
+        if (s->games[i].hidden && !strchr(s->games[i].key, '\n')) fprintf(f, "hide %s\n", s->games[i].key);
     fflush(f);
     fclose(f);
     return 0;
@@ -224,7 +238,7 @@ GameCfg settings_game_get(const Settings *s, const char *key)
 int settings_game_set(Settings *s, const GameCfg *cfg)
 {
     int i = find_game(s, cfg->key);
-    int is_default = cfg->autoplay == 0 && cfg->emulator == 0 && cfg->offline == 0 && cfg->ps2cfg == 0;
+    int is_default = cfg->autoplay == 0 && cfg->emulator == 0 && cfg->offline == 0 && cfg->ps2cfg == 0 && cfg->hidden == 0;
     if (!cfg->key[0]) return -1;
     if (i >= 0) {
         if (is_default) {

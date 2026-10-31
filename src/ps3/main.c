@@ -249,6 +249,12 @@ int main(int argc, const char *argv[])
     host.remove_file = ps3_fs_remove_file;
     host.covers = ps3_covers_start();
     host.http_get = ps3_http_get;          /* 0.9.2: Download Missing Covers */
+    {   /* 1.1: the real clock, different on every start (the shuffle) */
+        u64 sec = 0, nsec = 0;
+        sysGetCurrentTime(&sec, &nsec);
+        host.seed = (uint32_t)(sec * 2654435761u) ^ (uint32_t)nsec ^ (uint32_t)((u64)sec >> 32);
+        if (!host.seed) host.seed = 1;
+    }
 #ifdef SF_HAVE_TLS
     log_printf("network: HTTPS available (mbedTLS)");
 #else

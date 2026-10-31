@@ -479,11 +479,11 @@ static void test_menu(void)
     char v[48];
     int i;
     printf("menus\n");
-    CHECK(menu_rows(PANEL_GAME, PLAT_PS1, r, MENU_MAX_ROWS) == 2);
+    CHECK(menu_rows(PANEL_GAME, PLAT_PS1, r, MENU_MAX_ROWS) == 3 && r[2] == ROW_G_HIDE);   /* 1.1: Hide Game last */
     CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_EMULATOR);
-    CHECK(menu_rows(PANEL_GAME, PLAT_PS2, r, MENU_MAX_ROWS) == 4);           /* RSX clock row removed */
+    CHECK(menu_rows(PANEL_GAME, PLAT_PS2, r, MENU_MAX_ROWS) == 5 && r[4] == ROW_G_HIDE);           /* RSX clock row removed */
     CHECK(r[1] == ROW_G_EMULATOR && r[2] == ROW_G_OFFLINE && r[3] == ROW_G_PS2CFG);
-    CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 2);
+    CHECK(menu_rows(PANEL_GAME, PLAT_PS3, r, MENU_MAX_ROWS) == 3 && r[2] == ROW_G_HIDE);
     CHECK(r[0] == ROW_G_AUTOPLAY && r[1] == ROW_G_OFFLINE);
     CHECK(menu_rows(PANEL_FLOW, 0, r, MENU_MAX_ROWS) == 7);
     CHECK(r[0] == ROW_FG_LOOK && r[1] == ROW_FG_SOUND && r[2] == ROW_FG_GAMES && r[3] == ROW_FG_SYSTEM && r[4] == ROW_F_ABOUT &&
@@ -491,14 +491,14 @@ static void test_menu(void)
     {   /* every setting is in exactly one group, and no page needs scrolling */
         static const RowKind all[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND,
             ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT, ROW_F_SLEEP, ROW_F_COVERS, ROW_F_IGNORE_THE, ROW_F_XMB_TOP,
-            ROW_F_RESCAN, ROW_F_HIDE_UI, ROW_F_STORAGE, ROW_F_CASE_LIGHT };   /* 0.8.7: two more; 0.9.8: Case Lighting */
+            ROW_F_RESCAN, ROW_F_HIDE_UI, ROW_F_STORAGE, ROW_F_CASE_LIGHT, ROW_F_SHOW_HIDDEN, ROW_F_PS3_ONLY };   /* 0.8.7: two more; 0.9.8: Case Lighting */
         int k2, total = 0, gi;
         for (k2 = 0; k2 < (int)(sizeof(all) / sizeof(all[0])); k2++) CHECK(menu_group_of(all[k2]) >= 0);
         for (gi = 0; gi < 4; gi++) { int nn = menu_group_rows(r[gi], r + 8, 8); CHECK(nn > 0 && nn <= PANEL_VISIBLE_ROWS_FLOW); total += nn; }
         CHECK(total == (int)(sizeof(all) / sizeof(all[0])));
         CHECK(menu_group_of(ROW_F_QUIT) == -1);
         /* 0.7.3: System is Sleep and XMB top (Performance Test removed) */
-        CHECK(menu_group_rows(ROW_FG_SYSTEM, r + 8, 8) == 2 && r[8] == ROW_F_SLEEP && r[9] == ROW_F_XMB_TOP);
+        CHECK(menu_group_rows(ROW_FG_SYSTEM, r + 8, 8) == 3 && r[8] == ROW_F_SLEEP && r[9] == ROW_F_XMB_TOP && r[10] == ROW_F_STORAGE);
     }
     {   /* 0.7.3: the group rows show no summary */
         Settings s2;
@@ -1151,7 +1151,7 @@ static void test_app(void)
 
     /* game settings panel; ◯ closes it and must NOT arm the exit hold */
     tap(SFB_TRIANGLE);
-    CHECK(g_app.panel == PANEL_GAME && g_app.nrows == 4);          /* PS2: no RSX clock row (milestone 3) */
+    CHECK(g_app.panel == PANEL_GAME && g_app.nrows == 5);          /* PS2: no RSX clock row (milestone 3) */
     run_frames(0, 0.3f);
     tap(SFB_DOWN); tap(SFB_DOWN);
     CHECK(g_app.rows[g_app.row] == ROW_G_OFFLINE);
@@ -1320,6 +1320,7 @@ int main(void)
     test_launch();
     test_launch_app();
     test_ntfs();
+    test_usb_drives();
     test_ntfs_rescan();
     test_bg_and_reflect();
     test_music();
@@ -1344,6 +1345,8 @@ int main(void)
     test_095();
     test_096();
     test_098();
+    test_110();
+    test_112();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

@@ -583,6 +583,10 @@ void ui_set_stage_sources(const unsigned char *base, int bw, int bh, const unsig
     g_src_base = base; g_src_bw = bw; g_src_bh = bh;
     g_src_rib = rib; g_src_rw = rw; g_src_rh = rh;
     g_src_glow = glow; g_src_gw = gw; g_src_gh = gh;
+    /* 1.1: the soft glow map as a texture too (the streaks' glowing halo);
+     * it was only baked into the composites */
+    if (glow && gw > 0 && gh > 0 && g_stage_glow < 0 && r_texture_upload_alpha(TEX_STAGE_GLOW, gw, gh, glow) == 0)
+        g_stage_glow = TEX_STAGE_GLOW;
     g_stage_baked = 0;
     free(g_prep_glow); free(g_prep_rib);
     g_prep_glow = g_prep_rib = NULL;
@@ -933,9 +937,17 @@ static void bg_stage(float t, float alpha)
             float al = alpha * (0.80f + 0.20f * sinf(t * 0.21f + ph));
             float u0 = (float)i * 0.5f;
             if (g_stage_baked) {      /* glow, body and core in one texture */
+                float pulse = 0.5f + 0.5f * sinf(t * 0.55f + ph * 1.3f);
+                uint32_t gc = sf_col_mix(lite, 0xFFFFFFFFu, 0.20f + 0.15f * pulse);
+                if (g_stage_glow >= 0)    /* 1.1: a wide halo of light around the streaks, breathing */
+                    d_image_rot(g_stage_glow, cx, cy - h * 0.03f, w * 1.16f, h * 1.22f, ang, u0, u0 + 0.5f, STAGE_GLOW_SPLIT, 1.0f,
+                                sf_col_alpha(gc, al * (0.55f + 0.30f * pulse)));
                 if (xf < 1.0f && g_stage_prev_rib >= 0)
                     d_image_rot(g_stage_prev_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al * (1.0f - xf)));
                 d_image_rot(g_stage_rib, cx, cy, w, h, ang, u0, u0 + 0.5f, 0.0f, 1.0f, sf_col_alpha(0xFFFFFFFFu, al * xf));
+                if (g_stage_glow >= 0)    /* ... and the streaks themselves lit up by it */
+                    d_image_rot(g_stage_glow, cx, cy, w, h, ang, u0, u0 + 0.5f, STAGE_GLOW_SPLIT, 1.0f,
+                                sf_col_alpha(gc, al * (0.16f + 0.22f * pulse)));
                 continue;
             }
             if (g_stage_glow >= 0)    /* the ribbons' own glow moves with them */
@@ -1514,6 +1526,7 @@ static int chip_texts(const App *a, int tab, int idx, char out[4][32])
     g = &gl->games[idx];
     snprintf(out[n++], 32, "%d of %d", idx + 1, gl->count);      /* position in this tab */
     /* 1.0: no release year for now (0.9.9's table had wrong and missing years) */
+    if (g->flags & GAME_HIDDEN) sf_strlcpy(out[n++], "Hidden", 32);   /* 1.1: shown by Show Hidden Games */
     if (g->pmax > 0) {
         if (g->pmin == g->pmax || g->pmin == 0) snprintf(out[n++], 32, "%d player%s", g->pmax, g->pmax == 1 ? "" : "s");
         else snprintf(out[n++], 32, "%d-%d players", g->pmin, g->pmax);
@@ -2391,7 +2404,8 @@ static void draw_panel(App *a)
 /* ---- About spookyflow (0.8.2): a centered card over Flow Settings ---- */
 static const char *const k_about_features[] = {
     "Your PS1, PS2 and PS3 games in one cover flow, with their covers and cases",
-    "Games on the internal drive, and PS3 ISOs on NTFS / exFAT drives",
+    "PS1, PS2 and PS3 games on the internal drive, PS2 ISOs included",
+    "PS1 and PS3 games on FAT32 USB drives, PS1 and PS3 ISOs on NTFS / exFAT",
     "Launched through webMAN MOD, with Auto-Play, emulator, offline and PS2 config options",
     "Download Missing Covers, multi-disc games, display mode and the A\xE2\x80\x93Z jump",
     "Eight backgrounds or your own pictures, frosted glass and case lighting",
@@ -2450,7 +2464,7 @@ static void draw_about(const App *a)
     yy += 0.044f * H() * sc;
     for (i = 0; i < (int)(sizeof(k_about_features) / sizeof(k_about_features[0])); i++) {
         d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), k_about_features[i], ALIGN_CENTER, iw);
-        yy += 0.033f * H() * sc;   /* 1.0: six features, five credits */
+        yy += 0.031f * H() * sc;   /* 1.1: seven features, five credits */
     }
     yy += 0.016f * H() * sc;
     d_text(&g_font_main, cx, yy, 0.027f * H() * sc, sf_col_alpha(sf_col_mix(hot, 0xFFFFFFFFu, 0.45f), al), "Created by spooky", ALIGN_CENTER);
@@ -2458,7 +2472,7 @@ static void draw_about(const App *a)
     for (i = 0; i < (int)(sizeof(k_about_tools) / sizeof(k_about_tools[0])); i++) {
         /* "Made with" first, a little brighter (0.8.4: swapped with "Created by spooky") */
         d_text_fit(&g_font_main, cx, yy, 0.0225f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), k_about_tools[i], ALIGN_CENTER, iw);
-        yy += 0.033f * H() * sc;   /* 1.0: six features, five credits */
+        yy += 0.031f * H() * sc;   /* 1.1: seven features, five credits */
     }
 }
 
@@ -2613,7 +2627,7 @@ static void draw_letter(const App *a)
     d_rrect(x0 - step * 1.2f, y - ph * 0.5f, span + step * 2.4f, ph, ph * 0.5f, sf_col_alpha(TH_BAR, al));
     d_rrect_stroke(x0 - step * 1.2f, y - ph * 0.5f, span + step * 2.4f, ph, ph * 0.5f, 0.0028f * H(),
                    sf_col_alpha(glow(accent_or(0xFFFFFF80u, 0.90f)), al));
-    d_blob(x0 + pos * step, y, H() * 0.045f, sf_col_alpha(acc, 0.35f * al));
+    /* 1.1: no glow behind the letter any more (the letter itself stays in the UI colour) */
     for (b = 0; b < LIB_BUCKETS; b++) {
         char c[2];
         float d = (float)b - pos, f = clamp01(1.0f - sf_absf(d)), em = H() * (0.019f + 0.027f * f);   /* 0.8.2: neighbours stay small */
@@ -2963,7 +2977,15 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
     case_light_update(a);
     /* tabs */
     {   /* 0.8.1: display mode dims the console tabs like the other cases; Game Settings hides them */
-        float ta = ia * uk * sf_lerp(1.0f, DISPLAY_DIM, ease_in_out(a->display_t)) * (1.0f - pgame);
+        static float s_tk = -1.0f;       /* 1.1: PS3 Games Only: the tabs fade out (and back) */
+        static double s_tt = -1.0;
+        float target = a->settings.ps3_only ? 0.0f : 1.0f, dtk = s_tt < 0.0 ? 1.0f : (float)(a->time - s_tt);
+        float ta;
+        if (s_tk < 0.0f || dtk < 0.0f || a->intro < 1.0f) s_tk = target;
+        else s_tk += (target - s_tk) * sf_minf(1.0f, sf_minf(dtk, 0.1f) * 5.0f);
+        if (sf_absf(target - s_tk) < 0.003f) s_tk = target;
+        s_tt = a->time;
+        ta = ia * uk * sf_lerp(1.0f, DISPLAY_DIM, ease_in_out(a->display_t)) * (1.0f - pgame) * ease_in_out(s_tk);
         if (ta > 0.003f) draw_tabs(a, ta, -(1.0f - intro) * 0.05f * H());
     }
     /* cover rows (tab switch: old slides out, new slides in) */
@@ -3099,7 +3121,10 @@ void ui_draw(App *a)
         float rf = a->rescan ? ease_in_out(clamp01((a->load_t - RESCAN_OUT_TIME * 0.6f) / 0.5f)) : 1.0f;
         if (style == 1) {
             float rt;
-            if (a->reveal_start <= -999.0f) a->reveal_start = a->rescan ? -100.0f : sf_maxf(a->load_t, 0.5f);
+            /* 1.1: like the other backgrounds' entrance (0.8.1), it starts at
+             * ENTRANCE_START: at 0.5 s most of it played while the TV was
+             * still black after the video mode switch (it ends at 4.9 s) */
+            if (a->reveal_start <= -999.0f) a->reveal_start = a->rescan ? -100.0f : sf_maxf(a->load_t, ENTRANCE_START);
             rt = a->load_t - a->reveal_start;
             g_intro_shapes = ease_in_out(clamp01((rt - 1.6f) / 1.6f));
             g_intro_parts = ease_in_out(clamp01((rt - 1.2f) / 1.6f));

@@ -298,6 +298,18 @@ int main(int argc, char **argv)
         for (k = 0; k < 40; k++) { snprintf(nm, sizeof(nm), "anim_rescan_%03d", fr++); render(nm, 640, 360); step(0, 1.0f / 30.0f); }
         step(0, LOAD_MIN_TIME + 1.0f);
     }
+    if (getenv("SF_PREVIEW_PS3ONLY")) {   /* 1.1: PS3 Games Only (tabs fade out), the A-Z rail */
+        int k;
+        g_app.music_card_t = g_app.music_card_len;
+        g_app.settings.ps3_only = 1; g_app.tab = PLAT_PS3;
+        for (k = 0; k < 40; k++) { render("ps3only_warm", 320, 180); step(0, 0.05f); }
+        render("ps3only_flow", 1280, 720);
+        press(SFB_R2); step(0, 0.25f);
+        render("ps3only_letters", 1280, 720);
+        step(0, 2.0f);
+        g_app.settings.ps3_only = 0;
+        for (k = 0; k < 40; k++) { render("ps3only_warm", 320, 180); step(0, 0.05f); }
+    }
     if (getenv("SF_PREVIEW_LIGHT")) {     /* 0.9.8: Case Lighting on four backgrounds, and the sweep */
         static const int bgs[] = { BG_STAGE, BG_ANIMATED, BG_AURORA, BG_TWILIGHT };
         int b, k, keepbg = g_app.settings.background, keepl = g_app.settings.case_light;

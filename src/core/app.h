@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "1.0"
+#define APP_VERSION     "1.1"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -67,6 +67,9 @@ typedef struct {
     /* 0.9.2: GET a URL (Download Missing Covers); NULL = not available */
     CoverHttpFn http_get;
     void *http_ctx;
+    /* 1.1: different on every start (the real clock); seeds the music shuffle.
+     * 0 = none (then the app's own time, which is the same every start) */
+    uint32_t seed;
     /* optional: send a launch request to webMAN MOD (launch.h); return 0 if
      * webMAN took it (the app then exits to the XMB, where webMAN mounts and
      * starts the game). NULL = launching not available. */
@@ -186,6 +189,7 @@ typedef struct {
     int panel_plat;         /* platform of the game being edited */
     int panel_game;         /* index of game being edited */
     GameCfg panel_cfg;
+    int usb_roots;                  /* 1.1: the default roots: FAT32 USB drives are added at each scan */
     int flow_group;         /* Flow Settings: the group open (ROW_FG_*), -1 = the first page */
     /* the user's background pictures (in host.bg_dir) */
 #define APP_MAX_BG_IMAGES 32

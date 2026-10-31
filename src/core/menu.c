@@ -14,6 +14,7 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
         else if (plat == PLAT_PS2) {
             tmp[n++] = ROW_G_EMULATOR; tmp[n++] = ROW_G_OFFLINE; tmp[n++] = ROW_G_PS2CFG;
         } else { tmp[n++] = ROW_G_OFFLINE; }
+        tmp[n++] = ROW_G_HIDE;                  /* 1.1 */
     } else if (panel == PANEL_FLOW) {
         /* 0.7.0: grouped; Quit and Power Off stay on the first page */
         tmp[n++] = ROW_FG_LOOK; tmp[n++] = ROW_FG_SOUND; tmp[n++] = ROW_FG_GAMES; tmp[n++] = ROW_FG_SYSTEM;
@@ -26,8 +27,8 @@ int menu_rows(int panel, int plat, RowKind *out, int max)
 
 static const RowKind k_g_look[] = { ROW_F_BACKGROUND, ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_CASE_LIGHT, ROW_F_REFLECT, ROW_F_HIDE_UI };
 static const RowKind k_g_sound[] = { ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE };   /* 0.8.2: Sound Effects first */
-static const RowKind k_g_games[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_IGNORE_THE, ROW_F_STORAGE, ROW_F_COVERS, ROW_F_RESCAN };
-static const RowKind k_g_system[] = { ROW_F_SLEEP, ROW_F_XMB_TOP };
+static const RowKind k_g_games[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_PS3_ONLY, ROW_F_IGNORE_THE, ROW_F_SHOW_HIDDEN, ROW_F_COVERS, ROW_F_RESCAN };
+static const RowKind k_g_system[] = { ROW_F_SLEEP, ROW_F_XMB_TOP, ROW_F_STORAGE };   /* 1.1: Storage moved here */
 
 static const RowKind *group_list(RowKind g, int *n)
 {
@@ -73,6 +74,9 @@ const char *menu_label(RowKind k)
     case ROW_G_EMULATOR: return "Emulator";
     case ROW_G_OFFLINE: return "Offline Mode";
     case ROW_G_PS2CFG: return "PS2 Config";
+    case ROW_G_HIDE: return "Hide Game";
+    case ROW_F_SHOW_HIDDEN: return "Show Hidden Games";
+    case ROW_F_PS3_ONLY: return "PS3 Games Only";
     case ROW_F_AUTOPLAY: return "Auto-Play";
     case ROW_F_OFFLINE: return "Offline Mode";
     case ROW_F_SFX: return "Sound Effects";
@@ -116,6 +120,8 @@ int menu_toggle(RowKind k, const Settings *s)
     case ROW_F_CASES: return s->cases != 0;
     case ROW_F_REFLECT: return s->reflections != 0;
     case ROW_F_HIDE_UI: return s->hide_ui != 0;
+    case ROW_F_SHOW_HIDDEN: return s->show_hidden != 0;
+    case ROW_F_PS3_ONLY: return s->ps3_only != 0;
     case ROW_F_IGNORE_THE: return s->ignore_the != 0;
     case ROW_F_XMB_TOP: return s->xmb_top != 0;
     default: return -1;
@@ -130,6 +136,7 @@ int menu_segments(RowKind k, int plat, const GameCfg *g, const char *const **nam
     case ROW_G_AUTOPLAY: *names = tri; *cur = sf_clampi(g->autoplay, 0, 2); return 3;
     case ROW_G_OFFLINE: *names = tri; *cur = sf_clampi(g->offline, 0, 2); return 3;
     case ROW_G_EMULATOR: *names = plat == PLAT_PS1 ? emu1 : emu2; *cur = g->emulator ? 1 : 0; return 2;
+    case ROW_G_HIDE: { static const char *const oo[2] = { "Off", "On" }; *names = oo; *cur = g->hidden ? 1 : 0; return 2; }
     default: return 0;
     }
 }
@@ -193,6 +200,9 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
     case ROW_F_RESCAN: sf_strlcpy(out, "Start", cap); break;
     case ROW_F_ABOUT: out[0] = '\0'; break;
     case ROW_F_HIDE_UI: sf_strlcpy(out, onoff(s->hide_ui), cap); break;
+    case ROW_G_HIDE: sf_strlcpy(out, onoff(g->hidden), cap); break;
+    case ROW_F_SHOW_HIDDEN: sf_strlcpy(out, onoff(s->show_hidden), cap); break;
+    case ROW_F_PS3_ONLY: sf_strlcpy(out, onoff(s->ps3_only), cap); break;
     case ROW_F_STORAGE: out[0] = '\0'; break;
     case ROW_F_QUIT: sf_strlcpy(out, "", cap); break;
     case ROW_F_POWEROFF: sf_strlcpy(out, "", cap); break;
@@ -215,7 +225,7 @@ int menu_change(RowKind k, int plat, int dir, Settings *s, GameCfg *g)
     int fx;
     menu_value_text(k, plat, s, g, before, sizeof(before));
     fx = menu_change_raw(k, plat, dir, s, g);
-    if (fx == MENU_FX_CHANGED || fx == MENU_FX_RESORT || fx == MENU_FX_XMB_TOP) {
+    if (fx == MENU_FX_CHANGED || fx == MENU_FX_RESORT || fx == MENU_FX_XMB_TOP || fx == MENU_FX_HIDDEN || fx == MENU_FX_PS3_ONLY) {
         menu_value_text(k, plat, s, g, after, sizeof(after));
         if (strcmp(before, after) == 0) return MENU_FX_NONE;   /* at the end already: nothing changes */
     }
@@ -269,6 +279,9 @@ static int menu_change_raw(RowKind k, int plat, int dir, Settings *s, GameCfg *g
     case ROW_F_REFLECT: s->reflections = cycle(s->reflections, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_CASE_LIGHT: s->case_light = cycle(s->case_light, CASE_LIGHT_COUNT, dir); return MENU_FX_CHANGED;
     case ROW_F_HIDE_UI: s->hide_ui = cycle(s->hide_ui, 2, dir); return MENU_FX_CHANGED;
+    case ROW_G_HIDE: g->hidden = (signed char)cycle(g->hidden, 2, dir); return MENU_FX_CHANGED;
+    case ROW_F_SHOW_HIDDEN: s->show_hidden = cycle(s->show_hidden, 2, dir); return MENU_FX_HIDDEN;
+    case ROW_F_PS3_ONLY: s->ps3_only = cycle(s->ps3_only, 2, dir); return MENU_FX_PS3_ONLY;
     case ROW_F_STORAGE: return dir == 0 ? MENU_FX_STORAGE : MENU_FX_NONE;
     case ROW_F_SLEEP: {
         static const int steps[] = { 0, 1, 5, 10, 15, 30, 60 };
