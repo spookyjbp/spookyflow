@@ -1306,14 +1306,15 @@ static void test_ps2_config(void)
     tap(SFB_CIRCLE); run_frames(0, 0.4f);
     g_app.host.read_wm_config = NULL;
 
-    /* no title ID (and none inside the image): not available, ✖ explains */
+    /* no title ID (and none inside the image): the row says "Not available" */
     app_select(&g_app, PLAT_PS2, idx_of(PLAT_PS2, "God Hand"), 0);
     cfg_open_row();
     CHECK(!g_app.ps2cfg_ok);
     app_row_value(&g_app, ROW_G_PS2CFG, v, sizeof(v));
     CHECK_STR(v, "Not available");
+    g_app.toast[0] = '\0';
     tap(SFB_RIGHT);
-    CHECK(strstr(g_app.toast, "PS2 ISOs") != NULL);
+    CHECK(g_app.toast[0] == '\0' && g_app.panel_cfg.ps2cfg == PS2CFG_AUTO);   /* 1.2: no pop-up, nothing changes */
     tap(SFB_CIRCLE); run_frames(0, TOAST_TIME + 0.2f);
     memfs_reset();
 }
@@ -2679,7 +2680,7 @@ static void test_112(void)
     CHECK(s2.ps3_only == 0);
     settings_parse_line(&s2, "ps3_only=1");
     CHECK(s2.ps3_only == 1);
-    CHECK(menu_group_of(ROW_F_PS3_ONLY) == ROW_FG_GAMES && menu_group_of(ROW_F_STORAGE) == ROW_FG_SYSTEM);
+    CHECK(menu_group_of(ROW_F_CONSOLES) == ROW_FG_GAMES && menu_group_of(ROW_F_STORAGE) == ROW_FG_SYSTEM);   /* 1.2: one Consoles row */
     memset(&host, 0, sizeof(host));
     host.fs_list = fake_list;
     app_init(&g_app, &g_lib, &host);
@@ -2688,8 +2689,8 @@ static void test_112(void)
     run_frames(0, 0.3f);
     tap(SFB_START);
     run_frames(0, 0.4f);
-    CHECK(flow_goto(ROW_F_PS3_ONLY));
-    tap(SFB_RIGHT);
+    CHECK(flow_goto(ROW_F_CONSOLES));
+    tap(SFB_RIGHT); tap(SFB_RIGHT);                           /* 1.2: Separate Tabs > All in One Flow > PS3 Only */
     CHECK(g_app.settings.ps3_only == 1 && g_app.tab == PLAT_PS3);
     tap(SFB_CIRCLE); tap(SFB_CIRCLE);
     run_frames(0, 1.0f);
@@ -2698,12 +2699,83 @@ static void test_112(void)
     for (i = 0; i < 30; i++) { ui_draw(&g_app); run_frames(0, 1.0f / 30.0f); }   /* the tabs fade out */
     tap(SFB_START);
     run_frames(0, 0.4f);
-    CHECK(flow_goto(ROW_F_PS3_ONLY));
-    tap(SFB_LEFT);
-    CHECK(g_app.settings.ps3_only == 0);
+    CHECK(flow_goto(ROW_F_CONSOLES));
+    tap(SFB_LEFT); tap(SFB_LEFT);
+    CHECK(g_app.settings.ps3_only == 0 && g_app.settings.all_flow == 0);
     tap(SFB_CIRCLE); tap(SFB_CIRCLE);
     run_frames(0, 1.0f);
     tap(SFB_L1);
     run_frames(0, 0.3f);
     CHECK(g_app.tab == PLAT_PS2);                             /* tabs move again */
+}
+
+/* 1.2: Consoles > All in One Flow: every console's games in one A-Z flow,
+ * each in its own console's case, launched as its console; back to the tabs
+ * on that game's console. Installed games and hidden ones follow along. */
+static void test_120(void)
+{
+    AppHost host;
+    Settings s2;
+    int i, n, total, sorted = 1, plats[PLAT_COUNT] = { 0, 0, 0 };
+    char key[SET_KEY_MAX];
+    printf("1.2: All Consoles in one flow\n");
+    settings_defaults(&s2);
+    settings_parse_line(&s2, "all_flow=1");
+    CHECK(s2.all_flow == 1 && s2.ps3_only == 0);
+    settings_parse_line(&s2, "ps3_only=1");
+    CHECK(s2.ps3_only == 1 && s2.all_flow == 0);                    /* never both */
+    memset(&host, 0, sizeof(host));
+    host.fs_list = fake_list;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.0f);
+    total = g_lib.tab[PLAT_PS1].count + g_lib.tab[PLAT_PS2].count + g_lib.tab[PLAT_PS3].count;
+    n = g_lib.tab[TAB_ALL].count;
+    CHECK(n == total && !g_lib.tab[TAB_ALL].demo);
+    for (i = 0; i < n; i++) {
+        plats[g_lib.tab[TAB_ALL].games[i].plat]++;
+        if (i > 0 && title_compare(lib_title(&g_lib, &g_lib.tab[TAB_ALL].games[i - 1]),
+                                   lib_title(&g_lib, &g_lib.tab[TAB_ALL].games[i]), g_app.settings.ignore_the) > 0) sorted = 0;
+    }
+    CHECK(sorted);
+    CHECK(plats[PLAT_PS1] == g_lib.tab[PLAT_PS1].count && plats[PLAT_PS3] == g_lib.tab[PLAT_PS3].count);
+    /* turn it on from the PS1 tab: same game selected, tabs fixed */
+    g_app.tab = PLAT_PS1;
+    app_select(&g_app, PLAT_PS1, 1, 0);
+    run_frames(0, 0.3f);
+    sf_strlcpy(key, lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS1)), sizeof(key));
+    tap(SFB_START); run_frames(0, 0.4f);
+    CHECK(flow_goto(ROW_F_CONSOLES));
+    tap(SFB_RIGHT);
+    CHECK(g_app.settings.all_flow == 1 && g_app.settings.ps3_only == 0 && g_app.tab == TAB_ALL);
+    CHECK(strcmp(lib_key(&g_lib, app_selected_game(&g_app, TAB_ALL)), key) == 0);   /* the same game */
+    tap(SFB_CIRCLE); tap(SFB_CIRCLE); run_frames(0, 1.0f);
+    tap(SFB_L1); tap(SFB_R1); run_frames(0, 0.3f);
+    CHECK(g_app.tab == TAB_ALL);
+    for (i = 0; i < 20; i++) { ui_draw(&g_app); run_frames(0, 1.0f / 30.0f); }
+    /* Game Settings and launching go by the game's console */
+    for (i = 0; i < n; i++) if (g_lib.tab[TAB_ALL].games[i].plat == PLAT_PS2) break;
+    CHECK(i < n);
+    app_select(&g_app, TAB_ALL, i, 0);
+    run_frames(0, 0.5f);
+    tap(SFB_TRIANGLE); run_frames(0, 0.4f);
+    CHECK(g_app.panel == PANEL_GAME && g_app.panel_plat == PLAT_PS2 && g_app.panel_tab == TAB_ALL);
+    for (i = 0; i < 5; i++) ui_draw(&g_app);
+    tap(SFB_CIRCLE); run_frames(0, 0.5f);
+    /* back to Separate Tabs: onto that game's console tab, the game selected */
+    sf_strlcpy(key, lib_key(&g_lib, app_selected_game(&g_app, TAB_ALL)), sizeof(key));
+    tap(SFB_START); run_frames(0, 0.4f);
+    CHECK(flow_goto(ROW_F_CONSOLES));
+    tap(SFB_LEFT); tap(SFB_LEFT);
+    CHECK(g_app.settings.all_flow == 0 && g_app.settings.ps3_only == 0 && g_app.tab == PLAT_PS2);   /* the first choice: no wrap */
+    CHECK(strcmp(lib_key(&g_lib, app_selected_game(&g_app, PLAT_PS2)), key) == 0);
+    tap(SFB_CIRCLE); tap(SFB_CIRCLE); run_frames(0, 1.0f);
+    /* a restart keeps All Consoles */
+    g_app.settings.all_flow = 1;
+    app_init(&g_app, &g_lib, &host);
+    g_app.settings.all_flow = 1;
+    run_frames(0, LOAD_MIN_TIME + 1.0f);
+    if (g_app.settings.all_flow) CHECK(g_app.tab == TAB_ALL);
+    g_app.settings.all_flow = 0;
+    g_app.tab = PLAT_PS2;
+    run_frames(0, 0.5f);
 }

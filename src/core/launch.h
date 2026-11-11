@@ -54,6 +54,7 @@ typedef struct {
     int autoplay;       /* start the game, not only mount it */
     int offline;        /* PS2/PS3: network off while it runs */
     int emulator;       /* PS1: 0 Standard (ps1_emu), 1 Netemu; PS2: 0 Default, 1 Netemu */
+    int installed;      /* 1.2: installed from a PKG (path = /dev_hdd0/game/<ID>): it brings its own emulator */
 } LaunchReq;
 
 /* Build the request. wm may be NULL (treated as not valid). Returns 0, or -1

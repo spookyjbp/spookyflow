@@ -7,6 +7,9 @@
 #include "draw.h"
 
 enum { PLAT_PS1 = 0, PLAT_PS2 = 1, PLAT_PS3 = 2, PLAT_COUNT = 3 };
+/* 1.2: the All Consoles flow is a fourth tab after the consoles' (its games
+ * are copies of theirs, each knowing its console: Game.plat) */
+enum { TAB_ALL = PLAT_COUNT, TAB_COUNT = PLAT_COUNT + 1 };
 
 /* Cover flow (fractions of H) */
 #define LY_SEL_H      0.50f    /* selected case height */

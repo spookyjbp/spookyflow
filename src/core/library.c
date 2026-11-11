@@ -13,7 +13,7 @@ void lib_clear(Library *lib)
     lib->pool_used = 1;           /* offset 0 is the empty string */
     lib->pool_full = 0;
     lib->ndiscs = 0;
-    for (p = 0; p < PLAT_COUNT; p++) lib_clear_tab(lib, p);
+    for (p = 0; p < TAB_COUNT; p++) lib_clear_tab(lib, p);
 }
 
 void lib_clear_tab(Library *lib, int plat)
@@ -60,6 +60,7 @@ int lib_add(Library *lib, int plat, const char *path, const char *raw_name, uint
     g->flags = (uint8_t)flags;
     g->bucket = (uint8_t)title_bucket(title, 0);
     g->year = 0;                            /* no release-year source for now */
+    g->plat = (uint8_t)plat;                /* 1.2 */
     return gl->count++;
 }
 
@@ -111,6 +112,31 @@ void lib_sort(Library *lib, int plat, int ignore_the)
         g->bucket = (uint8_t)title_bucket(lib_title(lib, g), ignore_the);
         if (gl->first[g->bucket] < 0) gl->first[g->bucket] = i;
     }
+}
+
+static void rebuild_letters(GameList *gl);
+
+int lib_build_all(Library *lib, int ignore_the)
+{
+    GameList *all = &lib->tab[TAB_ALL];
+    int t, i, n = 0, real = 0, dropped = 0;
+    for (t = 0; t < PLAT_COUNT; t++) if (!lib->tab[t].demo && lib->tab[t].count > 0) real = 1;
+    for (t = 0; t < PLAT_COUNT; t++) {
+        const GameList *gl = &lib->tab[t];
+        if (real && gl->demo) continue;            /* a console without games doesn't bring its demo list */
+        for (i = 0; i < gl->count; i++) {
+            if (n >= LIB_MAX_GAMES) { dropped++; continue; }
+            all->games[n] = gl->games[i];
+            all->games[n].plat = (uint8_t)t;
+            n++;
+        }
+    }
+    all->count = n; all->nhidden = 0; all->demo = !real; all->dropped = dropped;
+    s_sort_lib = lib;
+    s_sort_ignore_the = ignore_the;
+    if (n > 1) qsort(all->games, (size_t)n, sizeof(Game), cmp_games);
+    rebuild_letters(all);
+    return n;
 }
 
 static void rebuild_letters(GameList *gl)

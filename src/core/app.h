@@ -13,7 +13,7 @@
 #include "settings.h"
 
 #define APP_NAME        "spookyflow"
-#define APP_VERSION     "1.1"
+#define APP_VERSION     "1.2"
 
 #define LOAD_MIN_TIME   5.0f    /* startup loading screen stays at least this long: many monitors stay black
                                    for 2-3 s after the PS3 switches video mode. Not skippable. */
@@ -161,7 +161,7 @@ typedef struct {
     int tab, tab_prev, tab_dir;
     float tab_anim;         /* 0..1, 1 = finished */
     Spring tab_hl;          /* active pill position (tab index units) */
-    TabView view[PLAT_COUNT];
+    TabView view[TAB_COUNT];     /* 1.2: [TAB_ALL] = the All Consoles flow */
 
     /* title / chips cross-fade */
     int info_tab, info_idx, prev_tab, prev_idx;
@@ -187,6 +187,7 @@ typedef struct {
     Spring row_hl;          /* highlight position in rows */
     Spring list_scroll;     /* first visible row (float) */
     int panel_plat;         /* platform of the game being edited */
+    int panel_tab;          /* 1.2: the tab it was opened from (TAB_ALL in All Consoles) */
     int panel_game;         /* index of game being edited */
     GameCfg panel_cfg;
     int usb_roots;                  /* 1.1: the default roots: FAT32 USB drives are added at each scan */
@@ -268,5 +269,6 @@ void app_close_panel(App *a);
 void app_show_toast(App *a, const char *msg);
 /* The cover cache loader the app installs when host.covers is set. */
 CcLoadFn app_cover_loader(void);
+int app_game_plat(int tab, const Game *g);   /* 1.2: a game's console: its tab, or its own in All Consoles */
 
 #endif

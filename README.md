@@ -476,6 +476,34 @@ Next: release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
+15. **1.2: installed PKG games, All Consoles in one flow.**
+    - **Installed PKG games**: games installed from PKGs (in
+      `/dev_hdd0/game`) are listed on their console's tab: PARAM.SFO's
+      CATEGORY decides (HG = PS3, 1P = PS1 Classic, 2P = PS2 Classic).
+      Game data and updates, apps, minis and homebrew are left out
+      (title IDs that aren't 4 letters + 5 digits, B... IDs from 80000 up,
+      spookyflow itself); hide anything else with Hide Game. The info line
+      says what each game is: **PKG**, **ISO** (or ISO (NTFS)) or
+      **Folder**. They launch through webMAN MOD
+      (`/mount_ps3/dev_hdd0/game/<ID>`, which starts it from app_home on
+      the XMB); their Game Settings have no Emulator / PS2 Config (they
+      bring their own). The log says `scan: N installed games (PKG) among M
+      folders in /dev_hdd0/game`. PS1 / PS2 Classics launched this way are
+      the untested part: send the log if one doesn't start.
+    - **Consoles** (Flow Settings > Games & Library): Separate Tabs / All in
+      One Flow / PS3 Only (it replaces 1.1's PS3 Games Only switch). All in
+      One Flow puts every console's games in one A-Z flow, each in its own
+      console's case and launched as its console, the info line saying
+      which (PS1 / PS2 / PS3); the tabs fade out and L1 / R1 rest. It opens
+      on the game you had selected, and going back to Separate Tabs lands
+      on that game's console tab. Saved (`all_flow`, `last_key_all`).
+    - The PS2 Config row of a game without config files says **None found**
+      (or **Not available**) and can't be changed: no pop-up any more.
+    - Case Lighting is the shine only now: the coloured light on the cases
+      is gone (Off / Soft / Full still sets the shine).
+    Check: a few installed games (PS3, and a PS1 / PS2 Classic if you have
+    one) on their tabs with "PKG", and launching them; Consoles > All in One
+    Flow and back; a PS2 game's Game Settings with no configs.
 15. **1.1: hidden games, a real shuffle, the Stage opening.**
     - **Hide Game** (Game Settings, ▲, the last row; Off / On): the game
       leaves the cover flow when you close Game Settings, the next game

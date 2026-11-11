@@ -491,7 +491,7 @@ static void test_menu(void)
     {   /* every setting is in exactly one group, and no page needs scrolling */
         static const RowKind all[] = { ROW_F_AUTOPLAY, ROW_F_OFFLINE, ROW_F_SFX, ROW_F_VOLUME, ROW_F_SHUFFLE, ROW_F_BACKGROUND,
             ROW_F_UI_COLOR, ROW_F_INFO, ROW_F_CASES, ROW_F_REFLECT, ROW_F_SLEEP, ROW_F_COVERS, ROW_F_IGNORE_THE, ROW_F_XMB_TOP,
-            ROW_F_RESCAN, ROW_F_HIDE_UI, ROW_F_STORAGE, ROW_F_CASE_LIGHT, ROW_F_SHOW_HIDDEN, ROW_F_PS3_ONLY };   /* 0.8.7: two more; 0.9.8: Case Lighting */
+            ROW_F_RESCAN, ROW_F_HIDE_UI, ROW_F_STORAGE, ROW_F_CASE_LIGHT, ROW_F_SHOW_HIDDEN, ROW_F_CONSOLES };   /* 0.8.7: two more; 0.9.8: Case Lighting */
         int k2, total = 0, gi;
         for (k2 = 0; k2 < (int)(sizeof(all) / sizeof(all[0])); k2++) CHECK(menu_group_of(all[k2]) >= 0);
         for (gi = 0; gi < 4; gi++) { int nn = menu_group_rows(r[gi], r + 8, 8); CHECK(nn > 0 && nn <= PANEL_VISIBLE_ROWS_FLOW); total += nn; }
@@ -1321,6 +1321,7 @@ int main(void)
     test_launch_app();
     test_ntfs();
     test_usb_drives();
+    test_installed_pkgs();
     test_ntfs_rescan();
     test_bg_and_reflect();
     test_music();
@@ -1347,6 +1348,7 @@ int main(void)
     test_098();
     test_110();
     test_112();
+    test_120();
     printf("\n%d passed, %d failed\n", g_pass, g_fail);
     return g_fail ? 1 : 0;
 }

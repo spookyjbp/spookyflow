@@ -53,7 +53,9 @@ int launch_build(const LaunchReq *req, const WmConfig *wm, char *out, size_t cap
     if (!req || !req->path || !req->path[0] || req->path[0] != '/') return -1;
     if (req->plat < PLAT_PS1 || req->plat > PLAT_PS3) return -1;
     if (launch_url_encode(req->path, enc, sizeof(enc)) != 0) return -1;
-    if (req->plat == PLAT_PS1) {
+    if (req->installed) {
+        emu = NULL;          /* 1.2: webMAN maps the folder to app_home and starts it from the XMB */
+    } else if (req->plat == PLAT_PS1) {
         emu = req->emulator == 1 ? "ps1_netemu.self" : "ps1_emu.self";
     } else if (req->plat == PLAT_PS2) {
         if (req->emulator == 1) emu = "ps2_netemu.self";

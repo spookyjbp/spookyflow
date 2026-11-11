@@ -12,7 +12,8 @@
 #define LIB_MAX_DISCS   1024          /* discs of multi-disc games (all tabs) */
 #define LIB_DISCS_PER_GAME 8
 
-enum { GAME_DEMO = 1, GAME_DIR = 2 /* a game folder, not an image file */, GAME_HIDDEN = 4 /* 1.1: hidden in Game Settings */ };
+enum { GAME_DEMO = 1, GAME_DIR = 2 /* a game folder, not an image file */, GAME_HIDDEN = 4 /* 1.1: hidden in Game Settings */,
+       GAME_PKG = 8 /* 1.2: installed from a PKG (/dev_hdd0/game/<ID>) */ };
 
 typedef struct {
     uint32_t title;     /* pool offset: cleaned display title */
@@ -26,6 +27,7 @@ typedef struct {
     uint8_t ndisc;      /* >1: a multi-disc game, its discs are lib->disc[disc0 ..] */
     uint16_t year;      /* release year (GameDB by title ID), 0 = unknown */
     uint16_t disc0;
+    uint8_t plat;       /* 1.2: its console (PLAT_*), the same as its tab except in the All Consoles flow */
 } Game;
 
 typedef struct {
@@ -45,7 +47,7 @@ typedef struct {
 } GameList;
 
 typedef struct {
-    GameList tab[PLAT_COUNT];
+    GameList tab[TAB_COUNT];      /* 1.2: [TAB_ALL] = every console's shown games (lib_build_all) */
     Disc disc[LIB_MAX_DISCS];
     int ndiscs;
     char pool[LIB_POOL_SIZE];
@@ -74,6 +76,11 @@ void lib_sort(Library *lib, int plat, int ignore_the);
  * many are hidden. lib_sort shows every game again (call this after it). */
 int  lib_apply_hidden(Library *lib, int plat, int (*hidden)(void *ctx, const Library *lib, const Game *g), void *ctx,
                       int show_all);
+/* 1.2: tab[TAB_ALL] = the shown games of every console (not hidden ones,
+ * and no demo tab unless all three are), sorted A-Z as lib_sort does; at most
+ * LIB_MAX_GAMES (the rest counted in dropped). Call after lib_sort and
+ * lib_apply_hidden of each console. Returns the count. */
+int  lib_build_all(Library *lib, int ignore_the);
 /* Find a game by key in a tab, -1 if absent. */
 int  lib_find_key(const Library *lib, int plat, const char *key);
 

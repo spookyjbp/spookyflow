@@ -78,7 +78,7 @@ static int parse_int(const char *v, int lo, int hi, int def)
     return (int)n;
 }
 
-static const char *const k_plat_suffix[PLAT_COUNT] = { "ps1", "ps2", "ps3" };
+static const char *const k_plat_suffix[TAB_COUNT] = { "ps1", "ps2", "ps3", "all" };
 
 void settings_parse_line(Settings *s, const char *line_in)
 {
@@ -147,14 +147,15 @@ void settings_parse_line(Settings *s, const char *line_in)
     else if (strcmp(key, "show_game_info") == 0) s->show_info = parse_int(val, 0, 1, 1);
     else if (strcmp(key, "hide_ui") == 0) s->hide_ui = parse_int(val, 0, 1, 0);
     else if (strcmp(key, "show_hidden") == 0) s->show_hidden = parse_int(val, 0, 1, 0);
-    else if (strcmp(key, "ps3_only") == 0) s->ps3_only = parse_int(val, 0, 1, 0);
+    else if (strcmp(key, "ps3_only") == 0) { s->ps3_only = parse_int(val, 0, 1, 0); if (s->ps3_only) s->all_flow = 0; }
+    else if (strcmp(key, "all_flow") == 0) { s->all_flow = parse_int(val, 0, 1, 0); if (s->all_flow) s->ps3_only = 0; }
     else if (strcmp(key, "case_light") == 0) s->case_light = parse_int(val, 0, CASE_LIGHT_COUNT - 1, CASE_LIGHT_SOFT);
     else if (strcmp(key, "ignore_the") == 0) s->ignore_the = parse_int(val, 0, 1, 0);
     else if (strcmp(key, "xmb_top") == 0) s->xmb_top = parse_int(val, 0, 1, 0);
     else if (strcmp(key, "last_tab") == 0) s->last_tab = parse_int(val, 0, PLAT_COUNT - 1, PLAT_PS2);
     else if (strncmp(key, "last_key_", 9) == 0) {
         int p;
-        for (p = 0; p < PLAT_COUNT; p++)
+        for (p = 0; p < TAB_COUNT; p++)
             if (strcmp(key + 9, k_plat_suffix[p]) == 0) sf_strlcpy(s->last_key[p], val, SET_KEY_MAX);
     }
 }
@@ -197,11 +198,12 @@ int settings_save(const Settings *s, const char *path)
     fprintf(f, "hide_ui=%d\n", s->hide_ui);
     fprintf(f, "show_hidden=%d\n", s->show_hidden);
     fprintf(f, "ps3_only=%d\n", s->ps3_only);
+    fprintf(f, "all_flow=%d\n", s->all_flow);
     fprintf(f, "case_light=%d\n", s->case_light);
     fprintf(f, "ignore_the=%d\n", s->ignore_the);
     fprintf(f, "xmb_top=%d\n", s->xmb_top);
     fprintf(f, "last_tab=%d\n", s->last_tab);
-    for (p = 0; p < PLAT_COUNT; p++)
+    for (p = 0; p < TAB_COUNT; p++)
         if (s->last_key[p][0] && !strchr(s->last_key[p], '\n'))
             fprintf(f, "last_key_%s=%s\n", k_plat_suffix[p], s->last_key[p]);
     for (i = 0; i < s->cfg_copy_count; i++) fprintf(f, "ps2cfg_copy=%08x\n", (unsigned)s->cfg_copies[i]);

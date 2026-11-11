@@ -15,6 +15,7 @@ static const ScanRoot k_roots[] = {
     { PLAT_PS3, "/dev_hdd0/GAMES",    SRC_HDD_GAME_FOLDERS },
     { PLAT_PS3, "/dev_hdd0/GAMEZ",    SRC_HDD_GAME_FOLDERS },
     { PLAT_PS3, NTFS_INDEX_DIR,        SRC_NTFS_INDEX },       /* NTFS drives (PS3 + PS1), via webMAN */
+    { PLAT_PS3, INSTALLED_DIR,         SRC_HDD_INSTALLED },    /* 1.2: games installed from PKGs (PS1 / PS2 / PS3) */
 };
 
 /* Scratch buffers (single scanner instance; keeps the stack small). */
@@ -287,6 +288,63 @@ static void scan_folders(Scanner *s, Library *lib, int plat, const char *dir, in
     }
 }
 
+int scanner_installed_kind(const unsigned char *sfo, size_t len, char *title, size_t tcap, char *id, size_t icap)
+{
+    char cat[16], raw[256];
+    int i, plat, num = 0;
+    size_t o = 0;
+    if (tcap) title[0] = '\0';
+    if (icap) id[0] = '\0';
+    if (sfo_get_str(sfo, len, "CATEGORY", cat, sizeof(cat)) != 0) return -1;
+    if (strcmp(cat, "HG") == 0) plat = PLAT_PS3;
+    else if (strcmp(cat, "1P") == 0) plat = PLAT_PS1;
+    else if (strcmp(cat, "2P") == 0) plat = PLAT_PS2;
+    else return -1;                                   /* GD (data, updates), apps, minis, ... */
+    if (sfo_get_str(sfo, len, "TITLE_ID", id, icap) != 0 || strlen(id) != 9) return -1;
+    for (i = 0; i < 9; i++) {
+        char c = id[i];
+        if (i < 4 ? !(c >= 'A' && c <= 'Z') : !(c >= '0' && c <= '9')) return -1;
+        if (i >= 4) num = num * 10 + (c - '0');
+    }
+    if (strcmp(id, SELF_TITLE_ID) == 0) return -1;
+    if (id[0] == 'B' && num >= 80000) return -1;     /* multiMAN, IRISMAN & co. */
+    if (sfo_get_str(sfo, len, "TITLE", raw, sizeof(raw)) != 0 || !raw[0]) return -1;
+    /* one line, without the ™ / ® / © the font doesn't have */
+    for (i = 0; raw[i] && o + 1 < tcap; ) {
+        unsigned char c = (unsigned char)raw[i];
+        if (c == 0xE2 && (unsigned char)raw[i + 1] == 0x84 && (unsigned char)raw[i + 2] == 0xA2) { i += 3; continue; }   /* ™ */
+        if (c == 0xC2 && ((unsigned char)raw[i + 1] == 0xAE || (unsigned char)raw[i + 1] == 0xA9)) { i += 2; continue; }  /* ® © */
+        if (c < 32) { if (o > 0 && title[o - 1] != ' ') title[o++] = ' '; i++; continue; }
+        title[o++] = (char)c; i++;
+    }
+    while (o > 0 && title[o - 1] == ' ') o--;
+    title[o] = '\0';
+    return title[0] ? plat : -1;
+}
+
+/* 1.2: /dev_hdd0/game/<ID>/PARAM.SFO for each folder */
+static void scan_installed(Scanner *s, Library *lib, const char *dir, int n)
+{
+    int i, found = 0, read = 0;
+    char path[SCAN_PATH_MAX], sfo[SCAN_PATH_MAX], title[TITLE_MAX], id[16], raw[TITLE_MAX + 24];
+    if (!s->rd) { log_printf("scan: installed games need a file reader, skipped"); return; }
+    for (i = 0; i < n; i++) {
+        const FsEntry *e = &s_ent[i];
+        int got, plat;
+        if (!e->is_dir || e->name[0] == '.' || strlen(e->name) != 9) continue;
+        if (!join(path, sizeof(path), dir, e->name) || !join(sfo, sizeof(sfo), path, "PARAM.SFO")) continue;
+        got = s->rd(s->rd_ctx, sfo, 0, s_ntfs_buf, sizeof(s_ntfs_buf));
+        read++;
+        if (got <= 0) continue;
+        plat = scanner_installed_kind(s_ntfs_buf, (size_t)got, title, sizeof(title), id, sizeof(id));
+        if (plat < 0) continue;
+        snprintf(raw, sizeof(raw), "%s [%s]", title, id);
+        if (lib_add(lib, plat, path, raw, 0, NULL, 0, 0, GAME_DIR | GAME_PKG) >= 0) { s->found[plat]++; found++; }
+    }
+    s->found_pkg += found;
+    log_printf("scan: %d installed games (PKG) among %d folders in %s", found, read, dir);
+}
+
 static void process(Scanner *s, Library *lib, const ScanRoot *r, const char *dir, int depth, FsListFn list, void *ctx)
 {
     int n = list(ctx, dir, s_ent, SCAN_DIR_MAX);
@@ -301,6 +359,7 @@ static void process(Scanner *s, Library *lib, const ScanRoot *r, const char *dir
     switch (r->kind) {
     case SRC_HDD_GAME_FOLDERS: if (depth == 0) scan_folders(s, lib, r->plat, dir, n); break;
     case SRC_NTFS_INDEX: if (depth == 0) scan_ntfs_index(s, lib, dir, n); break;
+    case SRC_HDD_INSTALLED: if (depth == 0) scan_installed(s, lib, dir, n); break;
     case SRC_HDD_ISO_DIR:
     default: scan_iso_dir(s, lib, r->plat, dir, n, depth); break;
     }

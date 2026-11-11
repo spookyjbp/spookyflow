@@ -131,6 +131,31 @@ static int mem_list(void *ctx, const char *dir, FsEntry *out, int max)
     return n;
 }
 
+/* 1.2: also lists the folders under dir that hold files (once each); -1 for
+ * a dir with nothing under it */
+static int mem_list_dirs(void *ctx, const char *dir, FsEntry *out, int max)
+{
+    int i, j, n = 0;
+    size_t dl = strlen(dir);
+    (void)ctx;
+    for (i = 0; i < MEMFS_MAX && n < max; i++) {
+        const char *p = g_mf[i].path, *sl;
+        char name[FS_NAME_MAX];
+        int dup = 0;
+        if (!g_mf[i].used || strncmp(p, dir, dl) != 0 || p[dl] != '/') continue;
+        sl = strchr(p + dl + 1, '/');
+        if (!sl) { sf_strlcpy(name, p + dl + 1, sizeof(name)); }
+        else { size_t k = (size_t)(sl - (p + dl + 1)); if (k >= sizeof(name)) continue; memcpy(name, p + dl + 1, k); name[k] = '\0'; }
+        for (j = 0; j < n; j++) if (strcmp(out[j].name, name) == 0) dup = 1;
+        if (dup) continue;
+        sf_strlcpy(out[n].name, name, FS_NAME_MAX);
+        out[n].is_dir = sl != NULL;
+        out[n].size = sl ? 0 : g_mf[i].len;
+        n++;
+    }
+    return n > 0 ? n : -1;
+}
+
 static void mem_sleep(void *ctx, int ms) { (void)ctx; (void)ms; }
 
 static void mem_io(CoverIO *io, const char *cache)
@@ -1056,6 +1081,102 @@ static void test_usb_drives(void)
         q.plat = PLAT_PS3; q.path = "/dev_usb001/PS3ISO/Game.iso"; q.autoplay = 1;
         CHECK(launch_build(&q, NULL, out, sizeof(out)) == 0);
         CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_usb001/PS3ISO/Game.iso?random=0;/wait.ps3?2;/play.ps3");
+    }
+    memfs_reset();
+    lib_clear(&g_lib);
+}
+
+/* 1.2: a PARAM.SFO with three string keys (CATEGORY, TITLE, TITLE_ID) */
+static size_t make_sfo3(unsigned char *b, const char *cat, const char *title, const char *id)
+{
+    const char *k[3] = { "CATEGORY", "TITLE", "TITLE_ID" }, *v[3];
+    size_t kofs[3], dofs[3], kts = 20 + 3 * 16, kp = 0, dp = 0, dts, i;
+    v[0] = cat; v[1] = title; v[2] = id;
+    memset(b, 0, 1024);
+    for (i = 0; i < 3; i++) { kofs[i] = kp; kp += strlen(k[i]) + 1; }
+    dts = kts + ((kp + 3) & ~(size_t)3);
+    for (i = 0; i < 3; i++) { dofs[i] = dp; dp += (strlen(v[i]) + 1 + 3) & ~(size_t)3; }
+    b[1] = 'P'; b[2] = 'S'; b[3] = 'F'; b[4] = 1; b[5] = 1;
+    put_le32(b + 8, (uint32_t)kts); put_le32(b + 12, (uint32_t)dts); put_le32(b + 16, 3);
+    for (i = 0; i < 3; i++) {
+        unsigned char *e = b + 20 + i * 16;
+        e[0] = (unsigned char)kofs[i]; e[2] = 4; e[3] = 2;
+        put_le32(e + 4, (uint32_t)(strlen(v[i]) + 1)); put_le32(e + 8, (uint32_t)((strlen(v[i]) + 1 + 3) & ~(size_t)3));
+        put_le32(e + 12, (uint32_t)dofs[i]);
+        memcpy(b + kts + kofs[i], k[i], strlen(k[i]) + 1);
+        memcpy(b + dts + dofs[i], v[i], strlen(v[i]) + 1);
+    }
+    return dts + dp;
+}
+
+/* 1.2: games installed from PKGs (/dev_hdd0/game): their console from
+ * PARAM.SFO's CATEGORY, apps and data left out, launched through webMAN */
+static void test_installed_pkgs(void)
+{
+    unsigned char sfo[1024];
+    char title[TITLE_MAX], id[16];
+    size_t n;
+    AppHost host;
+    int t, i, found[PLAT_COUNT] = { 0, 0, 0 }, pk = -1;
+    printf("installed PKG games\n");
+    n = make_sfo3(sfo, "HG", "Journey\xE2\x84\xA2", "NPUA80472");
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) == PLAT_PS3);
+    CHECK_STR(title, "Journey");
+    CHECK_STR(id, "NPUA80472");
+    n = make_sfo3(sfo, "2P", "Ape Escape 2", "NPUD20372");
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) == PLAT_PS2);
+    n = make_sfo3(sfo, "1P", "Crash\nBandicoot", "NPUJ00662");
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) == PLAT_PS1);
+    CHECK_STR(title, "Crash Bandicoot");
+    n = make_sfo3(sfo, "GD", "Game update", "BLUS30443");
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) < 0);   /* data / updates */
+    n = make_sfo3(sfo, "HG", "multiMAN", "BLES80608");
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) < 0);   /* homebrew */
+    n = make_sfo3(sfo, "HG", "IRISMAN", "IRISMAN00");
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) < 0);
+    n = make_sfo3(sfo, "HG", "spookyflow", SELF_TITLE_ID);
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) < 0);   /* itself */
+    n = make_sfo3(sfo, "MN", "A mini", "NPUZ00001");
+    CHECK(scanner_installed_kind(sfo, n, title, sizeof(title), id, sizeof(id)) < 0);
+
+    memfs_reset();
+    lib_clear(&g_lib);
+    n = make_sfo3(sfo, "HG", "Journey", "NPUA80472");        memfs_put("/dev_hdd0/game/NPUA80472/PARAM.SFO", sfo, (uint32_t)n);
+    n = make_sfo3(sfo, "2P", "Ape Escape 2", "NPUD20372");   memfs_put("/dev_hdd0/game/NPUD20372/PARAM.SFO", sfo, (uint32_t)n);
+    n = make_sfo3(sfo, "1P", "Crash Bandicoot", "NPUJ00662");memfs_put("/dev_hdd0/game/NPUJ00662/PARAM.SFO", sfo, (uint32_t)n);
+    n = make_sfo3(sfo, "GD", "Update", "BLUS30443");         memfs_put("/dev_hdd0/game/BLUS30443/PARAM.SFO", sfo, (uint32_t)n);
+    memset(&host, 0, sizeof(host));
+    host.fs_list = mem_list_dirs;
+    host.read_at = mem_read_at;
+    app_init(&g_app, &g_lib, &host);
+    run_frames(0, LOAD_MIN_TIME + 1.5f);
+    for (t = 0; t < PLAT_COUNT; t++)
+        for (i = 0; i < g_lib.tab[t].count; i++) {
+            const Game *g = &g_lib.tab[t].games[i];
+            if (g->flags & GAME_PKG) {
+                found[t]++;
+                CHECK(g->flags & GAME_DIR);
+                if (t == PLAT_PS3) { pk = i; CHECK_STR(lib_title(&g_lib, g), "Journey"); CHECK_STR(lib_id(&g_lib, g), "NPUA80472"); }
+            }
+        }
+    CHECK(found[PLAT_PS1] == 1 && found[PLAT_PS2] == 1 && found[PLAT_PS3] == 1);   /* the update isn't a game */
+    {
+        LaunchReq q;
+        char out[LAUNCH_CMD_MAX];
+        memset(&q, 0, sizeof(q));
+        q.plat = PLAT_PS2; q.path = "/dev_hdd0/game/NPUD20372"; q.autoplay = 1; q.emulator = 1; q.installed = 1;
+        CHECK(launch_build(&q, NULL, out, sizeof(out)) == 0);
+        CHECK_STR(out, "/wait.ps3?xmb;/mount_ps3/dev_hdd0/game/NPUD20372?random=0;/wait.ps3?2;/play.ps3");   /* no emulator */
+    }
+    if (pk >= 0) {   /* Game Settings: no emulator / PS2 config rows for an installed game */
+        int k, has_emu = 0;
+        g_app.tab = PLAT_PS2;
+        for (i = 0; i < g_lib.tab[PLAT_PS2].count; i++) if (g_lib.tab[PLAT_PS2].games[i].flags & GAME_PKG) app_select(&g_app, PLAT_PS2, i, 0);
+        app_open_panel(&g_app, PANEL_GAME);
+        for (k = 0; k < g_app.nrows; k++) if (g_app.rows[k] == ROW_G_EMULATOR || g_app.rows[k] == ROW_G_PS2CFG) has_emu = 1;
+        CHECK(!has_emu && g_app.rows[g_app.nrows - 1] == ROW_G_HIDE);
+        app_close_panel(&g_app);
+        run_frames(0, 0.5f);
     }
     memfs_reset();
     lib_clear(&g_lib);

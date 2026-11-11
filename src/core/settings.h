@@ -45,11 +45,13 @@ typedef struct {
     int hide_ui;             /* 0.8.7: the cover flow shows only the cases (no tabs, title, bar), default 0 */
     int show_hidden;         /* 1.1: games hidden in Game Settings are shown (marked), default 0 */
     int ps3_only;            /* 1.1: only the PS3 tab, the console tabs hidden, default 0 */
+    int all_flow;            /* 1.2: every console's games in one flow, the console tabs hidden, default 0
+                                (with ps3_only: one Consoles setting, never both) */
     int ignore_the;          /* default 0 */
     int xmb_top;             /* pin spookyflow to the top of the XMB Game column, default 0 */
     char bg_image[128];      /* BG_CUSTOM: file name in the backgrounds folder */
     int last_tab;            /* 0..2 */
-    char last_key[PLAT_COUNT][SET_KEY_MAX];
+    char last_key[TAB_COUNT][SET_KEY_MAX];   /* 1.2: [TAB_ALL] for the All Consoles flow */
     GameCfg games[SET_MAX_GAMES];
     int game_count;
     /* 0.7.5: sf_hash() of each <iso>.CONFIG path spookyflow wrote; only

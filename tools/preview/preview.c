@@ -298,6 +298,27 @@ int main(int argc, char **argv)
         for (k = 0; k < 40; k++) { snprintf(nm, sizeof(nm), "anim_rescan_%03d", fr++); render(nm, 640, 360); step(0, 1.0f / 30.0f); }
         step(0, LOAD_MIN_TIME + 1.0f);
     }
+    if (getenv("SF_PREVIEW_ALLFLOW")) {   /* 1.2: Consoles > All in One Flow */
+        int k;
+        char nm[64];
+        g_app.music_card_t = g_app.music_card_len;
+        press(SFB_START); step(0, 0.6f);
+        press(SFB_DOWN); press(SFB_DOWN); press(SFB_CROSS); step(0, 0.5f); /* Games & Library */
+        press(SFB_DOWN); press(SFB_DOWN); step(0, 0.3f);                   /* Consoles */
+        render("allflow_menu_before", 1280, 720);
+        press(SFB_RIGHT);
+        for (k = 0; k < 12; k++) { snprintf(nm, sizeof(nm), "allflow_sw_%02d", k); render(nm, 640, 360); step(0, 1.0f / 15.0f); }
+        render("allflow_menu_after", 1280, 720);
+        press(SFB_CIRCLE); press(SFB_CIRCLE); step(0, 1.0f);
+        for (k = 0; k < 4; k++) { render("allflow_warm", 320, 180); step(0, 0.1f); }
+        render("allflow_flow", 1280, 720);
+        for (k = 0; k < 3; k++) { press(SFB_RIGHT); step(0, 0.35f); }
+        render("allflow_flow_b", 1280, 720);
+        press(SFB_START); step(0, 0.6f);
+        press(SFB_DOWN); press(SFB_DOWN); press(SFB_CROSS); step(0, 0.5f);
+        press(SFB_DOWN); press(SFB_DOWN); press(SFB_LEFT); step(0, 0.2f);
+        press(SFB_CIRCLE); press(SFB_CIRCLE); step(0, 1.0f);
+    }
     if (getenv("SF_PREVIEW_PS3ONLY_SWITCH")) {   /* 1.1: PS3 Games Only turned on from the PS1 tab, frame by frame */
         int k;
         char nm[64];

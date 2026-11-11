@@ -19,7 +19,7 @@
 #define CC_MAIN_WINDOW      30     /* games kept around the selection of the shown tab */
 #define CC_SIDE_WINDOW      15     /* ...and around the selection of each other tab, so a
                                       tab switch shows covers at once */
-#define CC_TABS             3
+#define CC_TABS             4      /* 1.2: the three consoles + All Consoles */
 #define CC_LOADS_PER_FRAME  4
 #define CC_GPU_FRAMES       3
 

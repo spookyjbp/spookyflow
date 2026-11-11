@@ -15,7 +15,7 @@
 
 static int sync_xmb_priority(App *a);
 
-static const char *const k_plat_name[PLAT_COUNT] = { "PS1", "PS2", "PS3" };
+static const char *const k_plat_name[TAB_COUNT] = { "PS1", "PS2", "PS3", "All Consoles" };
 
 /* Cover cache loader: hand the game to the cover worker. Demo games keep
  * their drawn placeholder. */
@@ -28,18 +28,24 @@ static int load_cover(void *user, int tab, int index, int slot_id, CcSlot *slot)
     if (index < 0 || index >= gl->count) return CC_FAILED;
     g = &gl->games[index];
     if (g->flags & GAME_DEMO) return CC_READY;
-    cover_request(a->host.covers, slot_id, tab, tab, index, lib_path(a->lib, g),
+    cover_request(a->host.covers, slot_id, app_game_plat(tab, g), tab, index, lib_path(a->lib, g),
                   (g->flags & GAME_DIR) != 0, g->size, lib_id(a->lib, g));
     return CC_LOADING;
 }
 
 CcLoadFn app_cover_loader(void) { return load_cover; }
 
+int app_game_plat(int tab, const Game *g)
+{
+    if (tab >= 0 && tab < PLAT_COUNT) return tab;
+    return g && g->plat < PLAT_COUNT ? g->plat : PLAT_PS3;
+}
+
 /* the cover worker found a game's release year (from its title ID) */
 static void cover_result(void *user, int tab, int index, int year)
 {
     App *a = (App *)user;
-    if (year <= 0 || tab < 0 || tab >= PLAT_COUNT || index < 0 || index >= a->lib->tab[tab].count) return;
+    if (year <= 0 || tab < 0 || tab >= TAB_COUNT || index < 0 || index >= a->lib->tab[tab].count) return;
     a->lib->tab[tab].games[index].year = (uint16_t)year;
 }
 
@@ -64,7 +70,7 @@ void app_init(App *a, Library *lib, const AppHost *host)
     if (a->host.covers) { a->host.covers->on_result = cover_result; a->host.covers->on_result_user = a; }
     input_reset(&a->input);
     hold_exit_reset(&a->hold);
-    for (t = 0; t < PLAT_COUNT; t++) spring_init(&a->view[t].scroll, 0.0f, SPRING_OMEGA_300MS);
+    for (t = 0; t < TAB_COUNT; t++) spring_init(&a->view[t].scroll, 0.0f, SPRING_OMEGA_300MS);
     spring_init(&a->tab_hl, 1.0f, SPRING_OMEGA_300MS);
     spring_init(&a->row_hl, 0.0f, 26.0f);
     spring_init(&a->list_scroll, 0.0f, 24.0f);
@@ -129,11 +135,11 @@ void app_select(App *a, int tab, int index, int animate)
 static void remember_selection(App *a)
 {
     int t;
-    for (t = 0; t < PLAT_COUNT; t++) {
+    for (t = 0; t < TAB_COUNT; t++) {
         const Game *g = app_selected_game(a, t);
         if (g) sf_strlcpy(a->settings.last_key[t], lib_key(a->lib, g), SET_KEY_MAX);
     }
-    a->settings.last_tab = a->tab;
+    if (a->tab < PLAT_COUNT) a->settings.last_tab = a->tab;   /* 1.2: the console tab to go back to */
 }
 
 void app_save(App *a)
@@ -201,6 +207,19 @@ static void sort_all(App *a, int keep_selection)
             app_select(a, t, idx < 0 ? old : idx, 0);    /* hidden: the next game takes its place */
         }
     }
+    {   /* 1.2: the All Consoles flow, from what the consoles show */
+        char key[SET_KEY_MAX] = "";
+        const Game *g = keep_selection ? app_selected_game(a, TAB_ALL) : NULL;
+        int old = a->view[TAB_ALL].sel, idx;
+        if (g) sf_strlcpy(key, lib_key(a->lib, g), sizeof(key));
+        lib_build_all(a->lib, a->settings.ignore_the);
+        if (a->lib->tab[TAB_ALL].dropped)
+            log_printf("library: All Consoles shows the first %d games (%d more)", a->lib->tab[TAB_ALL].count, a->lib->tab[TAB_ALL].dropped);
+        if (keep_selection) {
+            idx = lib_find_key(a->lib, TAB_ALL, key);
+            app_select(a, TAB_ALL, idx < 0 ? old : idx, 0);
+        }
+    }
     drop_covers(a);
 }
 
@@ -237,14 +256,15 @@ static void finish_library(App *a)
         }
     }
     sort_all(a, 0);
-    for (t = 0; t < PLAT_COUNT; t++) {
+    for (t = 0; t < TAB_COUNT; t++) {
         int idx = lib_find_key(a->lib, t, a->settings.last_key[t]);
         app_select(a, t, idx < 0 ? 0 : idx, 0);
     }
     a->tab = a->tab_prev = sf_clampi(a->settings.last_tab, 0, PLAT_COUNT - 1);
     if (a->settings.ps3_only) a->tab = a->tab_prev = PLAT_PS3;   /* 1.1 */
+    if (a->settings.all_flow) a->tab = a->tab_prev = TAB_ALL;    /* 1.2 */
     a->tab_anim = 1.0f;
-    spring_snap(&a->tab_hl, (float)a->tab);
+    spring_snap(&a->tab_hl, (float)(a->tab < PLAT_COUNT ? a->tab : sf_clampi(a->settings.last_tab, 0, PLAT_COUNT - 1)));
     a->info_tab = a->tab;
     a->info_idx = a->view[a->tab].sel;
     a->info_t = 1.0f;
@@ -494,6 +514,14 @@ static void sizes_poll(App *a)
                     break;
                 }
             }
+            gl = &a->lib->tab[TAB_ALL];               /* 1.2: its copy in All Consoles */
+            for (k = 0; k < gl->count; k++) {
+                Game *g = &gl->games[k];
+                if ((g->flags & GAME_DIR) && strcmp(lib_path(a->lib, g), j->path[j->applied]) == 0) {
+                    g->size = j->size[j->applied];
+                    break;
+                }
+            }
         }
     }
     if (j->finished && j->applied >= j->n) {
@@ -586,6 +614,9 @@ static void download_poll(App *a)
             gl = &a->lib->tab[it->plat];
             for (k = 0; k < gl->count; k++)
                 if (strcmp(lib_path(a->lib, &gl->games[k]), it->path) == 0) { cc_forget(&a->covers, it->plat, k); break; }
+            gl = &a->lib->tab[TAB_ALL];               /* 1.2 */
+            for (k = 0; k < gl->count; k++)
+                if (strcmp(lib_path(a->lib, &gl->games[k]), it->path) == 0) { cc_forget(&a->covers, TAB_ALL, k); break; }
         }
     }
     a->dl_got = d->n_got; a->dl_missing = d->n_missing; a->dl_have = d->n_have; a->dl_noid = d->n_noid;
@@ -726,9 +757,9 @@ static void loading_update(App *a, float dt)
                  k_plat_name[scanner_platform(&a->scanner)]);
         a->load_target = 0.15f + 0.70f * scanner_progress(&a->scanner);
         if (a->scanner.done || !a->host.fs_list) {
-            log_printf("scan: done, %d dirs, found PS1=%d PS2=%d PS3=%d (%d of them on NTFS drives)",
+            log_printf("scan: done, %d dirs, found PS1=%d PS2=%d PS3=%d (%d of them on NTFS drives, %d installed from PKGs)",
                        a->scanner.dirs_listed, a->scanner.found[0], a->scanner.found[1], a->scanner.found[2],
-                       a->scanner.found_ntfs);
+                       a->scanner.found_ntfs, a->scanner.found_pkg);
             sf_strlcpy(a->load_status, "Sorting\xE2\x80\xA6", sizeof(a->load_status));
             a->load_target = 0.90f;
             a->load_step = LOAD_SORT;
@@ -768,10 +799,12 @@ static void loading_update(App *a, float dt)
 /* Panels                                                              */
 
 static void ps2cfg_probe(App *a, const Game *g);
+static void consoles_changed(App *a);
 
 void app_open_panel(App *a, int panel)
 {
     const Game *g = app_selected_game(a, a->tab);
+    int plat = app_game_plat(a->tab, g);         /* 1.2: the game's console (All Consoles) */
     if ((panel == PANEL_GAME || panel == PANEL_DISC) && !g) return;
     if (panel == PANEL_DISC && g->ndisc < 2) return;
     a->panel = panel;
@@ -781,18 +814,27 @@ void app_open_panel(App *a, int panel)
         a->nrows = g->ndisc < MENU_MAX_ROWS ? g->ndisc : MENU_MAX_ROWS;
         for (i = 0; i < a->nrows; i++) a->rows[i] = ROW_D_DISC;
     } else {
-        a->nrows = menu_rows(panel, a->tab, a->rows, MENU_MAX_ROWS);
+        a->nrows = menu_rows(panel, plat, a->rows, MENU_MAX_ROWS);
+        if (panel == PANEL_GAME && (g->flags & GAME_PKG)) {
+            /* 1.2: an installed game brings its own emulator and config */
+            int i, m = 0;
+            for (i = 0; i < a->nrows; i++)
+                if (a->rows[i] != ROW_G_EMULATOR && a->rows[i] != ROW_G_PS2CFG &&
+                    !(a->rows[i] == ROW_G_OFFLINE && plat != PLAT_PS3)) a->rows[m++] = a->rows[i];
+            a->nrows = m;
+        }
     }
     a->flow_group = -1;
     a->row = 0;
     spring_snap(&a->row_hl, 0.0f);
     spring_snap(&a->list_scroll, 0.0f);
     a->page_t = 0.0f; a->page_dir = 1;
-    a->panel_plat = a->tab;
+    a->panel_plat = plat;
+    a->panel_tab = a->tab;
     a->panel_game = a->view[a->tab].sel;
     if (g) a->panel_cfg = settings_game_get(&a->settings, lib_key(a->lib, g));
     a->ps2cfg_ok = 0;
-    if (g && panel == PANEL_GAME && a->tab == PLAT_PS2) ps2cfg_probe(a, g);
+    if (g && panel == PANEL_GAME && plat == PLAT_PS2 && !(g->flags & GAME_PKG)) ps2cfg_probe(a, g);
     sound_play(SND_OPEN);
     log_printf("panel: open %s%s%s", panel == PANEL_GAME ? "Game Settings" : panel == PANEL_DISC ? "Choose Disc" : "Flow Settings",
                g && panel != PANEL_FLOW ? " for " : "", g && panel != PANEL_FLOW ? lib_title(a->lib, g) : "");
@@ -961,14 +1003,9 @@ static void ps2cfg_cycle(App *a, int dir)
 {
     int cur = sf_clampi(a->panel_cfg.ps2cfg, 0, PS2CFG_COUNT - 1), i, d = dir == 0 ? 1 : dir;
     char val[64];
-    if (!a->ps2cfg_ok) {
-        app_show_toast(a, "PS2 configs work with PS2 ISOs on the internal drive");
-        return;
-    }
-    if (a->ps2cfg_avail == 1u) {
-        app_show_toast(a, "No PS2 config files found for this game");
-        return;
-    }
+    /* 1.2: nothing to choose: the row says so ("Not available" / "None
+     * found") and stays put; no pop-up any more */
+    if (!a->ps2cfg_ok || a->ps2cfg_avail == 1u) return;
     for (i = 0; i < PS2CFG_COUNT; i++) {
         cur += d;
         if (cur < 0 || cur >= PS2CFG_COUNT) return;      /* 0.8.2: the ends don't wrap */
@@ -1001,6 +1038,7 @@ void app_row_value(const App *a, RowKind k, char *out, size_t cap)
         return;
     }
     if (!a->ps2cfg_ok) { sf_strlcpy(out, "Not available", cap); return; }
+    if (a->ps2cfg_avail == 1u && a->panel_cfg.ps2cfg <= 0) { sf_strlcpy(out, "None found", cap); return; }   /* 1.2 */
     if (a->panel_cfg.ps2cfg > 0 && (a->ps2cfg_avail & (1u << a->panel_cfg.ps2cfg)))
         sf_strlcpy(out, ps2cfg_name(a->panel_cfg.ps2cfg), cap);
     else if (a->panel_cfg.ps2cfg > 0)
@@ -1116,6 +1154,11 @@ static void apply_fx(App *a, RowKind k, int fx)
         log_printf("flow setting: Ignore \"The\" = %s", a->settings.ignore_the ? "On" : "Off");
         sort_all(a, 1);
         a->info_tab = a->tab; a->info_idx = a->view[a->tab].sel;
+        app_save(a);
+        break;
+    case MENU_FX_CONSOLES:
+        log_printf("flow setting: Consoles = %s", a->settings.all_flow ? "All in One Flow" : a->settings.ps3_only ? "PS3 Only" : "Separate Tabs");
+        consoles_changed(a);
         app_save(a);
         break;
     case MENU_FX_PS3_ONLY:
@@ -1258,11 +1301,13 @@ static void launch_disc(App *a, int disc)
     else sf_strlcpy(name, lib_title(a->lib, g), sizeof(name));
     c = settings_game_get(&a->settings, lib_key(a->lib, g));   /* one set of settings for all discs */
     memset(&req, 0, sizeof(req));
-    req.plat = a->tab;
+    req.plat = app_game_plat(a->tab, g);             /* 1.2: its console, also in All Consoles */
     req.path = path;
     req.autoplay = settings_autoplay_effective(&a->settings, &c);
-    req.offline = a->tab != PLAT_PS1 && settings_offline_effective(&a->settings, &c);
+    req.offline = req.plat != PLAT_PS1 && settings_offline_effective(&a->settings, &c);
     req.emulator = c.emulator;
+    req.installed = (g->flags & GAME_PKG) != 0;      /* 1.2: webMAN launches it from /dev_hdd0/game */
+    if (req.installed) { req.emulator = 0; if (req.plat != PLAT_PS3) req.offline = 0; }
     memset(&wm, 0, sizeof(wm));
     if (a->host.read_wm_config) a->host.read_wm_config(&wm);
     if (launch_build(&req, &wm, cmd, sizeof(cmd)) != 0) {
@@ -1271,10 +1316,10 @@ static void launch_disc(App *a, int disc)
         return;
     }
     log_printf("launch: %s \"%s\" autoplay=%s offline=%d emulator=%d webMAN config=%s",
-               k_plat_name[a->tab], name, req.autoplay ? "on" : "off", req.offline, req.emulator,
+               k_plat_name[req.plat], name, req.autoplay ? "on" : "off", req.offline, req.emulator,
                wm.valid ? (wm.autoplay ? "read (its Auto-play is on)" : "read") : "not found");
     log_printf("launch: request %s", cmd);
-    if (a->tab == PLAT_PS2 && a->host.launch)
+    if (req.plat == PLAT_PS2 && a->host.launch && !req.installed)
         ps2cfg_apply(a, path, lib_str(a->lib, d ? d->id : g->id), c.ps2cfg);
     if (!a->host.launch || a->host.launch(cmd) != 0) {
         app_show_toast(a, "Launching needs webMAN MOD running");
@@ -1294,10 +1339,32 @@ static void launch(App *a)
     else launch_disc(a, -1);
 }
 
+/* 1.2: the Consoles setting changed: slide to the tab it wants. Into All
+ * Consoles with the game that was selected; back out to that game's console. */
+static void consoles_changed(App *a)
+{
+    const Game *g = app_selected_game(a, a->tab);
+    char key[SET_KEY_MAX] = "";
+    int to, idx;
+    if (g) sf_strlcpy(key, lib_key(a->lib, g), sizeof(key));
+    if (a->settings.all_flow) to = TAB_ALL;
+    else if (a->settings.ps3_only) to = PLAT_PS3;
+    else to = a->tab == TAB_ALL ? app_game_plat(TAB_ALL, g) : a->tab;
+    if (to == a->tab) return;
+    if (key[0] && (idx = lib_find_key(a->lib, to, key)) >= 0) app_select(a, to, idx, 0);
+    a->tab_prev = a->tab;
+    a->tab = to;
+    a->tab_dir = to > a->tab_prev ? 1 : -1;
+    a->tab_anim = 0.0f;
+    if (to < PLAT_COUNT) spring_set(&a->tab_hl, (float)to);
+    a->letter_t = LETTER_TIME;
+    a->info_tab = a->tab; a->info_idx = a->view[a->tab].sel;
+}
+
 static void switch_tab(App *a, int dir)
 {
     int nt = a->tab + dir;
-    if (a->settings.ps3_only) return;           /* 1.1: PS3 Games Only: no other tab */
+    if (a->settings.ps3_only || a->settings.all_flow) return;   /* 1.1 / 1.2: no other tab */
     if (nt < 0 || nt >= PLAT_COUNT) return;     /* tabs stop at PS1 and PS3, no wrap */
     a->tab_prev = a->tab;
     a->tab = nt;
@@ -1418,7 +1485,7 @@ static void flow_input(App *a)
 static void animate(App *a, float dt)
 {
     int t;
-    for (t = 0; t < PLAT_COUNT; t++) {
+    for (t = 0; t < TAB_COUNT; t++) {
         TabView *v = &a->view[t];
         /* a critically damped spring trails a steady scroll by 2 * rate / omega */
         float rate = (a->time - v->step_t < FLOW_STEP_WINDOW) ? v->step_rate : 0.0f;
@@ -1465,7 +1532,8 @@ static void animate(App *a, float dt)
     }
     {
         int pt;
-        for (pt = 0; pt < PLAT_COUNT; pt++) cc_set_side(&a->covers, pt, a->view[pt].sel, a->lib->tab[pt].count);
+        for (pt = 0; pt < TAB_COUNT; pt++)        /* 1.2: All Consoles keeps no other tab's covers, and isn't kept */
+            cc_set_side(&a->covers, pt, a->view[pt].sel, (a->tab == TAB_ALL || pt == TAB_ALL) ? 0 : a->lib->tab[pt].count);
     }
     cc_update(&a->covers, a->tab, a->view[a->tab].sel, a->lib->tab[a->tab].count);
 }

@@ -37,7 +37,17 @@ typedef struct {
 /* List a directory. Return entry count (<= max), or -1 if it can't be opened. */
 typedef int (*FsListFn)(void *ctx, const char *dir, FsEntry *out, int max);
 
-enum { SRC_HDD_ISO_DIR = 0, SRC_HDD_GAME_FOLDERS = 1, SRC_NTFS_INDEX = 2 };
+enum { SRC_HDD_ISO_DIR = 0, SRC_HDD_GAME_FOLDERS = 1, SRC_NTFS_INDEX = 2,
+       SRC_HDD_INSTALLED = 3 /* 1.2: /dev_hdd0/game: games installed from PKGs (PARAM.SFO decides the console) */ };
+#define INSTALLED_DIR    "/dev_hdd0/game"
+#define SELF_TITLE_ID    "SPKF00001"     /* spookyflow itself (sfo.xml): never listed as a game */
+
+/* 1.2: an installed game's PARAM.SFO: its console (PLAT_*) from CATEGORY
+ * (HG = PS3, 1P = PS1 Classic, 2P = PS2 Classic), or -1 for anything that
+ * isn't a game to list (game data and updates, apps, PSP minis...,
+ * homebrew: a title ID that isn't 4 letters + 5 digits, spookyflow itself,
+ * B... IDs from 80000 up, which homebrew uses). title / id are filled. */
+int scanner_installed_kind(const unsigned char *sfo, size_t len, char *title, size_t tcap, char *id, size_t icap);
 
 #define NTFS_INDEX_DIR   "/dev_hdd0/tmp/wmtmp"
 #define NTFS_SECTOR      512u
@@ -57,6 +67,7 @@ typedef struct {
     int qn, qi;
     int found[PLAT_COUNT];
     int found_ntfs;                  /* of found[], games from NTFS drives */
+    int found_pkg;                   /* 1.2: of found[], games installed from PKGs */
     ReadAtFn rd;                     /* optional: read files (NTFS sizes and title IDs) */
     void *rd_ctx;
     int dirs_listed, errors, skipped_long;

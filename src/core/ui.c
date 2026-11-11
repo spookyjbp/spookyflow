@@ -369,7 +369,6 @@ void ui_set_background_image(int tex) { g_bg_tex = tex; }
 /* 0.8.5: small blurred copies of the Stage and of the picture, shown under
  * the settings and About cards so what's behind them isn't readable */
 static int g_stage_blur = -1, g_bg_blur = -1, g_stage_blur_prev = -1;   /* prev: fading out (0.9.5) */
-static uint32_t g_tex_avg[TEX_COUNT_FIXED];   /* 0.9.8: a blurred copy's average colour (a picture's light on the cases) */
 static int g_bgfade_from = -1;   /* 0.9.5: the background fading out (ui_draw), for the cards' frost */
 static float g_bgfade_f = 1.0f;
 void ui_set_background_blur(int tex) { g_bg_blur = tex; }
@@ -404,12 +403,6 @@ int ui_make_blur(const unsigned char *rgba, int w, int h, int tex)
         unsigned int n = cnt[bx] ? cnt[bx] : 1;
         for (c = 0; c < 3; c++) out[bx * 4 + c] = (unsigned char)(acc[bx * 4 + c] / n > 255 ? 255 : acc[bx * 4 + c] / n);
         out[bx * 4 + 3] = 255;
-    }
-    if (tex >= 0 && tex < TEX_COUNT_FIXED) {
-        unsigned long sum[3] = { 0, 0, 0 };
-        for (bx = 0; bx < BLUR_W * BLUR_H; bx++) for (c = 0; c < 3; c++) sum[c] += out[bx * 4 + c];
-        g_tex_avg[tex] = sf_rgba((int)(sum[0] / (BLUR_W * BLUR_H)), (int)(sum[1] / (BLUR_W * BLUR_H)),
-                                 (int)(sum[2] / (BLUR_W * BLUR_H)), 255);
     }
     /* two soft 3x3 passes; bilinear upscaling does the rest */
     for (pass = 0; pass < 2; pass++) {
@@ -1059,17 +1052,14 @@ typedef struct { float x, y, w, h; } Rect;
 
 static uint32_t shade(uint32_t c, float b, float al) { return sf_col_alpha(sf_col_dim(c, b), al); }
 
-/* ---- 0.9.8: Case Lighting --------------------------------------------
- * The background's light falls on the cases: they take on its colour, a
- * little at the top and more towards the floor, where the light pools
- * (Stage: its lights' colour; a picture: its average colour; the drawn
- * backgrounds: their UI-coloured glow). It's a tint of what's drawn anyway,
- * no extra pixels. And the selected case gets a shine: a soft band of light
- * sweeps across its plastic once when you stop on it, then a faint shine
- * stays. Off / Soft / Full, eased when it's changed; the light changes
- * with the background's crossfade. */
+/* ---- 0.9.8: Case Lighting (1.2: the shine only) -----------------------
+ * The selected case gets a shine: a soft band of light sweeps across its
+ * plastic once when you stop on it, then a faint shine stays. Off / Soft /
+ * Full, eased when it's changed. (0.9.8 to 1.1 also tinted every case with
+ * the background's light colour; 1.2 takes that out.) The cases' colour
+ * multipliers stay white; draw_cover still takes them. */
 #define SHINE_TIME   0.85f      /* s: the sweep across the case */
-static uint32_t g_light_top = 0xFFFFFFFFu, g_light_bot = 0xFFFFFFFFu;   /* multiply the cases' colour */
+static const uint32_t g_light_top = 0xFFFFFFFFu, g_light_bot = 0xFFFFFFFFu;
 static float g_light_k;                 /* 0 Off .. 1 Full, eased */
 static float g_shine_p = 10.0f;         /* the sweep: < 0 waiting, 0..1 crossing, > 1 done */
 static double g_light_time = -1.0;
@@ -1082,59 +1072,15 @@ static uint32_t col_mul(uint32_t a, uint32_t b)
     return sf_rgba(r, g, bl, (int)(a & 255));
 }
 
-/* how strongly each background lights the cases */
-static float bg_light_k(int bg)
-{
-    switch (bg) {
-    case BG_STAGE: return 1.0f;
-    case BG_HALO: return 0.90f;
-    case BG_RIBBONS: case BG_AURORA: return 0.85f;
-    case BG_CUSTOM: return 0.80f;
-    case BG_ANIMATED: return 0.70f;
-    default: return 0.60f;           /* Fireflies, Twilight: dim scenes */
-    }
-}
-
-static uint32_t bg_light_col(int bg)
-{
-    uint32_t c;
-    int r, g, b, m;
-    if (bg == BG_STAGE) c = stage_tint();
-    else if (bg == BG_CUSTOM) c = (g_bg_blur >= 0 && g_tex_avg[g_bg_blur]) ? g_tex_avg[g_bg_blur] : 0xFFFFFFFFu;
-    else c = bg_tint();
-    /* a light's colour, full brightness: tinting must not just darken */
-    r = (int)((c >> 24) & 255); g = (int)((c >> 16) & 255); b = (int)((c >> 8) & 255);
-    m = r > g ? (r > b ? r : b) : (g > b ? g : b);
-    if (m < 8) return 0xFFFFFFFFu;
-    c = sf_rgba(r * 255 / m, g * 255 / m, b * 255 / m, 255);
-    return sf_col_mix(c, 0xFFFFFFFFu, 0.25f);   /* never a pure, saturated colour */
-}
-
-static void bg_light(int bg, float k, uint32_t *top, uint32_t *bot)
-{
-    uint32_t L = bg_light_col(bg);
-    float kk = 0.34f * k * bg_light_k(bg);
-    *top = sf_col_mix(0xFFFFFFFFu, L, kk * 0.50f);
-    *bot = sf_col_mix(0xFFFFFFFFu, L, kk);
-}
-
 static void case_light_update(const App *a)
 {
     float target = a->settings.case_light == CASE_LIGHT_FULL ? 1.0f : a->settings.case_light == CASE_LIGHT_SOFT ? 0.6f : 0.0f;
     float dt = g_light_time < 0.0 ? 1.0f : (float)(a->time - g_light_time);
-    uint32_t t1, b1;
     if (dt < 0.0f || dt > 0.5f) dt = 0.5f;
     g_light_time = a->time;
     if (a->mode == MODE_LOADING) g_light_k = target;
     else g_light_k += (target - g_light_k) * sf_minf(1.0f, dt * 6.0f);
     if (sf_absf(target - g_light_k) < 0.002f) g_light_k = target;
-    if (g_light_k <= 0.0f) { g_light_top = g_light_bot = 0xFFFFFFFFu; return; }
-    bg_light(a->settings.background, g_light_k, &g_light_top, &g_light_bot);
-    if (g_bgfade_from >= 0 && g_bgfade_f < 1.0f) {
-        bg_light(g_bgfade_from, g_light_k, &t1, &b1);
-        g_light_top = sf_col_mix(t1, g_light_top, g_bgfade_f);
-        g_light_bot = sf_col_mix(b1, g_light_bot, g_bgfade_f);
-    }
 }
 
 typedef struct { float x, y, s; } ShPt;
@@ -1421,7 +1367,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
                 } else if (a->host.covers && !(gl->games[idx].flags & GAME_DEMO)) {
                     no_cover = 0;     /* not queued yet: also on its way */
                 }
-                draw_cover(a, tab, &gl->games[idx], &p, alpha * ra, tex, art, no_cover,
+                draw_cover(a, app_game_plat(tab, &gl->games[idx]), &gl->games[idx], &p, alpha * ra, tex, art, no_cover,
                            sf_clampf(1.0f - sf_absf((float)idx - scroll) * 2.0f, 0.0f, 1.0f));
             }
         }
@@ -1510,7 +1456,7 @@ float ui_title_fit(const char *title, float maxw, float em, float *em_out, int *
 static float g_info_dx;
 #define INFO_CX (W() * 0.5f + g_info_dx)
 
-static int chip_texts(const App *a, int tab, int idx, char out[4][32])
+static int chip_texts(const App *a, int tab, int idx, char out[6][32])
 {
     const GameList *gl = &a->lib->tab[tab];
     const Game *g;
@@ -1518,6 +1464,12 @@ static int chip_texts(const App *a, int tab, int idx, char out[4][32])
     if (idx < 0 || idx >= gl->count) return 0;
     g = &gl->games[idx];
     snprintf(out[n++], 32, "%d of %d", idx + 1, gl->count);      /* position in this tab */
+    if (tab == TAB_ALL) sf_strlcpy(out[n++], k_plat_short[app_game_plat(tab, g)], 32);   /* 1.2: whose game it is */
+    if (!(g->flags & GAME_DEMO)) {                                 /* 1.2: what kind of copy it is */
+        const char *p = lib_path(a->lib, g);
+        sf_strlcpy(out[n++], (g->flags & GAME_PKG) ? "PKG" : (g->flags & GAME_DIR) ? "Folder" :
+                             strstr(p, ".ntfs[") ? "ISO (NTFS)" : "ISO", 32);
+    }
     /* 1.0: no release year for now (0.9.9's table had wrong and missing years) */
     if (g->flags & GAME_HIDDEN) sf_strlcpy(out[n++], "Hidden", 32);   /* 1.1: shown by Show Hidden Games */
     if (g->pmax > 0) {
@@ -1530,8 +1482,8 @@ static int chip_texts(const App *a, int tab, int idx, char out[4][32])
 
 static void draw_chips(const App *a, int tab, int idx, float alpha, const UiMetrics *m)
 {
-    char txt[4][32];
-    float w[4], total = 0.0f, x;
+    char txt[6][32];
+    float w[6], total = 0.0f, x;
     int n = chip_texts(a, tab, idx, txt), i;
     if (n == 0 || alpha <= 0.0f) return;
     for (i = 0; i < n; i++) {
@@ -1590,9 +1542,9 @@ void ui_set_info_style(int s) { g_info_style = s; }
 #define MIDDOT "  \xC2\xB7  "
 
 /* "Racing · 1-2 players · 7.6 GB · 25 of 73" pieces (count last) */
-static int info_pieces(const App *a, int tab, int idx, char out[4][32])
+static int info_pieces(const App *a, int tab, int idx, char out[6][32])
 {
-    char t[4][32];
+    char t[6][32];
     int n = chip_texts(a, tab, idx, t), i;
     if (n <= 0) return 0;
     for (i = 1; i < n; i++) sf_strlcpy(out[i - 1], t[i], 32);
@@ -1603,7 +1555,7 @@ static int info_pieces(const App *a, int tab, int idx, char out[4][32])
 /* one centered line; separators (and the count) in the UI color when accent_seps */
 static float info_line(const App *a, int tab, int idx, float y, float em, float alpha, int accent_seps, int dry)
 {
-    char p[4][32];
+    char p[6][32];
     int n = info_pieces(a, tab, idx, p), i;
     float sw = d_text_width(&g_font_main, em, MIDDOT), w = 0.0f, x;
     uint32_t sep = accent_seps ? glow(accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu) : TH_TEXT_FAINT;
@@ -2230,8 +2182,8 @@ static void draw_panel(App *a)
     int page_key = a->panel * 64 + a->flow_group + 1, snap;
     if (a->panel_anim <= 0.0f) return;
     if (per_game) {
-        if (a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_plat].count) return;
-        game = &a->lib->tab[a->panel_plat].games[a->panel_game];
+        if (a->panel_game < 0 || a->panel_game >= a->lib->tab[a->panel_tab].count) return;
+        game = &a->lib->tab[a->panel_tab].games[a->panel_game];
     }
     if (a->panel == PANEL_FLOW && a->flow_group >= 0) {
         sf_strlcpy(gtitle, menu_label((RowKind)a->flow_group), sizeof(gtitle));
@@ -2380,6 +2332,8 @@ static void draw_panel(App *a)
             d_rrect(tx, cy - th2 * 0.5f, tw * v, th2, th2 * 0.5f, sf_col_alpha(hot, fa));
             d_disc(tx + tw * v, cy, 0.0125f * H(), sf_col_alpha(0xFAFAFCFFu, fa));
             draw_value(tx - d_xu(g.em * 0.6f), cy, g.em, val, sel, 0, fa);
+        } else if (k == ROW_G_PS2CFG && (!a->ps2cfg_ok || a->ps2cfg_avail == 1u)) {
+            draw_value(xr - slot, cy, g.em, val, 0, 0, fa * 0.6f);       /* 1.2: nothing to pick: no arrows */
         } else if (val[0]) {
             draw_value((sel || menu_is_action(k)) ? xr : xr - slot, cy, g.em, val, sel, sel && !menu_is_action(k), fa);
         }
@@ -2397,7 +2351,7 @@ static void draw_panel(App *a)
 /* ---- About spookyflow (0.8.2): a centered card over Flow Settings ---- */
 static const char *const k_about_features[] = {
     "Your PS1, PS2 and PS3 games in one cover flow, with their covers and cases",
-    "PS1, PS2 and PS3 games on the internal drive",
+    "PS1, PS2 and PS3 games on the internal drive, ISOs and installed PKGs",
     "PS1 and PS3 games on FAT32 USB drives, PS1 and PS3 ISOs on NTFS / exFAT",
     "Launched through webMAN MOD, with Auto-Play, emulator, offline and PS2 config options",
     "Download Missing Covers, multi-disc games, display mode and the A\xE2\x80\x93Z jump",
@@ -2972,7 +2926,7 @@ static void draw_flow_ui(App *a, const UiMetrics *mm, float intro, float ia)
     {   /* 0.8.1: display mode dims the console tabs like the other cases; Game Settings hides them */
         static float s_tk = -1.0f;       /* 1.1: PS3 Games Only: the tabs fade out (and back) */
         static double s_tt = -1.0;
-        float target = a->settings.ps3_only ? 0.0f : 1.0f, dtk = s_tt < 0.0 ? 1.0f : (float)(a->time - s_tt);
+        float target = (a->settings.ps3_only || a->settings.all_flow) ? 0.0f : 1.0f, dtk = s_tt < 0.0 ? 1.0f : (float)(a->time - s_tt);
         float ta;
         if (s_tk < 0.0f || dtk < 0.0f || a->intro < 1.0f) s_tk = target;
         else s_tk += (target - s_tk) * sf_minf(1.0f, sf_minf(dtk, 0.1f) * 5.0f);
