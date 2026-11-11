@@ -1200,7 +1200,7 @@ static void reflect_rect(float x, float y, float w, float h, float A, float dept
 /* no_cover: the game has no cover (title card); otherwise an empty dark
  * front is shown until the cover (tex, faded in by art) arrives */
 /* 1.2: All Consoles: each case keeps its own console's shape and size (as on
- * its own tab), on a row spaced for the widest case (PS1's) so none overlap */
+ * its own tab), at their real sizes next to each other (layout_case_scale) */
 static int sel_plat(const App *a, int tab)
 {
     const Game *g;
@@ -2578,7 +2578,10 @@ static void draw_download(const App *a)
             d_rrect(bx, yy - bh * 0.5f, sf_maxf(bw * shown, bh), bh, rr, sf_col_alpha(glow(accent_or(0xFFFFFFFFu, 1.0f)), al));
     }
     yy += 0.058f * H() * sc;
-    snprintf(line, sizeof(line), "Added %d  \xC2\xB7  Not found %d  \xC2\xB7  Already had one %d", a->dl_got, a->dl_missing, a->dl_have);
+    if (a->dl_replaced > 0)   /* 1.2 */
+        snprintf(line, sizeof(line), "Added %d (%d replaced)  \xC2\xB7  Not found %d  \xC2\xB7  Already had one %d", a->dl_got, a->dl_replaced, a->dl_missing, a->dl_have);
+    else
+        snprintf(line, sizeof(line), "Added %d  \xC2\xB7  Not found %d  \xC2\xB7  Already had one %d", a->dl_got, a->dl_missing, a->dl_have);
     d_text_fit(&g_font_main, cx, yy, 0.023f * H() * sc, sf_col_alpha(TH_TEXT_DIM, al), line, ALIGN_CENTER, iw);
     yy += 0.040f * H() * sc;
     if (busy) sf_strlcpy(line, "You can close this: it carries on, covers appear as they arrive", sizeof(line));
@@ -3090,6 +3093,15 @@ void ui_draw(App *a)
         if (to != k_to) { k_from = layout_floor_k(); k_to = to; k_t0 = a->time; }
         f = clamp01((float)((a->time - k_t0) / BG_FADE_TIME));
         layout_set_floor_k(sf_lerp(k_from, k_to, ease_in_out(f)));
+    }
+    {   /* 1.2: All in One Flow: the cases at their real sizes; they grow / shrink into it */
+        static float r_from = -1.0f, r_to = -1.0f;
+        static double r_t0 = -100.0;
+        float to = a->tab == TAB_ALL ? 1.0f : 0.0f, f;
+        if (r_to < 0.0f || a->mode == MODE_LOADING) { r_from = r_to = to; r_t0 = -100.0; }
+        if (to != r_to) { r_from = layout_relative_k(); r_to = to; r_t0 = a->time; }
+        f = clamp01((float)((a->time - r_t0) / 0.45f));
+        layout_set_relative_k(sf_lerp(r_from, r_to, ease_in_out(f)));
     }
     layout_ui(d_screen(), &m);
     g_intro_shapes = g_intro_parts = 1.0f;

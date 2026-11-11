@@ -509,6 +509,21 @@ Next: release years.
       is gone. It's an On / Off switch like the other Appearance settings
       (On by default, a shine between the old Soft and Full; a saved Soft or
       Full reads as On).
+    - **Real case sizes in All in One Flow**: the cases are sized like the
+      real ones next to each other (heights: PS1 jewel case 125 mm, PS3 case
+      171 mm, PS2 DVD case 190 mm), so a PS1 case is about two thirds of a
+      PS2 one and a PS3 case 90 %. PS2 cases keep their usual size; every
+      case still stands on the same floor line. Separate Tabs keeps each
+      console's own size; switching grows / shrinks them into place.
+    - **multiMAN's retro covers replaced**: some of the small (192x276)
+      PS1 / PS2 covers in multiMAN's `covers_retro/psx` packs are tinted.
+      Download Missing Covers now also looks up games whose only cover is
+      one of those, and a downloaded cover comes before them in the lookup
+      (right after a cover next to the game and webMAN's). The cover made
+      from the pack is dropped so it's rebuilt; a game not found online
+      keeps its multiMAN cover. The card says "Added N (M replaced)"; the
+      log `covers: download done: N added (M of them replacing multiMAN's
+      small retro covers), ...`.
     Check: a few installed games (PS3, and a PS1 / PS2 Classic if you have
     one) on their tabs with "PKG", and launching them; Consoles > All in One
     Flow and back; a PS2 game's Game Settings with no configs.

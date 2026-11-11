@@ -323,11 +323,11 @@ static void test_cover_lookup(void)
     CHECK(n >= 10);
     CHECK_STR(c[0].base, "/dev_hdd0/PS2ISO/Game [SLUS-20914]");                 /* next to the game first */
     CHECK_STR(c[1].base, "/dev_hdd0/tmp/wmtmp/Game [SLUS-20914]");
-    CHECK_STR(c[2].base, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SLUS_209.14_COV");
+    CHECK_STR(c[2].base, COVER_DL_DIR "/SLUS20914");                           /* 1.2: downloaded before the packs */
+    CHECK_STR(c[3].base, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SLUS_209.14_COV");
     CHECK(cand_has(c, n, "/dev_hdd0/game/BLES80608/USRDIR/covers/SLUS20914") > 2);
     CHECK(cand_has(c, n, "/dev_hdd0/tmp/wmtmp/covers/SLUS20914") > 2);
-    CHECK_STR(c[n - 2].base, "/dev_hdd0/PS2ISO/SLUS20914");                    /* game folder, */
-    CHECK_STR(c[n - 1].base, COVER_DL_DIR "/SLUS20914");                       /* 0.9.2: then downloaded */
+    CHECK_STR(c[n - 1].base, "/dev_hdd0/PS2ISO/SLUS20914");                    /* game folder last */
     /* split images and decrypted PS3 ISOs lose every extension */
     n = cover_candidates(PLAT_PS3, "/dev_hdd0/PS3ISO/Game.dec.iso", 0, "", NULL, c, COVER_MAX_CANDS);
     CHECK(n == 2);
@@ -347,9 +347,9 @@ static void test_cover_lookup(void)
     n = cover_candidates(PLAT_PS1, "/dev_hdd0/PSXISO/Crash.cue", 0, "SCUS94426", ok, c, COVER_MAX_CANDS);
     CHECK(n == 4);
     CHECK_STR(c[0].base, "/dev_hdd0/PSXISO/Crash");
-    CHECK_STR(c[1].base, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SCUS_944.26_COV");
-    CHECK_STR(c[2].base, "/dev_hdd0/PSXISO/SCUS94426");
-    CHECK_STR(c[3].base, COVER_DL_DIR "/SCUS94426");                           /* downloaded: always looked at */
+    CHECK_STR(c[1].base, COVER_DL_DIR "/SCUS94426");                           /* downloaded: always looked at */
+    CHECK_STR(c[2].base, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SCUS_944.26_COV");
+    CHECK_STR(c[3].base, "/dev_hdd0/PSXISO/SCUS94426");
     CHECK(cover_candidates(PLAT_PS1, "", 0, "X", NULL, c, COVER_MAX_CANDS) == 0);
     for (i = 0; i < cover_folder_count(); i++) CHECK(strstr(cover_folder(i), "MANAGUNZ") == NULL);   /* fix 6 */
     CHECK(cover_candidates(PLAT_PS2, "/a/b.iso", 0, "SLUS20914", NULL, c, 2) == 2);   /* respects max */

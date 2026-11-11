@@ -153,6 +153,7 @@ typedef struct {
     int   dl_applied;       /* its results already shown */
     int   dl_ran;           /* a download ran since start-up (the card shows its result) */
     int   dl_got, dl_missing, dl_have, dl_noid, dl_error, dl_total, dl_tls;
+    int   dl_replaced;   /* 1.2: of dl_got, replacing multiMAN's small retro covers */
     char  dl_note[96];
     volatile int scan_busy; /* worker still scanning (main thread must not touch lib) */
     float intro;            /* 0..1 flow fade-in after loading */

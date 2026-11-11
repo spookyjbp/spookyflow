@@ -37,6 +37,8 @@ typedef struct {
 float layout_case_aspect(int plat);
 /* Height scale of the platform's case relative to the base fractions. */
 float layout_case_scale(int plat);
+void  layout_set_relative_k(float k);   /* 1.2: All in One Flow: cases at their real sizes (0..1) */
+float layout_relative_k(void);
 /* Position of the item at distance d (= index - scroll) from the center. */
 void  layout_cover(const Screen *s, int plat, float d, CoverPos *out);
 

@@ -130,6 +130,9 @@ int cover_candidates(int plat, const char *game_path, int is_dir, const char *id
     }
     if (OK(F_WMTMP)) n = add(out, n, max, WMTMP "/", name, NULL);     /* 2. webMAN temp */
     if (id && id[0] && !strstr(game_path, ".ntfs[")) {
+        /* 1.2: downloaded covers before the packs: Download Missing Covers
+         * also replaces multiMAN's small (192x276, some tinted) retro covers */
+        n = add(out, n, max, COVER_DL_DIR, "/", id);
         if (plat == PLAT_PS1 || plat == PLAT_PS2) {                   /* 3. retro packs */
             char rid[24];
             snprintf(rid, sizeof(rid), "%.4s_%.3s.%.2s_COV", id, id + 4, id + 7);
@@ -139,8 +142,7 @@ int cover_candidates(int plat, const char *game_path, int is_dir, const char *id
         for (i = F_COV_STD; i <= F_WMTMP_COV; i++)                    /* 4.-5. by ID */
             if (OK(i)) n = add(out, n, max, k_folders[i], "/", id);
         if (!is_dir && folder[0]) n = add(out, n, max, folder, "/", id);   /* 6. game folder */
-        n = add(out, n, max, COVER_DL_DIR, "/", id);                   /* 7. downloaded (always looked at: */
-    }                                                                   /*    it may appear after the probe) */
+    }
 #undef OK
     return n;
 }
@@ -654,6 +656,36 @@ int cover_dl_urls(int plat, const char *id, char out[][COVER_URL_MAX], int max)
     return n;
 }
 
+/* 1.2: is a candidate one of multiMAN's retro packs (covers_retro/psx)? */
+static int is_retro_pack(const char *base)
+{
+    return strstr(base, "/covers_retro/psx/") != NULL;
+}
+
+int cover_art_kind(const CoverIO *io, int plat, const char *path, int is_dir, uint64_t size, const char *id)
+{
+    char f[COVER_PATH_MAX + 16];
+    CoverCand *cand;
+    int nc, c, e, kind = COVER_ART_NONE;
+    if (!io || !io->is_file) return COVER_ART_NONE;
+    cand = (CoverCand *)malloc(sizeof(CoverCand) * COVER_MAX_CANDS);
+    if (!cand) return COVER_ART_GOOD;                 /* can't tell: leave it alone */
+    nc = cover_candidates(plat, path, is_dir, id, NULL, cand, COVER_MAX_CANDS);
+    for (c = 0; c < nc && kind != COVER_ART_GOOD; c++)
+        for (e = 0; e < SF_ARRAY_LEN(k_exts); e++) {
+            snprintf(f, sizeof(f), "%s%s", cand[c].base, k_exts[e]);
+            if (io->is_file(io->ctx, f)) { kind = is_retro_pack(cand[c].base) ? COVER_ART_PACK : COVER_ART_GOOD; break; }
+        }
+    free(cand);
+    if (kind == COVER_ART_NONE && io->cache_dir) {    /* a cover made earlier from a file that's gone (0.9.3) */
+        char stem[COVER_PATH_MAX];
+        cover_cache_stem(io->cache_dir, plat, path, size, stem, sizeof(stem));
+        snprintf(f, sizeof(f), "%s.cvr", stem);
+        if (io->is_file(io->ctx, f)) kind = COVER_ART_GOOD;
+    }
+    return kind;
+}
+
 int cover_has_art(const CoverIO *io, int plat, const char *path, int is_dir, uint64_t size, const char *id)
 {
     char f[COVER_PATH_MAX + 16];
@@ -705,7 +737,11 @@ void cover_dl_run(CoverDl *d)
         int nu, u, got = 0, neterr = 0, offline = 1;   /* offline: every attempt failed to find its server */
         if (!it->id[0]) discid_read(it->plat, it->path, it->is_dir, io->read_at, io->ctx, it->id, sizeof(it->id));
         if (!id_ok(it->id)) { it->state = DL_NOID; d->n_noid++; goto next; }
-        if (cover_has_art(io, it->plat, it->path, it->is_dir, it->size, it->id)) { it->state = DL_HAVE; d->n_have++; goto next; }
+        {   /* 1.2: a cover only from multiMAN's retro packs is looked for online too */
+            int kind = cover_art_kind(io, it->plat, it->path, it->is_dir, it->size, it->id);
+            if (kind == COVER_ART_GOOD) { it->state = DL_HAVE; d->n_have++; goto next; }
+            it->replacing = kind == COVER_ART_PACK;
+        }
         nu = cover_dl_urls(it->plat, it->id, urls, COVER_DL_URLS);
         for (u = 0; u < nu && !got && !d->cancel; u++) {
             char url[COVER_URL_MAX], loc[COVER_URL_MAX];
@@ -739,13 +775,19 @@ void cover_dl_run(CoverDl *d)
             }
         }
         if (got) {
-            it->state = DL_GOT; d->n_got++; streak = 0;
+            d->n_got++; streak = 0;
+            if (it->replacing) d->n_replaced++;
             if (io->cache_dir && io->remove) {             /* forget "this game has no cover" */
                 char stem[COVER_PATH_MAX], f[COVER_PATH_MAX + 8];
                 cover_cache_stem(io->cache_dir, it->plat, it->path, it->size, stem, sizeof(stem));
                 snprintf(f, sizeof(f), "%s.none", stem);
                 io->remove(io->ctx, f);
+                if (it->replacing) {                       /* 1.2: and the cover made from the pack */
+                    snprintf(f, sizeof(f), "%s.cvr", stem);
+                    io->remove(io->ctx, f);
+                }
             }
+            it->state = DL_GOT;                            /* after the old cover is gone */
         } else if (neterr) {
             it->state = DL_ERROR; d->n_error++;
             /* 0.9.3: give up early only when nothing can be reached at all (no
@@ -758,6 +800,8 @@ void cover_dl_run(CoverDl *d)
                 d->pos = i;
                 break;
             }
+        } else if (it->replacing) {
+            it->state = DL_HAVE; d->n_have++; streak = 0;  /* 1.2: keeps its pack cover */
         } else {
             it->state = DL_MISSING; d->n_missing++; streak = 0;
         }
@@ -774,8 +818,8 @@ void cover_dl_run(CoverDl *d)
             snprintf(f, sizeof(f), "%s.none", stem);
             io->remove(io->ctx, f);
         }
-    log_printf("covers: download done: %d added, %d not found online, %d already had one, %d with no title ID, %d failed%s%s",
-               d->n_got, d->n_missing, d->n_have, d->n_noid, d->n_error, d->tls_needed ? " (some sources need HTTPS)" : "",
+    log_printf("covers: download done: %d added (%d of them replacing multiMAN's small retro covers), %d not found online, %d already had one, %d with no title ID, %d failed%s%s",
+               d->n_got, d->n_replaced, d->n_missing, d->n_have, d->n_noid, d->n_error, d->tls_needed ? " (some sources need HTTPS)" : "",
                d->cancel ? " (stopped)" : "");
     free(buf); free(urls);
     __sync_synchronize();

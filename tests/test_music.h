@@ -2354,6 +2354,44 @@ static void test_092(void)
         cover_dl_run(&d);
         CHECK(it3[0].state == DL_GOT && g_http_calls == 1 && ff_is_file(NULL, COVER_DL_DIR "/SCUS94426.jpg"));
     }
+    /* 1.2: a game whose only cover is one of multiMAN's small retro-pack ones
+     * (some tinted) is looked up too; the download replaces it */
+    {
+        static CoverDlItem it4[3];
+        char cvr[COVER_PATH_MAX + 8];
+        memset(it4, 0, sizeof(it4));
+        it4[0].plat = PLAT_PS2; sf_strlcpy(it4[0].path, "/dev_hdd0/PS2ISO/D.iso", COVER_PATH_MAX); sf_strlcpy(it4[0].id, "SLES50001", 16);
+        it4[1].plat = PLAT_PS2; sf_strlcpy(it4[1].path, "/dev_hdd0/PS2ISO/C.iso", COVER_PATH_MAX); sf_strlcpy(it4[1].id, "SLUS20914", 16);
+        it4[2].plat = PLAT_PS2; sf_strlcpy(it4[2].path, "/dev_hdd0/PS2ISO/H.iso", COVER_PATH_MAX); sf_strlcpy(it4[2].id, "SLES50001", 16);
+        g_ff_n = 0; g_http_calls = 0;
+        ff_write(NULL, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SLES_500.01_COV.JPG", "x", 1, "", 0);
+        ff_write(NULL, "/dev_hdd0/game/BLES80608/USRDIR/covers_retro/psx/SLUS_209.14_COV.JPG", "x", 1, "", 0);
+        ff_write(NULL, "/dev_hdd0/PS2ISO/H.png", "x", 1, "", 0);                       /* H has its own cover */
+        cover_cache_stem("/cache", PLAT_PS2, it4[0].path, 0, stem, sizeof(stem));
+        snprintf(cvr, sizeof(cvr), "%s.cvr", stem);
+        ff_write(NULL, cvr, "x", 1, "", 0);                                            /* made from the pack */
+        CHECK(cover_art_kind(&io, PLAT_PS2, it4[0].path, 0, 0, it4[0].id) == COVER_ART_PACK);
+        CHECK(cover_art_kind(&io, PLAT_PS2, it4[2].path, 0, 0, it4[2].id) == COVER_ART_GOOD);
+        CHECK(cover_art_kind(&io, PLAT_PS2, "/dev_hdd0/PS2ISO/Z.iso", 0, 0, "SLUS20000") == COVER_ART_NONE);
+        memset(&d, 0, sizeof(d));
+        d.item = it4; d.n = 3; d.io = &io; d.http = fake_http;
+        cover_dl_run(&d);
+        CHECK(it4[0].state == DL_GOT && ff_is_file(NULL, COVER_DL_DIR "/SLES50001.png"));
+        CHECK(!ff_is_file(NULL, cvr));                        /* the cover made from the pack is rebuilt */
+        CHECK(it4[1].state == DL_HAVE);                       /* not found online: keeps the multiMAN cover */
+        CHECK(it4[2].state == DL_HAVE);                       /* its own cover: not looked up */
+        CHECK(d.n_got == 1 && d.n_replaced == 1 && d.n_have == 2 && d.n_missing == 0);
+        CHECK(cover_art_kind(&io, PLAT_PS2, it4[0].path, 0, 0, it4[0].id) == COVER_ART_GOOD);
+        {   /* and the download comes before the pack in the lookup */
+            CoverCand c[COVER_MAX_CANDS];
+            int k, nc = cover_candidates(PLAT_PS2, it4[0].path, 0, it4[0].id, NULL, c, COVER_MAX_CANDS), at_dl = -1, at_pack = -1;
+            for (k = 0; k < nc; k++) {
+                if (strcmp(c[k].base, COVER_DL_DIR "/SLES50001") == 0) at_dl = k;
+                if (strstr(c[k].base, "covers_retro/psx/SLES_500.01_COV") && at_pack < 0) at_pack = k;
+            }
+            CHECK(at_dl >= 0 && at_pack > at_dl);
+        }
+    }
     /* 0.9.3: HTTPS failing for several PS1/PS2 games doesn't stop the PS3 ones (plain HTTP) */
     {
         static CoverDlItem it2[5];

@@ -564,6 +564,7 @@ static void download_start(App *a)
     int t, i, n = 0;
     if (a->dl) return;                              /* already running: the card shows it */
     a->dl_ran = 1;
+    a->dl_replaced = 0;
     a->dl_got = a->dl_missing = a->dl_have = a->dl_noid = a->dl_error = a->dl_tls = 0;
     a->dl_note[0] = '\0';
     if (!a->host.http_get || !a->host.covers) {
@@ -619,7 +620,7 @@ static void download_poll(App *a)
                 if (strcmp(lib_path(a->lib, &gl->games[k]), it->path) == 0) { cc_forget(&a->covers, TAB_ALL, k); break; }
         }
     }
-    a->dl_got = d->n_got; a->dl_missing = d->n_missing; a->dl_have = d->n_have; a->dl_noid = d->n_noid;
+    a->dl_got = d->n_got; a->dl_replaced = d->n_replaced; a->dl_missing = d->n_missing; a->dl_have = d->n_have; a->dl_noid = d->n_noid;
     a->dl_error = d->n_error; a->dl_tls = d->tls_needed;
     if (d->finished && a->dl_applied >= d->pos) {
         char msg[96];

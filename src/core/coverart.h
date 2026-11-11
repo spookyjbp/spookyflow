@@ -9,7 +9,8 @@
  *   4. <mm>/covers/<ID>.*, also /dev_hdd0/GAMES/covers, /dev_hdd0/GAMEZ/covers
  *   5. /dev_hdd0/tmp/wmtmp/covers/<ID>.*
  *   6. the game's own folder: <folder>/<ID>.*
- *   7. downloaded (0.9.2, Download Missing Covers): COVER_DL_DIR/<ID>.*
+ *   (1.2: downloaded covers, COVER_DL_DIR/<ID>.*, come right after 2: Download
+ *   Missing Covers also replaces multiMAN's small retro-pack covers of 3)
  *
  * A found cover is fitted to the case's art area (never cropped), resized smoothly to the
  * slot texture size, dithered to 16-bit and saved as a small cache file
@@ -133,6 +134,7 @@ typedef struct {
     char path[COVER_PATH_MAX];
     char id[16];
     volatile int state;          /* DL_* */
+    int replacing;               /* 1.2: only a multiMAN retro-pack cover so far */
 } CoverDlItem;
 
 typedef struct {
@@ -144,6 +146,7 @@ typedef struct {
     volatile int pos;            /* games looked at so far (item[0..pos) are final) */
     volatile int cancel, finished;
     int n_have, n_noid, n_got, n_missing, n_error;
+    int n_replaced;              /* 1.2: of n_got, games whose only cover was a multiMAN retro-pack one */
     int tls_needed;              /* a source answered only over HTTPS */
     char note[96];               /* why it stopped early ("" = it didn't) */
 } CoverDl;
@@ -151,6 +154,11 @@ typedef struct {
 /* The URLs to try for a game, best first. Returns the count. */
 int  cover_dl_urls(int plat, const char *id, char out[][COVER_URL_MAX], int max);
 /* 1 if the game already has a cover (cache or any lookup folder). */
+/* 1.2: what cover a game has: none; only one of multiMAN's retro packs
+ * (covers_retro/psx: small, some tinted), which Download Missing Covers
+ * replaces; or a good one (anything else, or a cover already made). */
+enum { COVER_ART_NONE = 0, COVER_ART_PACK = 1, COVER_ART_GOOD = 2 };
+int  cover_art_kind(const CoverIO *io, int plat, const char *path, int is_dir, uint64_t size, const char *id);
 int  cover_has_art(const CoverIO *io, int plat, const char *path, int is_dir, uint64_t size, const char *id);
 /* Thread body: goes through d->item, sets d->finished at the end. */
 void cover_dl_run(CoverDl *d);

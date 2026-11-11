@@ -58,11 +58,21 @@ float layout_window_aspect(int plat)
     return layout_case_aspect(plat) * (w.x1 - w.x0) / (w.y1 - w.y0);
 }
 
+/* 1.2: All in One Flow shows the cases at their real sizes next to each
+ * other (heights: PS1 jewel case 125 mm, PS2 DVD case 190 mm, PS3 case
+ * 171 mm, so PS2 stays as tall as on its own tab). 0 = each tab's own
+ * size, 1 = real sizes; in between while switching. */
+static float g_rel_k = 0.0f;
+void  layout_set_relative_k(float k) { g_rel_k = sf_clampf(k, 0.0f, 1.0f); }
+float layout_relative_k(void) { return g_rel_k; }
+
 float layout_case_scale(int plat)
 {
     /* A square case at full height is very wide; trim it slightly so more
      * neighbors stay visible (decision noted in README). */
-    return plat == PLAT_PS1 ? 0.88f : 1.0f;
+    float own = plat == PLAT_PS1 ? 0.88f : 1.0f;
+    float real = plat == PLAT_PS1 ? 125.0f / 190.0f : plat == PLAT_PS2 ? 1.0f : 171.0f / 190.0f;
+    return sf_lerp(own, real, g_rel_k);
 }
 
 static int g_floor = 1;
