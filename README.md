@@ -498,8 +498,11 @@ Next: release years.
       on the game you had selected, and going back to Separate Tabs lands
       on that game's console tab. Saved (`all_flow`, `last_key_all`). Each
       case keeps its own console's shape and size there (PS1 square and a
-      little shorter, PS2 tall, PS3 a bit wider), on a row spaced for the
-      widest so they never overlap (they were all stretched to one shape).
+      little shorter, PS2 tall, PS3 a bit wider), standing like games on a
+      shelf: each takes its own width, with the same gaps as on a console's
+      own tab, so the gaps stay even whatever mix of consoles stands
+      together (they were all stretched to one shape, then spaced for the
+      widest).
     - The PS2 Config row of a game without config files says **None found**
       (or **Not available**) and can't be changed: no pop-up any more.
     - Case Lighting is the shine only now: the coloured light on the cases

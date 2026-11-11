@@ -1209,13 +1209,48 @@ static int sel_plat(const App *a, int tab)
     return g ? app_game_plat(tab, g) : PLAT_PS2;
 }
 static int ref_plat(int tab) { return tab >= 0 && tab < PLAT_COUNT ? tab : PLAT_PS2; }   /* heights: the tallest */
-static void tab_cover(const Screen *s, int tab, int plat, float d, CoverPos *p)
+/* 1.2: All Consoles stands its cases like games on a shelf: each takes its
+ * own width, with the same gaps a console's own tab has (selected <-> first
+ * neighbour: LY_GAP_SEL of the neighbour's width; between neighbours:
+ * LY_GAP_NB of their average width), so a PS1 case next to PS2 ones leaves no
+ * hole. shelf_x: where game i stands (from the screen's middle) while game c
+ * is selected. */
+static int shelf_plat(const GameList *gl, int i)
 {
-    CoverPos r;
-    if (tab >= 0 && tab < PLAT_COUNT) { layout_cover(s, tab, d, p); return; }
-    layout_cover(s, PLAT_PS1, d, &r);          /* where it stands */
-    layout_cover(s, plat, d, p);               /* how big it is */
-    p->cx = r.cx;
+    return (i >= 0 && i < gl->count && gl->games[i].plat < PLAT_COUNT) ? gl->games[i].plat : PLAT_PS2;
+}
+static float shelf_w(const Screen *s, int plat, float d)
+{
+    CoverPos q;
+    layout_cover(s, plat, d, &q);
+    return q.w;
+}
+static float shelf_x(const Screen *s, const GameList *gl, int c, int i)
+{
+    int dir = i > c ? 1 : -1, j;
+    float x, wprev;
+    if (i == c) return 0.0f;
+    wprev = shelf_w(s, shelf_plat(gl, c + dir), 1.0f);
+    x = shelf_w(s, shelf_plat(gl, c), 0.0f) * 0.5f + wprev * LY_GAP_SEL + wprev * 0.5f;
+    for (j = c + 2 * dir; dir > 0 ? j <= i : j >= i; j += dir) {
+        float w = shelf_w(s, shelf_plat(gl, j), 2.0f);
+        x += wprev * 0.5f + (wprev + w) * 0.5f * LY_GAP_NB + w * 0.5f;
+        wprev = w;
+    }
+    return (float)dir * x;
+}
+static void tab_cover(const Screen *s, int tab, const GameList *gl, int idx, float scroll, CoverPos *p)
+{
+    int c0, c1;
+    float f;
+    if (tab >= 0 && tab < PLAT_COUNT) { layout_cover(s, tab, (float)idx - scroll, p); return; }
+    layout_cover(s, shelf_plat(gl, idx), (float)idx - scroll, p);     /* its own size and floor line */
+    c0 = (int)floorf(scroll);
+    if (c0 < 0) c0 = 0;
+    if (c0 > gl->count - 1) c0 = gl->count - 1;
+    c1 = c0 + 1 < gl->count ? c0 + 1 : c0;
+    f = sf_clampf(scroll - (float)c0, 0.0f, 1.0f);
+    p->cx = s->W * 0.5f + sf_lerp(shelf_x(s, gl, c0, idx), shelf_x(s, gl, c1, idx), f);   /* slides between the two shelves */
 }
 
 static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art, int no_cover,
@@ -1344,7 +1379,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
             float ra;
             if (idx < 0 || idx >= gl->count) continue;
             int gp = app_game_plat(tab, &gl->games[idx]);
-            tab_cover(s, tab, gp, (float)idx - scroll, &p);
+            tab_cover(s, tab, gl, idx, scroll, &p);
             if (fl > 0.0f) {
                 /* 0.8.5: fast gliding: every case a neighbour's size at an even pitch,
                  * so nothing grows and shrinks through the middle */

@@ -314,6 +314,8 @@ int main(int argc, char **argv)
         render("allflow_flow", 1280, 720);
         for (k = 0; k < 3; k++) { press(SFB_RIGHT); step(0, 0.35f); }
         render("allflow_flow_b", 1280, 720);
+        press(SFB_LEFT);
+        for (k = 0; k < 8; k++) { snprintf(nm, sizeof(nm), "allflow_scroll_%02d", k); render(nm, 640, 360); step(0, 1.0f / 30.0f); }
         press(SFB_START); step(0, 0.6f);
         press(SFB_DOWN); press(SFB_DOWN); press(SFB_CROSS); step(0, 0.5f);
         press(SFB_DOWN); press(SFB_DOWN); press(SFB_LEFT); step(0, 0.2f);
