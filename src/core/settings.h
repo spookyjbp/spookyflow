@@ -40,7 +40,7 @@ typedef struct {
     int cases;               /* draw covers inside case images (ManaGunZ's / your own), default 1 */
     int sleep_min;           /* minutes without input before the screen dims, 0 = never, default 5 */
     int reflections;         /* mirror image of the cases on the floor, default 1 */
-    int case_light;          /* 0.9.8: CASE_LIGHT_*: the background's light on the cases + the shine, default Soft */
+    int case_light;          /* 0.9.8: the selected case's shine; 1.2: a switch, 0 = Off, 1 = On (default; older Soft / Full read as On) */
     int show_info;           /* genre / players / size chips under the case, default 1 */
     int hide_ui;             /* 0.8.7: the cover flow shows only the cases (no tabs, title, bar), default 0 */
     int show_hidden;         /* 1.1: games hidden in Game Settings are shown (marked), default 0 */

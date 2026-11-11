@@ -121,6 +121,7 @@ int menu_toggle(RowKind k, const Settings *s)
     case ROW_F_CASES: return s->cases != 0;
     case ROW_F_REFLECT: return s->reflections != 0;
     case ROW_F_HIDE_UI: return s->hide_ui != 0;
+    case ROW_F_CASE_LIGHT: return s->case_light != 0;
     case ROW_F_SHOW_HIDDEN: return s->show_hidden != 0;
     case ROW_F_PS3_ONLY: return s->ps3_only != 0;
     case ROW_F_IGNORE_THE: return s->ignore_the != 0;
@@ -186,11 +187,7 @@ void menu_value_text(RowKind k, int plat, const Settings *s, const GameCfg *g, c
     case ROW_F_INFO: sf_strlcpy(out, onoff(s->show_info), cap); break;
     case ROW_F_CASES: sf_strlcpy(out, onoff(s->cases), cap); break;
     case ROW_F_REFLECT: sf_strlcpy(out, onoff(s->reflections), cap); break;
-    case ROW_F_CASE_LIGHT: {
-        static const char *const n[CASE_LIGHT_COUNT] = { "Off", "Soft", "Full" };
-        sf_strlcpy(out, n[sf_clampi(s->case_light, 0, CASE_LIGHT_COUNT - 1)], cap);
-        break;
-    }
+    case ROW_F_CASE_LIGHT: sf_strlcpy(out, onoff(s->case_light != 0), cap); break;   /* 1.2: a switch */
     case ROW_F_SLEEP:
         if (s->sleep_min <= 0) sf_strlcpy(out, "Off", cap);
         else snprintf(out, cap, "After %d min", s->sleep_min);
@@ -283,7 +280,7 @@ static int menu_change_raw(RowKind k, int plat, int dir, Settings *s, GameCfg *g
     case ROW_F_INFO: s->show_info = cycle(s->show_info, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_CASES: s->cases = cycle(s->cases, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_REFLECT: s->reflections = cycle(s->reflections, 2, dir); return MENU_FX_CHANGED;
-    case ROW_F_CASE_LIGHT: s->case_light = cycle(s->case_light, CASE_LIGHT_COUNT, dir); return MENU_FX_CHANGED;
+    case ROW_F_CASE_LIGHT: s->case_light = cycle(s->case_light != 0, 2, dir); return MENU_FX_CHANGED;   /* 1.2: On / Off */
     case ROW_F_HIDE_UI: s->hide_ui = cycle(s->hide_ui, 2, dir); return MENU_FX_CHANGED;
     case ROW_G_HIDE: g->hidden = (signed char)cycle(g->hidden, 2, dir); return MENU_FX_CHANGED;
     case ROW_F_SHOW_HIDDEN: s->show_hidden = cycle(s->show_hidden, 2, dir); return MENU_FX_HIDDEN;

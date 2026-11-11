@@ -2525,19 +2525,21 @@ static void test_098(void)
     printf("0.9.8: case lighting\n");
     settings_defaults(&s);
     memset(&g, 0, sizeof(g));
-    CHECK(s.case_light == CASE_LIGHT_SOFT);
+    CHECK(s.case_light == 1);                                   /* 1.2: a switch, On by default */
+    CHECK(menu_toggle(ROW_F_CASE_LIGHT, &s) == 1);
     menu_value_text(ROW_F_CASE_LIGHT, 0, &s, &g, t, sizeof(t));
-    CHECK(strcmp(t, "Soft") == 0);
-    CHECK(menu_change(ROW_F_CASE_LIGHT, 0, 1, &s, &g) == MENU_FX_CHANGED && s.case_light == CASE_LIGHT_FULL);
-    CHECK(menu_change(ROW_F_CASE_LIGHT, 0, 1, &s, &g) == MENU_FX_NONE && s.case_light == CASE_LIGHT_FULL);
-    CHECK(menu_change(ROW_F_CASE_LIGHT, 0, -1, &s, &g) == MENU_FX_CHANGED);
-    CHECK(menu_change(ROW_F_CASE_LIGHT, 0, -1, &s, &g) == MENU_FX_CHANGED && s.case_light == CASE_LIGHT_OFF);
+    CHECK(strcmp(t, "On") == 0);
+    CHECK(menu_change(ROW_F_CASE_LIGHT, 0, 1, &s, &g) == MENU_FX_NONE && s.case_light == 1);
+    CHECK(menu_change(ROW_F_CASE_LIGHT, 0, -1, &s, &g) == MENU_FX_CHANGED && s.case_light == 0);
+    CHECK(menu_toggle(ROW_F_CASE_LIGHT, &s) == 0);
     CHECK(menu_change(ROW_F_CASE_LIGHT, 0, -1, &s, &g) == MENU_FX_NONE);
     CHECK(menu_group_of(ROW_F_CASE_LIGHT) == ROW_FG_LOOK);
-    settings_parse_line(&s, "case_light=2");
-    CHECK(s.case_light == CASE_LIGHT_FULL);
+    settings_parse_line(&s, "case_light=2");                    /* an older Full */
+    CHECK(s.case_light == 1);
+    settings_parse_line(&s, "case_light=0");
+    CHECK(s.case_light == 0);
     settings_parse_line(&s, "case_light=9");
-    CHECK(s.case_light >= 0 && s.case_light < CASE_LIGHT_COUNT);
+    CHECK(s.case_light == 0 || s.case_light == 1);
     {
         FILE *fp;
         Settings s2;

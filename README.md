@@ -496,11 +496,16 @@ Next: release years.
       console's case and launched as its console, the info line saying
       which (PS1 / PS2 / PS3); the tabs fade out and L1 / R1 rest. It opens
       on the game you had selected, and going back to Separate Tabs lands
-      on that game's console tab. Saved (`all_flow`, `last_key_all`).
+      on that game's console tab. Saved (`all_flow`, `last_key_all`). Each
+      case keeps its own console's shape and size there (PS1 square and a
+      little shorter, PS2 tall, PS3 a bit wider), on a row spaced for the
+      widest so they never overlap (they were all stretched to one shape).
     - The PS2 Config row of a game without config files says **None found**
       (or **Not available**) and can't be changed: no pop-up any more.
     - Case Lighting is the shine only now: the coloured light on the cases
-      is gone (Off / Soft / Full still sets the shine).
+      is gone. It's an On / Off switch like the other Appearance settings
+      (On by default, a shine between the old Soft and Full; a saved Soft or
+      Full reads as On).
     Check: a few installed games (PS3, and a PS1 / PS2 Classic if you have
     one) on their tabs with "PKG", and launching them; Consoles > All in One
     Flow and back; a PS2 game's Game Settings with no configs.

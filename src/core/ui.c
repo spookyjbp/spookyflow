@@ -1074,7 +1074,7 @@ static uint32_t col_mul(uint32_t a, uint32_t b)
 
 static void case_light_update(const App *a)
 {
-    float target = a->settings.case_light == CASE_LIGHT_FULL ? 1.0f : a->settings.case_light == CASE_LIGHT_SOFT ? 0.6f : 0.0f;
+    float target = a->settings.case_light ? 0.8f : 0.0f;   /* 1.2: On / Off (between the old Soft and Full) */
     float dt = g_light_time < 0.0 ? 1.0f : (float)(a->time - g_light_time);
     if (dt < 0.0f || dt > 0.5f) dt = 0.5f;
     g_light_time = a->time;
@@ -1199,6 +1199,25 @@ static void reflect_rect(float x, float y, float w, float h, float A, float dept
 
 /* no_cover: the game has no cover (title card); otherwise an empty dark
  * front is shown until the cover (tex, faded in by art) arrives */
+/* 1.2: All Consoles: each case keeps its own console's shape and size (as on
+ * its own tab), on a row spaced for the widest case (PS1's) so none overlap */
+static int sel_plat(const App *a, int tab)
+{
+    const Game *g;
+    if (tab >= 0 && tab < PLAT_COUNT) return tab;
+    g = app_selected_game(a, tab);
+    return g ? app_game_plat(tab, g) : PLAT_PS2;
+}
+static int ref_plat(int tab) { return tab >= 0 && tab < PLAT_COUNT ? tab : PLAT_PS2; }   /* heights: the tallest */
+static void tab_cover(const Screen *s, int tab, int plat, float d, CoverPos *p)
+{
+    CoverPos r;
+    if (tab >= 0 && tab < PLAT_COUNT) { layout_cover(s, tab, d, p); return; }
+    layout_cover(s, PLAT_PS1, d, &r);          /* where it stands */
+    layout_cover(s, plat, d, p);               /* how big it is */
+    p->cx = r.cx;
+}
+
 static void draw_cover(const App *a, int plat, const Game *g, const CoverPos *p, float alpha, int tex, float art, int no_cover,
                        float outline)
 {
@@ -1269,11 +1288,11 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
     CoverPos big;
     {
         CoverPos q1, q2;
-        layout_cover(s, tab, 1.0f, &q1);
-        layout_cover(s, tab, 2.0f, &q2);
+        layout_cover(s, tab < PLAT_COUNT ? tab : PLAT_PS1, 1.0f, &q1);
+        layout_cover(s, tab < PLAT_COUNT ? tab : PLAT_PS1, 2.0f, &q2);
         pitch = q2.cx - q1.cx;           /* the neighbours' spacing */
     }
-    layout_cover(s, tab, 0.0f, &big);
+    layout_cover(s, sel_plat(a, tab), 0.0f, &big);
     {
         float sc = DISPLAY_H / layout_sel_h();
         big.h *= sc; big.w *= sc;
@@ -1303,7 +1322,7 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
         CoverPos c0;
         float frac = sf_absf(scroll - (float)center);
         float la = alpha * (1.0f - sf_minf(1.0f, frac * 2.0f) * 0.6f) * (1.0f - de) * (1.0f - fl) * g_ui_k;
-        layout_cover(s, tab, 0.0f, &c0);
+        layout_cover(s, sel_plat(a, tab), 0.0f, &c0);
         if (la > 0.0f) {
             uint32_t col = accent_or(0xFFFFFFFFu, 1.0f) | 0xFFu, clear = col & 0xFFFFFF00u;
             float lw = c0.w * 1.15f, cx = c0.cx + xoff, ly = c0.cy + c0.h * 0.5f + H() * 0.022f;
@@ -1324,13 +1343,14 @@ static void draw_flow_row(App *a, int tab, float xoff, float alpha)
             CoverPos p;
             float ra;
             if (idx < 0 || idx >= gl->count) continue;
-            layout_cover(s, tab, (float)idx - scroll, &p);
+            int gp = app_game_plat(tab, &gl->games[idx]);
+            tab_cover(s, tab, gp, (float)idx - scroll, &p);
             if (fl > 0.0f) {
                 /* 0.8.5: fast gliding: every case a neighbour's size at an even pitch,
                  * so nothing grows and shrinks through the middle */
                 float dd = (float)idx - scroll, e = ease_in_out(fl);
                 CoverPos q;
-                layout_cover(s, tab, 2.0f, &q);
+                layout_cover(s, tab < PLAT_COUNT ? tab : gp, 2.0f, &q);
                 p.cx = sf_lerp(p.cx, W() * 0.5f + dd * pitch, e);
                 p.cy = sf_lerp(p.cy, q.cy, e);
                 p.h = sf_lerp(p.h, q.h, e);
@@ -1638,10 +1658,10 @@ static void draw_info(App *a, float alpha, const UiMetrics *m0)
      * size (PS1 cases are shorter); glides during a tab switch */
     {
         float ty, cy;
-        layout_info_y(d_screen(), m0, a->tab, &ty, &cy);
+        layout_info_y(d_screen(), m0, ref_plat(a->tab), &ty, &cy);
         if (a->tab_anim < 1.0f && a->tab_prev != a->tab) {
             float ty0, cy0, e = ease_in_out(a->tab_anim);
-            layout_info_y(d_screen(), m0, a->tab_prev, &ty0, &cy0);
+            layout_info_y(d_screen(), m0, ref_plat(a->tab_prev), &ty0, &cy0);
             ty = sf_lerp(ty0, ty, e);
             cy = sf_lerp(cy0, cy, e);
         }
@@ -1998,7 +2018,7 @@ static void panel_geo(const App *a, PanelGeo *g)
         g->rh = 0.072f * H(); g->rg = 0.014f * H(); g->em = 0.0275f * H();
     } else {
         /* 0.8.7: centred in the space right of the big case (it sat close to the screen's edge) */
-        float cw = d_xu(DISPLAY_H * H() * layout_case_aspect(a->tab) * layout_case_scale(a->tab));
+        float cw = d_xu(DISPLAY_H * H() * layout_case_aspect(sel_plat(a, a->tab)) * layout_case_scale(sel_plat(a, a->tab)));
         float left = W() * 0.265f + cw * 0.5f, space = W() - left;
         g->w = sf_minf(W() * 0.435f, space * 0.84f);
         g->x = left + (space - g->w) * 0.5f;
@@ -2554,14 +2574,14 @@ static void draw_letter(const App *a)
         UiMetrics m;
         float ty, cy;
         layout_ui(d_screen(), &m);
-        layout_info_y(d_screen(), &m, a->tab, &ty, &cy);
+        layout_info_y(d_screen(), &m, ref_plat(a->tab), &ty, &cy);
         y = cy;
     } else {
         /* no title/info line: the rail sits halfway between the selected case and the controls bar */
         CoverPos c0;
         BarLayout L;
         float case_bot;
-        layout_cover(d_screen(), a->tab, 0.0f, &c0);
+        layout_cover(d_screen(), sel_plat(a, a->tab), 0.0f, &c0);
         ui_bar_layout(0, &L);
         case_bot = c0.cy + c0.h * 0.5f;
         y = sf_clampf((case_bot + L.bar_y) * 0.5f, case_bot + ph * 0.6f, L.bar_y - ph * 0.6f);
@@ -2766,7 +2786,7 @@ typedef struct { float cx, bottom, kh, kw, case_w, case_h; } KitSpot;
 static void kitten_spot(const App *a, KitSpot *k)
 {
     CoverPos c;
-    layout_cover(d_screen(), a->tab, 0.0f, &c);
+    layout_cover(d_screen(), sel_plat(a, a->tab), 0.0f, &c);
     k->cx = c.cx; k->bottom = c.cy + c.h * 0.5f; k->case_w = c.w; k->case_h = c.h;
     k->kh = c.h * 0.60f;
     k->kw = d_xu(k->kh * (float)g_cats_w / (float)g_cats_h);
