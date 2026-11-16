@@ -238,6 +238,63 @@ int main(int argc, char **argv)
     app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
     step(0, 0.5f);
     render("03_flow_ps2", 1280, 720);
+    if (getenv("SF_PREVIEW_README")) {    /* 1.2: README screenshots, on the Stage (SF_PREVIEW_STAGE dumps), with covers */
+        const char *sdir = getenv("SF_PREVIEW_STAGE");
+        char a1[512], a2[512], a3[512];
+        int t, bw = 0, bh = 0, rw = 0, rh = 0, gw = 0, gh = 0, fw = 0, fh = 0;
+        unsigned char *sb, *sr, *sg, *sf;
+        if (!sdir) return 1;
+        snprintf(a1, sizeof(a1), "%s/stage.rgba", sdir);
+        snprintf(a2, sizeof(a2), "%s/shapes.rgba", sdir);
+        if (load_raw_alpha(a1, TEX_STAGE, TEX_STAGE_HI) != 0 || load_raw(a2, TEX_STAGE_SHAPES, NULL, NULL) != 0) return 1;
+        snprintf(a3, sizeof(a3), "%s/fx.rgba", sdir); sf = read_raw_gray(a3, &fw, &fh);
+        if (sf && r_texture_upload_alpha(TEX_STAGE_FX, fw, fh, sf) == 0) ui_set_stage_fx(TEX_STAGE_FX);
+        sb = read_raw_gray(a1, &bw, &bh);
+        snprintf(a3, sizeof(a3), "%s/rib.rgba", sdir); sr = read_raw_gray(a3, &rw, &rh);
+        snprintf(a3, sizeof(a3), "%s/glow.rgba", sdir); sg = read_raw_gray(a3, &gw, &gh);
+        if (sr && r_texture_upload_alpha(TEX_STAGE_RIB, rw, rh, sr) == 0) ui_set_stage_ribbons(TEX_STAGE_RIB);
+        if (sg && r_texture_upload_alpha(TEX_STAGE_GLOW, gw, gh, sg) == 0) ui_set_stage_glow(TEX_STAGE_GLOW);
+        ui_set_stage(TEX_STAGE, TEX_STAGE_SHAPES);
+        if (sb && sr && sg) ui_set_stage_sources(sb, bw, bh, sr, rw, rh, sg, gw, gh);
+        g_app.settings.background = BG_STAGE;
+        for (t = 0; t < PLAT_COUNT; t++) g_lib.tab[t].demo = 0;
+        pv_covers_on(1);
+        g_app.music_card_t = g_app.music_card_len;
+        app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Gran Turismo 4"), 0);
+        g_app.tab = PLAT_PS2;
+        step_covers(2.0f);
+        render("readme_flow", 1920, 1080);
+        press(SFB_R1); step_covers(1.5f);
+        render("readme_ps3", 1920, 1080);
+        press(SFB_L1); press(SFB_L1); step_covers(1.5f);
+        render("readme_ps1", 1920, 1080);
+        press(SFB_R1); step_covers(1.0f);
+        press(SFB_TRIANGLE); step_covers(1.0f);
+        render("readme_game_settings", 1920, 1080);
+        press(SFB_CIRCLE); step_covers(0.6f);
+        press(SFB_START); step_covers(1.0f);
+        press(SFB_CROSS); step_covers(1.0f);
+        render("readme_appearance", 1920, 1080);
+        press(SFB_CIRCLE); step_covers(0.4f);
+        press(SFB_CIRCLE); step_covers(0.8f);
+        g_app.settings.ui_color = UI_COLOR_PURPLE; g_app.settings.background = BG_ANIMATED;
+        for (t = 0; t < 40; t++) { render("readme_warm", 320, 180); step_covers(0.05f); }
+        render("readme_drift_purple", 1920, 1080);
+        g_app.settings.ui_color = UI_COLOR_BLUE; g_app.settings.background = BG_STAGE;
+        for (t = 0; t < 40; t++) { render("readme_warm", 320, 180); step_covers(0.05f); }
+        app_select(&g_app, PLAT_PS2, find_title(PLAT_PS2, "Ape Escape - Pumped & Primed"), 0);
+        step_covers(0.5f);
+        press(SFB_START); step_covers(0.6f);
+        press(SFB_DOWN); press(SFB_DOWN); press(SFB_CROSS); step_covers(0.5f);   /* Games & Library */
+        press(SFB_DOWN); press(SFB_DOWN); press(SFB_RIGHT); step_covers(0.3f);   /* Consoles: All in One Flow */
+        press(SFB_CIRCLE); press(SFB_CIRCLE); step_covers(0.5f);
+        g_lib.tab[TAB_ALL].demo = 0;
+        for (t = 0; t < g_lib.tab[TAB_ALL].count; t++) g_lib.tab[TAB_ALL].games[t].flags &= (uint8_t)~GAME_DEMO;
+        cc_invalidate(&g_app.covers);
+        for (t = 0; t < 40; t++) { render("readme_warm", 320, 180); step_covers(0.05f); }
+        render("readme_allflow", 1920, 1080);
+        return 0;
+    }
     if (getenv("SF_PREVIEW_GLIDE")) {     /* 0.8.4: holding the left stick, then letting go */
         int fr = 0, k;
         char nm[64];

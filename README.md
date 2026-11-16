@@ -1,4 +1,158 @@
-# spookyflow — milestone 6
+# spookyflow
+
+**A cover-flow game launcher for the PlayStation 3.** Browse your PS1, PS2 and
+PS3 games with their real covers and cases, change how each game starts, and
+launch it with one press.
+
+spookyflow was made because existing cover flows couldn't handle libraries of
+1000+ games. It stays smooth no matter how big your collection is.
+
+![spookyflow on the Stage background](docs/screenshot.jpg)
+
+## Features
+
+- **All your games in one place:** PS1, PS2 and PS3 games, as ISOs, game
+  folders or installed PKGs, each on its console's tab, or all together in
+  one flow.
+- **Real covers and cases:** works with your existing webMAN / multiMAN
+  cover packs, and **Download Missing Covers** fetches the rest.
+- **Built for big libraries:** only the covers near you are loaded, so 1000+
+  games scroll as smoothly as 10.
+- **One-press launching** through webMAN MOD, with per-game Auto-Play,
+  emulator, offline mode and PS2 config options.
+- **Make it yours:** eight animated backgrounds (or your own pictures), seven
+  UI colors, frosted-glass menus, case lighting and reflections.
+- **Background music** from your own MP3 / WAV files, with a Now Playing
+  card.
+- **Handy extras:** A–Z letter jump, multi-disc games, hidden games, a
+  full-screen display mode, storage used per console, and Power Off / Pin to
+  Top of XMB.
+
+![Screenshots: All in One Flow, Game Settings, Appearance and the Drift background](docs/gallery.jpg)
+
+## What you need
+
+- A PS3 with **CFW or HEN** (HEN enabled before installing or launching).
+- **webMAN MOD** installed and running. spookyflow hands every game to
+  webMAN to mount and start it.
+- For NTFS / exFAT drives: webMAN MOD's NTFS support.
+
+## Install
+
+1. Download the latest **`spookyflow.pkg`**.
+2. Copy it to the **root** of a FAT32 USB stick and plug it into the PS3.
+3. On the XMB go to **Game → Package Manager → Install Package Files →
+   Standard** and pick `spookyflow.pkg`.
+4. spookyflow appears under **Game**.
+
+If the normal PKG won't install on your setup, try `spookyflow.gnpdrm.pkg`
+instead.
+
+## Where to put your games
+
+spookyflow finds games in the same folders webMAN MOD uses:
+
+| Console | Internal drive | FAT32 USB drive | NTFS / exFAT drive |
+|---|---|---|---|
+| PS1 | `PSXISO`, `PSXGAMES` | `PSXISO`, `PSXGAMES` | `PSXISO` (via webMAN) |
+| PS2 | `PS2ISO` (`.iso`, split `.iso.0`) | — | — |
+| PS3 | `PS3ISO`, `GAMES`, `GAMEZ` | `PS3ISO`, `GAMES`, `GAMEZ` | `PS3ISO` (via webMAN) |
+
+- Internal-drive folders are in `/dev_hdd0/`; USB folders are at the root of
+  the drive. One level of subfolders is fine.
+- PS1 games: each `.cue` is a game (its `.bin` is hidden).
+- **Installed PKG games** (PS3 games, PS1 Classics and PS2 Classics in
+  `/dev_hdd0/game`) are listed automatically. Updates, apps and homebrew are
+  left out.
+- No games found on a tab? It shows a demo library so you can try things
+  out.
+
+## Controls
+
+| Button | In the cover flow | In a menu |
+|---|---|---|
+| ← → (or left stick) | Previous / next game (hold the stick to scroll fast) | Change a value |
+| ↑ ↓ | — | Move between rows |
+| L1 / R1 | Previous / next console | — |
+| L2 / R2 | Jump to the previous / next letter | — |
+| ✖ | Launch the game | Open / select |
+| ▲ | **Game Settings** for this game | — |
+| ■ | **Display mode** (the case fills the screen) | — |
+| START | **Flow Settings** | — |
+| SELECT | Next song | — |
+| ◯ | **Hold** to exit to the XMB | Back |
+
+## Settings
+
+**Game Settings (▲)** are saved for each game:
+- **Auto-Play:** start the game right after mounting, or wait on the XMB.
+- **Emulator:** Standard / Netemu (PS1), Default / Netemu (PS2).
+- **Offline Mode:** turn the network off while a PS2 / PS3 game runs.
+- **PS2 Config:** pick which compatibility config a PS2 ISO uses.
+- **Hide Game:** take it out of the flow (Flow Settings → Show Hidden Games
+  brings hidden games back).
+
+**Flow Settings (START):**
+- **Appearance:** Background, UI Color, Show Game Info, Game Cases, Case
+  Lighting, Reflections, Hide Cover Flow UI.
+- **Music & Sound:** Music Volume, Shuffle Music, Sound Effects.
+- **Games & Library:** Auto-Play, Offline Mode, **Consoles** (Separate Tabs /
+  All in One Flow / PS3 Only), Ignore "The" When Sorting, Show Hidden Games,
+  Download Missing Covers, Rescan Library.
+- **System:** Sleep Mode, Pin to Top of XMB, Storage.
+- **About**, **Quit to XMB** and **Power Off PS3**.
+
+## Covers
+
+spookyflow reads covers from the same places as webMAN MOD, so a webMAN or
+multiMAN cover pack works as it is. To change one game's cover, put a
+picture next to the game with the same name (for example
+`/dev_hdd0/PS2ISO/Gran Turismo 4.jpg`); that always wins.
+
+For games still without a cover, run **Flow Settings → Games & Library →
+Download Missing Covers**. It also replaces multiMAN's small retro covers,
+some of which are tinted. Added or replaced covers yourself? Run **Rescan
+Library**.
+
+## Make it yours
+
+Everything lives in `/dev_hdd0/tmp/spookyflow/` (made on the first start).
+Copy files there with webMAN's FTP or a file manager, then restart
+spookyflow.
+
+| Folder | What to put there |
+|---|---|
+| `music/` | `.mp3` or `.wav` files (subfolders work too) for background music |
+| `backgrounds/` | `.jpg` / `.png` pictures; each one becomes a Background choice |
+| `cases/` | `ps1.png`, `ps2.png`, `ps3.png` to replace the built-in cases (ManaGunZ case images work) |
+| `tabs/` | `ps1.png`, `ps2.png`, `ps3.png` to replace the tab pictures (about 200×64, white on transparent) |
+| `sounds/` | `move.wav`, `tab.wav`, `open.wav`, `close.wav`, `change.wav`, `confirm.wav` to replace the menu sounds |
+
+## Troubleshooting
+
+- **"Launching needs webMAN MOD running":** install or start webMAN MOD.
+- **A game is missing:** check it's in one of the folders above, then run
+  **Rescan Library**.
+- **A cover is wrong:** put the right picture next to the game (same name),
+  then run Rescan Library.
+- **Something else:** the log is at `/dev_hdd0/tmp/spookyflow/log.txt`.
+  Open it from a PC browser through webMAN
+  (`http://<your-ps3-ip>/dev_hdd0/tmp/spookyflow/log.txt`) and include it
+  when you report a problem.
+
+## Credits
+
+Created by **spooky**. Made with the PSL1GHT SDK, Tiny3D, webMAN MOD,
+mbedTLS, minimp3 by lieff and the DejaVu fonts. Covers from
+gamecovers.free.fr, GameTDB, RPDB and xlenore. Written with Claude by
+Anthropic.
+
+---
+
+<details>
+<summary><b>Building from source and developer notes</b></summary>
+
+## Developer notes (milestones and version history)
 
 A cover-flow game launcher for a jailbroken/CFW/HEN PS3, written in C with
 PSL1GHT and Tiny3D. Milestone 1 was the **look and feel**; milestone 2 added
@@ -7,7 +161,6 @@ PSL1GHT and Tiny3D. Milestone 1 was the **look and feel**; milestone 2 added
 milestone 4 adds **games on NTFS/exFAT external drives** (any number of
 drives at once), through webMAN MOD's NTFS index.
 
-![PS2 tab](preview/18_covers_ps2.png)
 
 ## What milestone 1 includes
 
@@ -1026,3 +1179,5 @@ python3 tools/gen_cats.py       # art/cats.png -> src/core/cats_data.c + pkgfile
   previews are drawn by exactly the same code as the console.
 - Colours: `src/core/theme.h`. Layout fractions: `src/core/layout.h/.c`.
 - App ID `SPKF00001`, content ID `UP0001-SPKF00001_00-0000000000000000`.
+
+</details>
