@@ -87,6 +87,38 @@ static int run_async(void (*fn)(void *), void *arg)
     return 0;
 }
 
+/* 1.2: the log is written by its own low-priority thread, so a slow HDD
+ * write never holds up a frame (see log.c). */
+static sys_ppu_thread_t g_log_tid;
+static volatile int g_log_run;
+
+static void log_thread(void *p)
+{
+    (void)p;
+    while (g_log_run) { log_pump(); sysUsleep(250 * 1000); }
+    log_pump();
+    sysThreadExit(0);
+}
+
+static void log_thread_start(void)
+{
+    g_log_run = 1;
+    if (sysThreadCreate(&g_log_tid, log_thread, NULL, 2500, 64 * 1024, THREAD_JOINABLE, (char *)"sf_log") != 0) {
+        g_log_run = 0;              /* no thread: keep writing each line at once */
+        return;
+    }
+    log_set_async(1);
+}
+
+static void log_thread_stop(void)
+{
+    u64 rv;
+    if (!g_log_run) return;
+    g_log_run = 0;
+    sysThreadJoin(g_log_tid, &rv);
+    log_set_async(0);
+}
+
 /* Clean power off: webMAN MOD's /shutdown.ps3 shuts down through the VSH,
  * exactly like the XMB's "Turn Off System". (lv2 syscall 379 with 0x1100,
  * used in fix 12, cuts power without the VSH saving its state, so the next
@@ -140,6 +172,7 @@ static void on_exit_handler(void)
     ps3_covers_stop();
     ps3_audio_stop();
     log_printf("shutdown");
+    log_thread_stop();
     log_close();
     sysUtilUnregisterCallback(SYSUTIL_EVENT_SLOT0);
     ps3_pad_end();
@@ -219,6 +252,7 @@ int main(int argc, const char *argv[])
 
     ps3_fs_mkdirs();
     if (log_open(SF_LOG_PATH) == 0) log_printf("==== %s %s starting ====", APP_NAME, APP_VERSION);
+    log_thread_start();
     atexit(on_exit_handler);   /* registered after tiny3d_Init: runs before tiny3d_Exit */
 
     sound_init();

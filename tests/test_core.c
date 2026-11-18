@@ -648,6 +648,12 @@ static const FakeEnt k_fake[] = {
     { "/dev_hdd0/PS2ISO", "God of War II (USA).iso.0", 0, 4294967295ull },
     { "/dev_hdd0/PS2ISO", "God of War II (USA).iso.1", 0, 3000000000ull },
     { "/dev_hdd0/PS2ISO", "readme.txt", 0, 10 },
+    { "/dev_hdd0/PS2ISO", "Ico (USA).cue", 0, 100 },                     /* 1.2: PS2 .bin/.cue */
+    { "/dev_hdd0/PS2ISO", "Ico (USA).bin", 0, 600000000 },
+    { "/dev_hdd0/PS2ISO", "Rez (USA).bin", 0, 500000000 },               /* bin without cue */
+    { "/dev_hdd0/PS2ISO", "Gran Turismo 4", 1, 0 },
+    { "/dev_hdd0/PS2ISO/Gran Turismo 4", "Gran Turismo 4 (USA).cue", 0, 100 },
+    { "/dev_hdd0/PS2ISO/Gran Turismo 4", "Gran Turismo 4 (USA).bin", 0, 700000000 },
     { "/dev_hdd0/PS2ISO", ".hidden.iso", 0, 10 },
     { "/dev_hdd0/PS3ISO", "Demon's Souls [BLUS30443].iso", 0, 6000000000ull },
     { "/dev_hdd0/GAMES", "BLES00932-Some Game", 1, 0 },
@@ -700,7 +706,13 @@ static void test_scanner(void)
     CHECK(idx_of(PLAT_PS1, "Tekken 3") >= 0);
     CHECK(idx_of(PLAT_PS1, "Final Fantasy VII (Disc 1)") >= 0);
     CHECK(idx_of(PLAT_PS1, "Ignored") < 0);                  /* only one level deep */
-    CHECK(ps2->count == 2);
+    CHECK(ps2->count == 5);
+    i = idx_of(PLAT_PS2, "Ico");                             /* 1.2: PS2 .bin/.cue */
+    CHECK(i >= 0 && ps2->games[i].size == 600000100ull);
+    CHECK(i >= 0 && sf_ends_with_i(lib_path(&g_lib, &ps2->games[i]), "/PS2ISO/Ico (USA).cue"));
+    CHECK(idx_of(PLAT_PS2, "Rez") >= 0);
+    i = idx_of(PLAT_PS2, "Gran Turismo 4");
+    CHECK(i >= 0 && ps2->games[i].size == 700000100ull);
     i = idx_of(PLAT_PS2, "God of War II");
     CHECK(i >= 0 && ps2->games[i].size == 7294967295ull);  /* split parts summed */
     CHECK(ps3->count == 3);
@@ -712,7 +724,7 @@ static void test_scanner(void)
     CHECK(i >= 0 && ps3->games[i].size == 0);
     CHECK_STR(lib_key(&g_lib, &ps3->games[i]), "Folder Game");
     CHECK_STR(lib_path(&g_lib, &ps3->games[i]), "/dev_hdd0/GAMES/Folder Game");
-    CHECK(sc.found[0] == 3 && sc.found[1] == 2 && sc.found[2] == 3);
+    CHECK(sc.found[0] == 3 && sc.found[1] == 5 && sc.found[2] == 3);
 }
 
 /* real background thread, like the PS3's sysThreadCreate path */
@@ -1008,7 +1020,7 @@ static void test_app(void)
     while (g_app.mode == MODE_LOADING && t < LOAD_MIN_TIME + 3.0f) { app_update(&g_app, 0, 1.0f / 60.0f); t += 1.0f / 60.0f; }
     CHECK(g_app.mode == MODE_FLOW);
     CHECK(t >= LOAD_MIN_TIME);                             /* loading never flashes */
-    CHECK(!g_lib.tab[PLAT_PS2].demo && g_lib.tab[PLAT_PS2].count == 2);   /* real games shown */
+    CHECK(!g_lib.tab[PLAT_PS2].demo && g_lib.tab[PLAT_PS2].count == 5);   /* real games shown */
     run_frames(0, INTRO_TIME + 0.2f);
     CHECK(g_app.intro == 1.0f);
     sync_n1 = g_lib.tab[PLAT_PS1].count; sync_n3 = g_lib.tab[PLAT_PS3].count;
@@ -1023,7 +1035,7 @@ static void test_app(void)
     /* the simulated frames run far faster than real time: finish loading now */
     while (g_app.mode == MODE_LOADING && t < LOAD_MIN_TIME + 3.0f) { app_update(&g_app, 0, 1.0f / 60.0f); t += 1.0f / 60.0f; }
     CHECK(g_app.mode == MODE_FLOW);
-    CHECK(!g_lib.tab[PLAT_PS2].demo && g_lib.tab[PLAT_PS2].count == 2);
+    CHECK(!g_lib.tab[PLAT_PS2].demo && g_lib.tab[PLAT_PS2].count == 5);
     CHECK(g_lib.tab[PLAT_PS1].count == sync_n1 && g_lib.tab[PLAT_PS3].count == sync_n3);
     if (g_tthread_started) { pthread_join(g_tthread, NULL); g_tthread_started = 0; }   /* 0.9.0: the folder sizes' thread */
     run_frames(0, 0.1f);
@@ -1282,9 +1294,57 @@ static void test_font_and_draw(void)
     }
 }
 
+/* 1.2: async log: lines wait in memory until log_pump; a big log starts over */
+static long file_len(const char *p)
+{
+    FILE *f = fopen(p, "rb"); long n;
+    if (!f) return -1;
+    fseek(f, 0, SEEK_END); n = ftell(f); fclose(f);
+    return n;
+}
+
+static void test_log_async(void)
+{
+    const char *p = "build-host/test_log.txt";
+    FILE *f;
+    long n0, i;
+    remove(p);
+    CHECK(log_open(p) == 0);
+    log_printf("one");
+    n0 = file_len(p);
+    CHECK(n0 > 0);                               /* not async: written at once */
+    log_set_async(1);
+    log_printf("two");
+    CHECK(file_len(p) == n0);                    /* waiting in memory */
+    log_pump();
+    CHECK(file_len(p) > n0);
+    for (i = 0; i < 5000; i++) log_printf("line %ld with some words to fill the buffer up", i);
+    log_pump();
+    log_printf("three");
+    log_close();                                 /* writes the rest */
+    f = fopen(p, "rb");
+    CHECK(f != NULL);
+    if (f) {
+        static char buf[1 << 20];
+        size_t got = fread(buf, 1, sizeof(buf) - 1, f);
+        buf[got] = 0;
+        fclose(f);
+        CHECK(strstr(buf, "] one\n") && strstr(buf, "] two\n") && strstr(buf, "] three\n"));
+        CHECK(strstr(buf, "lines dropped") != NULL);   /* 5000 lines > the 64 KB buffer */
+    }
+    f = fopen(p, "ab");                          /* over 2 MB: the next open starts over */
+    if (f) { static char big[64 * 1024]; memset(big, 'x', sizeof(big)); for (i = 0; i < 40; i++) fwrite(big, 1, sizeof(big), f); fclose(f); }
+    CHECK(file_len(p) > 2L * 1024 * 1024);
+    CHECK(log_open(p) == 0);
+    log_close();
+    CHECK(file_len(p) > 0 && file_len(p) < 200);
+    remove(p);
+}
+
 int main(void)
 {
     log_set_echo(0);
+    test_log_async();
     test_util();
     test_title_clean();
     test_sort();

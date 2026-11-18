@@ -192,7 +192,8 @@ static void scan_iso_dir(Scanner *s, Library *lib, int plat, const char *dir, in
                 sf_strlcpy(s->queue[s->qn++], path, SCAN_PATH_MAX);
             continue;
         }
-        if (plat == PLAT_PS1) {
+        /* 1.2: PS2 CD games as .bin/.cue too (webMAN mounts them like PS1 ones) */
+        if (plat == PLAT_PS1 || (plat == PLAT_PS2 && sf_ends_with_i(e->name, ".cue"))) {
             if (sf_ends_with_i(e->name, ".cue") && join(path, sizeof(path), dir, e->name)) {
                 int gi = lib_add(lib, plat, path, e->name, e->size, NULL, 0, 0, 0);
                 if (gi >= 0) {
@@ -225,13 +226,15 @@ static void scan_iso_dir(Scanner *s, Library *lib, int plat, const char *dir, in
         }
     }
 
-    if (plat == PLAT_PS1) {
-        /* .bin/.img: attach to a .cue with the same cleaned title, else standalone */
+    if (plat == PLAT_PS1 || plat == PLAT_PS2) {
+        /* .bin/.img: attach to a .cue with the same cleaned title, else standalone
+         * (PS2: its .iso files were added above) */
         for (i = 0; i < n; i++) {
             const FsEntry *e = &s_ent[i];
             char t[TITLE_MAX];
             int matched = 0;
             if (e->is_dir || e->name[0] == '.' || !is_ps1_image(e->name)) continue;
+            if (plat == PLAT_PS2 && sf_ends_with_i(e->name, ".iso")) continue;
             title_clean(e->name, t, sizeof(t));
             for (j = 0; j < ncue; j++) {
                 if (sf_stricmp(t, s_cue_title[j]) == 0) {

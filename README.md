@@ -55,12 +55,13 @@ spookyflow finds games in the same folders webMAN MOD uses:
 | Console | Internal drive | FAT32 USB drive | NTFS / exFAT drive |
 |---|---|---|---|
 | PS1 | `PSXISO`, `PSXGAMES` | `PSXISO`, `PSXGAMES` | `PSXISO` (via webMAN) |
-| PS2 | `PS2ISO` (`.iso`, split `.iso.0`) | — | — |
+| PS2 | `PS2ISO` (`.iso`, split `.iso.0`, `.bin`/`.cue`) | — | — |
 | PS3 | `PS3ISO`, `GAMES`, `GAMEZ` | `PS3ISO`, `GAMES`, `GAMEZ` | `PS3ISO` (via webMAN) |
 
 - Internal-drive folders are in `/dev_hdd0/`; USB folders are at the root of
   the drive. One level of subfolders is fine.
-- PS1 games: each `.cue` is a game (its `.bin` is hidden).
+- PS1 and PS2 `.bin`/`.cue` games: each `.cue` is a game (its `.bin` is
+  hidden).
 - **Installed PKG games** (PS3 games, PS1 Classics and PS2 Classics in
   `/dev_hdd0/game`) are listed automatically. Updates, apps and homebrew are
   left out.
@@ -672,6 +673,12 @@ Next: release years.
       to a 64 KB memory buffer and a low-priority `sf_log` thread writes
       them every 250 ms (`log_set_async` / `log_pump`, src/core/log.c). A
       log over 2 MB starts over at the next start.
+    - **PS2 .bin / .cue games**: PS2 games kept as .bin + .cue (loose in
+      PS2ISO or one folder per game) weren't listed at all: only .iso was
+      looked for. They're found now like PS1 ones (the .cue is the game, its
+      .bin's size added; a .bin / .img / .mdf without a .cue is a game on
+      its own) and launch through webMAN, which mounts the .cue. Their
+      Game Settings say PS2 Config: Not available (configs are for ISOs).
     - **Real case sizes in All in One Flow**: the cases are sized like the
       real ones next to each other (heights: PS1 jewel case 125 mm, PS3 case
       171 mm, PS2 DVD case 190 mm), so a PS1 case is about two thirds of a
