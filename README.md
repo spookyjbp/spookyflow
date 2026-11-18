@@ -586,8 +586,9 @@ own instead, put PNG files here (each one replaces its built-in picture):
 
 - Log: `/dev_hdd0/tmp/spookyflow/log.txt` — startup info, video mode, every
   folder scanned and how many games were found, every launch, every settings
-  change, and how the app exited. Each line is saved immediately, so it
-  survives a crash.
+  change, and how the app exited. Lines are written by a background thread
+  a few times a second (1.2), so a crash loses at most the last quarter
+  second. A log over 2 MB starts over on the next start.
 - Settings: `/dev_hdd0/tmp/spookyflow/settings.ini` (plain text).
 
 To send me the log: open webMAN's file manager in a PC browser
@@ -662,6 +663,15 @@ Next: release years.
       is gone. It's an On / Off switch like the other Appearance settings
       (On by default, a shine between the old Soft and Full; a saved Soft or
       Full reads as On).
+    - **Smoother frames: the log is written in the background.** Every log
+      line used to be written and flushed to the HDD on the thread that
+      logged it. With a 7 MB log and covers loading, that held the main
+      thread ~100 ms: a dropped frame after each Game Settings / panel open
+      and after every 10 s `perf:` line (user log: `slow frame 100 ms
+      (draw 1.2 ms, gpu wait 0.0 ms)` right after each one). Lines now go
+      to a 64 KB memory buffer and a low-priority `sf_log` thread writes
+      them every 250 ms (`log_set_async` / `log_pump`, src/core/log.c). A
+      log over 2 MB starts over at the next start.
     - **Real case sizes in All in One Flow**: the cases are sized like the
       real ones next to each other (heights: PS1 jewel case 125 mm, PS3 case
       171 mm, PS2 DVD case 190 mm), so a PS1 case is about two thirds of a

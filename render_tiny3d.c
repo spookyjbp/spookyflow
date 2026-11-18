@@ -1,0 +1,388 @@
+/* render_tiny3d.c - render.h implemented with Tiny3D (2D mode).
+ *
+ * Verified against wargio/tiny3D lib/include/tiny3d.h + samples/sprites2D:
+ *   tiny3d_SetPolygon(TINY3D_TRIANGLES / TINY3D_QUADS), tiny3d_VertexPos(x,y,z),
+ *   tiny3d_VertexColor(u32 0xRRGGBBAA), tiny3d_VertexTexture(u,v), tiny3d_End(),
+ *   tiny3d_SetTexture(unit, offset, w, h, stride, TINY3D_TEX_FORMAT_A8R8G8B8, TEXTURE_LINEAR),
+ *   tiny3d_AllocTexture(size), tiny3d_TextureOffset(ptr).
+ * Per-vertex order Pos -> Color -> Texture (VertexPos commits the previous vertex).
+ *
+ * Depth: tiny3d_Clear enables depth test with LESS-OR-EQUAL. Every batch gets
+ * a slightly smaller z than the previous one, so later draws always pass and
+ * painter's order is preserved. */
+#include <string.h>
+#include <tiny3d.h>
+#include <rsx/rsx.h>          /* 0.9.6: the scaled blits (librsx, already linked) */
+#include "render.h"
+#include "ps3_platform.h"
+#include "log.h"
+
+typedef struct { u32 offset; int w, h, valid; u32 fmt, bpp; u32 *ptr; u32 pitch; } T3Tex;   /* pitch 0: w * bpp */
+
+static T3Tex g_tex[TEX_COUNT_ALL];
+static u16 *g_cover_mem[R_COVER_SLOTS];   /* RSX memory, R_COVER_SLOT_BYTES each */
+static u8 *g_pool;
+static u32 g_pool_size, g_pool_used;
+static float g_z = 65000.0f;
+static int g_pending_type = -1;   /* polygon type to open on first vertex, -1 = none */
+static int g_open;                /* SetPolygon issued for this batch */
+static int g_cur_tex = -1;
+
+/* per-frame counters (what a frame sends to the RSX) */
+static int g_bound_tex = -1;            /* texture last given to the RSX this frame */
+static int g_last_kind = -1;            /* 0 = color triangles, 1 = textured quads (Tiny3D shader) */
+R3Stats g_r3_stats;
+
+/* Tiny3D's own RSX command helpers (lib/source/commands.c, not in tiny3d.h):
+ * used to turn the depth test off for the 2D UI, which is drawn in order. */
+void rsxtiny_DepthTestEnable(void *context, uint32_t enable);
+void rsxtiny_DepthWriteEnable(void *context, uint32_t enable);
+
+
+int ps3_render_init(u32 pool_bytes)
+{
+    g_pool = (u8 *)tiny3d_AllocTexture(pool_bytes);
+    if (!g_pool) return -1;
+    g_pool_size = pool_bytes;
+    g_pool_used = 0;
+    memset(g_tex, 0, sizeof(g_tex));
+    memset(g_cover_mem, 0, sizeof(g_cover_mem));
+    return 0;
+}
+
+/* Cover textures: one block for all slots, allocated separately from the UI
+ * pool so a failure here only costs the covers. 16-bit A1R5G5B5 (alpha bit
+ * set = opaque) halves the memory of A8R8G8B8: 64 x 336 KB = 21 MB. */
+int ps3_render_init_covers(void)
+{
+    u8 *mem = (u8 *)tiny3d_AllocTexture((u32)R_COVER_SLOTS * (u32)R_COVER_SLOT_BYTES);
+    int i;
+    if (!mem) return -1;
+    for (i = 0; i < R_COVER_SLOTS; i++) {
+        g_cover_mem[i] = (u16 *)(mem + (size_t)i * R_COVER_SLOT_BYTES);   /* 336 KB: keeps 128-byte alignment */
+        memset(g_cover_mem[i], 0, R_COVER_SLOT_BYTES);
+    }
+    return 0;
+}
+
+uint16_t *r_cover_pixels(int slot)
+{
+    if (slot < 0 || slot >= R_COVER_SLOTS) return NULL;
+    return (uint16_t *)g_cover_mem[slot];
+}
+
+void r_cover_define(int slot, int w, int h)
+{
+    T3Tex *t;
+    if (slot < 0 || slot >= R_COVER_SLOTS || !g_cover_mem[slot] || w <= 0 || h <= 0 ||
+        w * h * 2 > R_COVER_SLOT_BYTES) return;
+    t = &g_tex[TEX_COVER0 + slot];
+    t->offset = tiny3d_TextureOffset(g_cover_mem[slot]);
+    t->w = w; t->h = h;
+    t->fmt = TINY3D_TEX_FORMAT_A1R5G5B5;
+    t->bpp = 2;
+    t->valid = 1;
+}
+
+void ps3_render_frame_begin(void)
+{
+    g_z = 65000.0f;
+    g_bound_tex = -1;
+    g_last_kind = -1;
+    memset(&g_r3_stats, 0, sizeof(g_r3_stats));
+    {
+        /* after tiny3d_Clear (which turns it on): painter's order needs no
+         * depth, and the test/write cost a third of the frame at 1080p
+         * (performance test, 0.6.4: 20 -> 30 fps) */
+        void *ctx = tiny3d_Get_GCM_Context();
+        rsxtiny_DepthTestEnable(ctx, 0);
+        rsxtiny_DepthWriteEnable(ctx, 0);
+    }
+}
+
+static float next_z(void)
+{
+    if (g_z > 2.0f) g_z -= 1.0f;
+    return g_z;
+}
+
+static u32 *pool_take(u32 bytes)
+{
+    u32 *p;
+    bytes = (bytes + 127u) & ~127u;               /* keep textures 128-byte aligned */
+    if (g_pool_used + bytes > g_pool_size) return NULL;
+    p = (u32 *)(g_pool + g_pool_used);
+    g_pool_used += bytes;
+    return p;
+}
+
+int r_texture_upload_alpha(int tex, int w, int h, const unsigned char *alpha)
+{
+    u32 *dst;
+    int i, n = w * h;
+    if (tex < 0 || tex >= TEX_COUNT_FIXED || w <= 0 || h <= 0) return -1;
+    dst = pool_take((u32)n * 4u);
+    if (!dst) return -1;
+    for (i = 0; i < n; i++) dst[i] = ((u32)alpha[i] << 24) | 0x00FFFFFFu;   /* A8R8G8B8, white */
+    g_tex[tex].ptr = dst;
+    g_tex[tex].offset = tiny3d_TextureOffset(dst);
+    g_tex[tex].w = w; g_tex[tex].h = h; g_tex[tex].valid = 1;
+    g_tex[tex].fmt = TINY3D_TEX_FORMAT_A8R8G8B8; g_tex[tex].bpp = 4;
+    return 0;
+}
+
+int r_texture_upload_rgba(int tex, int w, int h, const unsigned char *rgba)
+{
+    u32 *dst;
+    int i, n = w * h;
+    if (tex < 0 || tex >= TEX_COUNT_FIXED || w <= 0 || h <= 0) return -1;
+    dst = pool_take((u32)n * 4u);
+    if (!dst) return -1;
+    for (i = 0; i < n; i++) {
+        const unsigned char *p = rgba + (size_t)i * 4u;
+        dst[i] = ((u32)p[3] << 24) | ((u32)p[0] << 16) | ((u32)p[1] << 8) | (u32)p[2];
+    }
+    g_tex[tex].ptr = dst;
+    g_tex[tex].offset = tiny3d_TextureOffset(dst);
+    g_tex[tex].w = w; g_tex[tex].h = h; g_tex[tex].valid = 1;
+    g_tex[tex].fmt = TINY3D_TEX_FORMAT_A8R8G8B8; g_tex[tex].bpp = 4;
+    return 0;
+}
+
+/* Polygons are opened lazily on the first vertex so empty batches (e.g. an
+ * empty string) never reach Tiny3D. */
+static void open_if_needed(void)
+{
+    if (g_open || g_pending_type < 0) return;
+    g_r3_stats.batches++;
+    {
+        int kind = g_cur_tex >= 0 ? 1 : 0;
+        if (kind != g_last_kind) g_r3_stats.shader_switches++;
+        g_last_kind = kind;
+    }
+    if (g_cur_tex >= 0 && g_cur_tex != g_bound_tex) {   /* a texture already bound isn't sent again */
+        const T3Tex *t = &g_tex[g_cur_tex];
+        g_r3_stats.tex_binds++;
+        g_bound_tex = g_cur_tex;
+        /* CLAMP, not tiny3d_SetTexture's REPEAT: with repeat, filtering at an
+         * image's edge blends in the opposite edge, which drew thin lines
+         * across trimmed tab logos (tiny3d.h: tiny3d_SetTextureWrap, TEXTWRAP_CLAMP) */
+        tiny3d_SetTextureWrap(0, t->offset, (u32)t->w, (u32)t->h, t->pitch ? t->pitch : (u32)t->w * t->bpp, (text_format)t->fmt,
+                              TEXTWRAP_CLAMP, TEXTWRAP_CLAMP, TEXTURE_LINEAR);
+    }
+    tiny3d_SetPolygon((type_polygon)g_pending_type);
+    g_open = 1;
+}
+
+void r_tris_begin(void)
+{
+    g_pending_type = TINY3D_TRIANGLES;
+    g_cur_tex = -1;
+    g_open = 0;
+    next_z();
+}
+
+void r_strip_begin(void)
+{
+    g_pending_type = TINY3D_TRIANGLE_STRIP;
+    g_cur_tex = -1;
+    g_open = 0;
+    next_z();
+}
+
+void r_vtx(float x, float y, uint32_t rgba)
+{
+    open_if_needed();
+    tiny3d_VertexPos(x, y, g_z);
+    tiny3d_VertexColor(rgba);
+    g_r3_stats.vertices++;
+}
+
+void r_tris_end(void)
+{
+    if (g_open) tiny3d_End();
+    g_open = 0;
+    g_pending_type = -1;
+}
+
+void r_quads_begin(int tex)
+{
+    g_open = 0;
+    if (tex < 0 || tex >= TEX_COUNT_ALL || !g_tex[tex].valid) { g_pending_type = -1; return; }
+    g_pending_type = TINY3D_QUADS;
+    g_cur_tex = tex;
+    next_z();
+}
+
+void r_qvtx(float x, float y, float u, float v, uint32_t rgba)
+{
+    if (g_pending_type < 0) return;      /* texture missing: skip silently */
+    open_if_needed();
+    tiny3d_VertexPos(x, y, g_z);
+    tiny3d_VertexColor(rgba);
+    tiny3d_VertexTexture(u, v);
+    g_r3_stats.vertices++;
+}
+
+void r_quads_end(void)
+{
+    if (g_open) tiny3d_End();
+    g_open = 0;
+    g_pending_type = -1;
+    g_cur_tex = -1;
+}
+
+int r_texture_update_rgba(int tex, int w, int h, const unsigned char *rgba)
+{
+    T3Tex *t;
+    int i, n = w * h;
+    if (tex < 0 || tex >= TEX_COUNT_FIXED || w <= 0 || h <= 0) return -1;
+    t = &g_tex[tex];
+    if (!t->valid || !t->ptr || t->w != w || t->h != h || t->bpp != 4) return r_texture_upload_rgba(tex, w, h, rgba);
+    for (i = 0; i < n; i++) {           /* same size: overwrite (no pool space used) */
+        const unsigned char *p = rgba + (size_t)i * 4u;
+        t->ptr[i] = ((u32)p[3] << 24) | ((u32)p[0] << 16) | ((u32)p[1] << 8) | (u32)p[2];
+    }
+    return 0;
+}
+
+int r_texture_update_rgba_rows(int tex, int w, int h, int y0, int y1, const unsigned char *rgba)
+{
+    T3Tex *t;
+    int i;
+    if (tex < 0 || tex >= TEX_COUNT_FIXED || w <= 0 || h <= 0) return -1;
+    t = &g_tex[tex];
+    if (!t->valid || !t->ptr || t->w != w || t->h != h || t->bpp != 4)
+        return r_texture_upload_rgba(tex, w, h, rgba) == 0 ? 1 : -1;
+    if (y0 < 0) y0 = 0;
+    if (y1 > h) y1 = h;
+    for (i = y0 * w; i < y1 * w; i++) {
+        const unsigned char *p = rgba + (size_t)i * 4u;
+        t->ptr[i] = ((u32)p[3] << 24) | ((u32)p[0] << 16) | ((u32)p[1] << 8) | (u32)p[2];
+    }
+    return 0;
+}
+
+/* ---- 0.9.6: frosted glass from the frame itself -----------------------
+ * The RSX's scaled-image engine copies the frame drawn so far (the back
+ * buffer Tiny3D is drawing into) to 1/2, 1/4 and 1/8 size, each step an
+ * exact 2x2 average (bilinear, pixel centres), then blurs the small copy
+ * twice more: one pass sampling at the pixel corners (the average of 2x2
+ * neighbours, half a pixel up-left) and one sampling half a pixel down-right,
+ * a [1 2 1] blur that ends where it started. All in RSX memory, no CPU work:
+ * a few hundred KB written per copy. The source is read as X8R8G8B8 so the
+ * copy is opaque whatever the frame's alpha holds (blending leaves it
+ * undefined). Memory comes from the texture pool once, on first use. */
+typedef struct { u32 *ptr; u32 off; int w, h; u32 pitch; } SnapLvl;
+static SnapLvl g_snap[3 + 1 + 2];   /* 1/2, 1/4, 1/8, scratch, out 0, out 1 */
+static int g_snap_state;            /* 0 not tried, 1 ready, -1 failed */
+static int g_snap_w, g_snap_h;
+
+static int snap_lvl(SnapLvl *l, int w, int h)
+{
+    l->w = w; l->h = h;
+    l->pitch = ((u32)w * 4u + 63u) & ~63u;        /* surfaces: pitch a multiple of 64 */
+    l->ptr = pool_take(l->pitch * (u32)h);
+    if (!l->ptr) return -1;
+    memset(l->ptr, 0, l->pitch * (u32)h);
+    l->off = tiny3d_TextureOffset(l->ptr);
+    return 0;
+}
+
+static int snap_init(void)
+{
+    int w = Video_Resolution.width, h = Video_Resolution.height, i;
+    if (w < 64 || h < 64 || w > 1920 || h > 1080) return -1;
+    for (i = 0; i < 3; i++) {
+        w /= 2; h /= 2;
+        if (snap_lvl(&g_snap[i], w, h) != 0) return -1;
+    }
+    for (i = 3; i < 6; i++) if (snap_lvl(&g_snap[i], w, h) != 0) return -1;
+    g_snap_w = Video_Resolution.width; g_snap_h = Video_Resolution.height;
+    log_printf("frost: live glass ready, %dx%d copies (%u KB of the texture pool)", w, h,
+               (unsigned)((g_snap[0].pitch * (u32)g_snap[0].h + g_snap[1].pitch * (u32)g_snap[1].h +
+                           4u * g_snap[2].pitch * (u32)g_snap[2].h) / 1024u));
+    return 0;
+}
+
+static void snap_blit(gcmContextData *ctx, u32 src_off, int sw, int sh, u32 spitch,
+                      const SnapLvl *d, float ratio, u8 origin, u16 in_xy)
+{
+    gcmTransferScale s;
+    gcmTransferSurface t;
+    memset(&s, 0, sizeof(s));
+    memset(&t, 0, sizeof(t));
+    s.conversion = GCM_TRANSFER_CONVERSION_TRUNCATE;
+    s.format = GCM_TRANSFER_SCALE_FORMAT_X8R8G8B8;
+    s.operation = GCM_TRANSFER_OPERATION_SRCCOPY;
+    s.clipX = 0; s.clipY = 0; s.clipW = (u16)d->w; s.clipH = (u16)d->h;
+    s.outX = 0; s.outY = 0; s.outW = (u16)d->w; s.outH = (u16)d->h;
+    s.ratioX = rsxGetFixedSint32(ratio);
+    s.ratioY = rsxGetFixedSint32(ratio);
+    s.inW = (u16)sw; s.inH = (u16)sh;
+    s.pitch = (u16)spitch;
+    s.origin = origin;
+    s.interp = GCM_TRANSFER_INTERPOLATOR_LINEAR;
+    s.offset = src_off;
+    s.inX = in_xy; s.inY = in_xy;                  /* 12.4 fixed point */
+    t.format = GCM_TRANSFER_SURFACE_FORMAT_A8R8G8B8;
+    t.pitch = (u16)d->pitch;
+    t.offset = d->off;
+    tiny3d_DoCmd_Space(64);                        /* room for it in Tiny3D's command buffer */
+    rsxSetTransferScaleSurface(ctx, &s, &t);
+}
+
+int r_snapshot(int slot)
+{
+    gcmContextData *ctx;
+    const SnapLvl *a;
+    SnapLvl *out;
+    T3Tex *tx;
+    int i;
+    if (slot < 0 || slot > 1) return -1;
+    if (g_snap_state == 0) g_snap_state = snap_init() == 0 ? 1 : -1;
+    if (g_snap_state < 0) return -1;
+    if (g_snap_w != (int)Video_Resolution.width || g_snap_h != (int)Video_Resolution.height) return -1;
+    if (g_open) { tiny3d_End(); g_open = 0; }      /* never inside a Tiny3D polygon */
+    g_pending_type = -1;
+    ctx = (gcmContextData *)tiny3d_Get_GCM_Context();
+    out = &g_snap[4 + slot];
+    tiny3d_DoCmd_Space(64);
+    rsxSetTransferScaleMode(ctx, GCM_TRANSFER_LOCAL_TO_LOCAL, GCM_TRANSFER_SURFACE);
+    snap_blit(ctx, tiny3d_TextureOffset(Video_buffer[Video_currentBuffer]), g_snap_w, g_snap_h, (u32)Video_pitch,
+              &g_snap[0], 2.0f, GCM_TRANSFER_ORIGIN_CENTER, 0);
+    for (i = 1; i < 3; i++) {
+        a = &g_snap[i - 1];
+        snap_blit(ctx, a->off, a->w, a->h, a->pitch, &g_snap[i], 2.0f, GCM_TRANSFER_ORIGIN_CENTER, 0);
+    }
+    a = &g_snap[2];
+    snap_blit(ctx, a->off, a->w, a->h, a->pitch, &g_snap[3], 1.0f, GCM_TRANSFER_ORIGIN_CORNER, 0);
+    a = &g_snap[3];
+    snap_blit(ctx, a->off, a->w, a->h, a->pitch, &g_snap[2], 1.0f, GCM_TRANSFER_ORIGIN_CENTER, 8);
+    a = &g_snap[2];
+    snap_blit(ctx, a->off, a->w, a->h, a->pitch, &g_snap[3], 1.0f, GCM_TRANSFER_ORIGIN_CORNER, 0);
+    a = &g_snap[3];
+    snap_blit(ctx, a->off, a->w, a->h, a->pitch, out, 1.0f, GCM_TRANSFER_ORIGIN_CENTER, 8);
+    tiny3d_DoCmd_Space(16);
+    rsxInvalidateTextureCache(ctx, GCM_INVALIDATE_TEXTURE);
+    tx = &g_tex[TEX_LIVE0 + slot];
+    tx->ptr = out->ptr;
+    tx->offset = out->off;
+    tx->w = out->w; tx->h = out->h; tx->pitch = out->pitch;
+    tx->fmt = TINY3D_TEX_FORMAT_A8R8G8B8; tx->bpp = 4;
+    tx->valid = 1;
+    if (g_bound_tex == TEX_LIVE0 + slot) g_bound_tex = -1;
+    return TEX_LIVE0 + slot;
+}
+
+void r_set_blend(int on)
+{
+    if (on)
+        tiny3d_BlendFunc(1, TINY3D_BLEND_FUNC_SRC_RGB_SRC_ALPHA | TINY3D_BLEND_FUNC_SRC_ALPHA_SRC_ALPHA,
+                         TINY3D_BLEND_FUNC_DST_RGB_ONE_MINUS_SRC_ALPHA | TINY3D_BLEND_FUNC_DST_ALPHA_ZERO,
+                         TINY3D_BLEND_RGB_FUNC_ADD | TINY3D_BLEND_ALPHA_FUNC_ADD);
+    else
+        tiny3d_BlendFunc(0, TINY3D_BLEND_FUNC_SRC_RGB_SRC_ALPHA | TINY3D_BLEND_FUNC_SRC_ALPHA_SRC_ALPHA,
+                         TINY3D_BLEND_FUNC_DST_RGB_ONE_MINUS_SRC_ALPHA | TINY3D_BLEND_FUNC_DST_ALPHA_ZERO,
+                         TINY3D_BLEND_RGB_FUNC_ADD | TINY3D_BLEND_ALPHA_FUNC_ADD);
+}
