@@ -192,7 +192,7 @@ static void scan_iso_dir(Scanner *s, Library *lib, int plat, const char *dir, in
                 sf_strlcpy(s->queue[s->qn++], path, SCAN_PATH_MAX);
             continue;
         }
-        /* 1.2: PS2 CD games as .bin/.cue too (webMAN mounts them like PS1 ones) */
+        /* 1.2.1: PS2 CD games as .bin/.cue too (webMAN mounts them like PS1 ones) */
         if (plat == PLAT_PS1 || (plat == PLAT_PS2 && sf_ends_with_i(e->name, ".cue"))) {
             if (sf_ends_with_i(e->name, ".cue") && join(path, sizeof(path), dir, e->name)) {
                 int gi = lib_add(lib, plat, path, e->name, e->size, NULL, 0, 0, 0);

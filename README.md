@@ -588,7 +588,7 @@ own instead, put PNG files here (each one replaces its built-in picture):
 - Log: `/dev_hdd0/tmp/spookyflow/log.txt` — startup info, video mode, every
   folder scanned and how many games were found, every launch, every settings
   change, and how the app exited. Lines are written by a background thread
-  a few times a second (1.2), so a crash loses at most the last quarter
+  a few times a second (1.2.1), so a crash loses at most the last quarter
   second. A log over 2 MB starts over on the next start.
 - Settings: `/dev_hdd0/tmp/spookyflow/settings.ini` (plain text).
 
@@ -631,6 +631,25 @@ Next: release years.
     keep the plain placeholder. Hold ← or → across many games and check it
     stays 60 fps. Send the log (it lists where each cover came from).
 14. **Second start:** covers appear almost at once (read from the cache).
+15. **1.2.1: fixes.**
+    - **Smoother frames: the log is written in the background.** Every log
+      line used to be written and flushed to the HDD on the thread that
+      logged it. With a 7 MB log and covers loading, that held the main
+      thread ~100 ms: a dropped frame after each Game Settings / panel open
+      and after every 10 s `perf:` line (user log: `slow frame 100 ms
+      (draw 1.2 ms, gpu wait 0.0 ms)` right after each one). Lines now go
+      to a 64 KB memory buffer and a low-priority `sf_log` thread writes
+      them every 250 ms (`log_set_async` / `log_pump`, src/core/log.c). A
+      log over 2 MB starts over at the next start.
+    - **PS2 .bin / .cue games**: PS2 games kept as .bin + .cue (loose in
+      PS2ISO or one folder per game) weren't listed at all: only .iso was
+      looked for. They're found now like PS1 ones (the .cue is the game, its
+      .bin's size added; a .bin / .img / .mdf without a .cue is a game on
+      its own) and launch through webMAN, which mounts the .cue. Their
+      Game Settings say PS2 Config: Not available (configs are for ISOs).
+    Check: a PS2 .bin / .cue game (loose and in its own folder) is listed,
+    has its cover and starts; the log has no `slow frame 100 ms` after each
+    `perf:` line or panel open.
 15. **1.2: installed PKG games, All Consoles in one flow.**
     - **Installed PKG games**: games installed from PKGs (in
       `/dev_hdd0/game`) are listed on their console's tab: PARAM.SFO's
@@ -664,21 +683,6 @@ Next: release years.
       is gone. It's an On / Off switch like the other Appearance settings
       (On by default, a shine between the old Soft and Full; a saved Soft or
       Full reads as On).
-    - **Smoother frames: the log is written in the background.** Every log
-      line used to be written and flushed to the HDD on the thread that
-      logged it. With a 7 MB log and covers loading, that held the main
-      thread ~100 ms: a dropped frame after each Game Settings / panel open
-      and after every 10 s `perf:` line (user log: `slow frame 100 ms
-      (draw 1.2 ms, gpu wait 0.0 ms)` right after each one). Lines now go
-      to a 64 KB memory buffer and a low-priority `sf_log` thread writes
-      them every 250 ms (`log_set_async` / `log_pump`, src/core/log.c). A
-      log over 2 MB starts over at the next start.
-    - **PS2 .bin / .cue games**: PS2 games kept as .bin + .cue (loose in
-      PS2ISO or one folder per game) weren't listed at all: only .iso was
-      looked for. They're found now like PS1 ones (the .cue is the game, its
-      .bin's size added; a .bin / .img / .mdf without a .cue is a game on
-      its own) and launch through webMAN, which mounts the .cue. Their
-      Game Settings say PS2 Config: Not available (configs are for ISOs).
     - **Real case sizes in All in One Flow**: the cases are sized like the
       real ones next to each other (heights: PS1 jewel case 125 mm, PS3 case
       171 mm, PS2 DVD case 190 mm), so a PS1 case is about two thirds of a

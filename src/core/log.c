@@ -1,6 +1,6 @@
 /* log.c - line logger.
  *
- * 1.2: on the PS3 a line used to be written and flushed to the HDD as it
+ * 1.2.1: on the PS3 a line used to be written and flushed to the HDD as it
  * was logged, on whatever thread logged it. With a big log file and the
  * cover worker reading the same drive, one flush could hold the main
  * thread for ~100 ms (a dropped frame after every panel open and after

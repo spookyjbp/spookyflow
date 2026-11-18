@@ -1,4 +1,4 @@
-/* log.h - line logger: flushed after every line, or (1.2, PS3) from a background thread. */
+/* log.h - line logger: flushed after every line, or (1.2.1, PS3) from a background thread. */
 #ifndef SF_LOG_H
 #define SF_LOG_H
 
@@ -12,7 +12,7 @@ void log_printf(const char *fmt, ...)
     ;
 /* Mirror lines to stdout as well (host tools). */
 void log_set_echo(int on);
-/* 1.2: async: lines go to a memory buffer and log_pump() writes them out
+/* 1.2.1: async: lines go to a memory buffer and log_pump() writes them out
  * (call it from a background thread; log_close pumps the rest). */
 void log_set_async(int on);
 void log_pump(void);

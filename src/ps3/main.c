@@ -87,7 +87,7 @@ static int run_async(void (*fn)(void *), void *arg)
     return 0;
 }
 
-/* 1.2: the log is written by its own low-priority thread, so a slow HDD
+/* 1.2.1: the log is written by its own low-priority thread, so a slow HDD
  * write never holds up a frame (see log.c). */
 static sys_ppu_thread_t g_log_tid;
 static volatile int g_log_run;
